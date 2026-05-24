@@ -541,6 +541,7 @@ function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canU
 function SettingsPanel({
   accountsList,
   fetchAccounts,
+  fetchTrades,
   theme,
   onChangeTheme,
   aiProvider,
@@ -594,6 +595,7 @@ function SettingsPanel({
         setEditAcct(null);
         setAcctError("");
         fetchAccounts();
+        fetchTrades();
       } else {
         const data = await res.json();
         setAcctError(data.error || "Error al actualizar la cuenta");
@@ -611,6 +613,7 @@ function SettingsPanel({
       });
       if (res.ok) {
         fetchAccounts();
+        fetchTrades();
       }
     } catch (e) {
       setAcctError("Error de red al eliminar la cuenta");
@@ -1293,6 +1296,7 @@ export default function App() {
             <SettingsPanel
               accountsList={accountsList}
               fetchAccounts={fetchAccounts}
+              fetchTrades={fetchTrades}
               theme={theme}
               onChangeTheme={onChangeTheme}
               aiProvider={aiProvider}
