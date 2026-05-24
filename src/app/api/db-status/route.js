@@ -66,6 +66,7 @@ export async function GET() {
         { name: 'strategy', type: 'String', detail: 'Estrategia empleada' },
         { name: 'timeframe', type: 'String', detail: 'Temporalidad (ej: 15s, 1m)' },
         { name: 'notes', type: 'String', detail: 'Comentarios u observaciones' },
+        { name: 'image', type: 'String', detail: 'Captura de pantalla de la operativa (Base64)' },
         { name: 'createdAt', type: 'DateTime', detail: 'Fecha de inserción' },
       ],
     };

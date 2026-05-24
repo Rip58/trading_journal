@@ -30,6 +30,7 @@ export async function PUT(request, { params }) {
         strategy: body.strategy,
         timeframe: body.timeframe,
         notes: body.notes,
+        image: body.image,
       },
     });
 

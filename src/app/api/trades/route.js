@@ -45,6 +45,7 @@ export async function POST(request) {
         strategy: body.strategy || '',
         timeframe: body.timeframe || '15s',
         notes: body.notes || '',
+        image: body.image || null,
       },
     });
     

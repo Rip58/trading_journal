@@ -61,7 +61,7 @@ function calcAccountDD(trades) {
   return { netPnl: cum, peak, maxDD: -maxDD, ddRemaining: 0 };
 }
 
-const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "BX101840-05 (50K)", instrument: "NQ Futures", direction: "Long", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: -4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "", timeframe: "15s", notes: "" };
+const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "BX101840-05 (50K)", instrument: "NQ Futures", direction: "Long", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: -4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "", timeframe: "15s", notes: "", image: "" };
 
 // ── Mini chart (SVG sparkline) ──────────────────────────────────────────────
 function Sparkline({ data, color, height = 40 }) {
@@ -514,6 +514,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
             mfe: parseFloat(data.mfe) || prev.mfe,
             etd: parseFloat(data.etd) || prev.etd,
             rr: parseFloat(data.rr) || prev.rr,
+            image: base64,
           }));
 
           setScanSuccess(true);
@@ -611,6 +612,66 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       <div style={{ marginBottom: 10 }}>
         <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas</label>
         <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", resize: "vertical" }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 5 }}>Imagen de la operativa</label>
+        
+        {form.image ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--color-background-secondary)", padding: 8, borderRadius: 8, border: "0.5px solid var(--color-border-secondary)" }}>
+            <img src={form.image} alt="Operativa" style={{ height: 60, width: 80, objectFit: "cover", borderRadius: 4, border: "0.5px solid var(--color-border-tertiary)" }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-primary)", fontWeight: 500 }}>Captura de pantalla cargada</div>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginTop: 2 }}>La imagen se guardará junto con el trade.</div>
+            </div>
+            <button 
+              type="button"
+              onClick={() => set("image", null)}
+              style={{ padding: "4px 8px", background: "transparent", border: `0.5px solid ${C.red}`, color: C.red, borderRadius: 6, fontSize: 10, cursor: "pointer" }}
+            >
+              Eliminar imagen
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            border: "1.5px dashed var(--color-border-secondary)",
+            borderRadius: 8,
+            padding: "12px",
+            textAlign: "center",
+            background: "var(--color-background-secondary)",
+            position: "relative",
+            cursor: "pointer",
+          }}>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    set("image", ev.target.result);
+                  };
+                  reader.readAsDataURL(file);
+                }
+              }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                opacity: 0,
+                cursor: "pointer",
+              }}
+            />
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+              📸 Cargar captura de pantalla de la operativa
+            </div>
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+              Selecciona o arrastra una imagen (PNG, JPG, JPEG)
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={() => onSave(form)} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
@@ -1119,6 +1180,7 @@ export default function App() {
   const [theme, setTheme] = useState("light");
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
+  const [selectedTradeImage, setSelectedTradeImage] = useState(null);
   const PER_PAGE = 20;
 
   // Load clientside options on mount
@@ -1505,7 +1567,7 @@ export default function App() {
           <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 700 }}>
             <thead>
               <tr>
-                {["#", "Fecha", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", ""].map(h => (
+                {["#", "Fecha", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", "Captura", ""].map(h => (
                    <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-tertiary)", textAlign: "left", padding: "5px 6px", borderBottom: "0.5px solid var(--color-border-tertiary)", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -1524,6 +1586,17 @@ export default function App() {
                   <td style={{ padding: "5px 6px" }}>{fmtN(t.rr, 2)}R</td>
                   <td style={{ padding: "5px 6px", fontSize: 10, color: "var(--color-text-secondary)" }}>{t.strategy || "—"}</td>
                   <td style={{ padding: "5px 6px" }}><span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: t.result === "Win" ? C.greenBg : C.redBg, color: t.result === "Win" ? C.greenText : C.redText }}>{t.result}</span></td>
+                  <td style={{ padding: "5px 6px", textAlign: "center" }}>
+                    {t.image ? (
+                      <button 
+                        onClick={() => setSelectedTradeImage(t.image)}
+                        style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: 0 }}
+                        title="Ver captura de pantalla"
+                      >
+                        🖼️
+                      </button>
+                    ) : "—"}
+                  </td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
                     <button onClick={() => { setEditingTrade(t); setAddingTrade(false); }} style={{ fontSize: 10, padding: "2px 7px", marginRight: 4, border: "0.5px solid var(--color-border-secondary)", borderRadius: 3, background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}>✏️</button>
                     <button onClick={() => setDeleteConfirm(t.id)} style={{ fontSize: 10, padding: "2px 7px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 3, background: "transparent", cursor: "pointer", color: C.red }}>✕</button>
@@ -1668,6 +1741,71 @@ export default function App() {
             </>
           )}
         </>
+      )}
+      
+      {selectedTradeImage && (
+        <div 
+          onClick={() => setSelectedTradeImage(null)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.7)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1000,
+            cursor: "zoom-out",
+            padding: 20,
+          }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: "relative",
+              maxWidth: "90%",
+              maxHeight: "90%",
+              borderRadius: 12,
+              overflow: "hidden",
+              border: "0.5px solid var(--color-border-secondary)",
+              background: "var(--color-background-primary)",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3), 0 10px 10px -5px rgba(0,0,0,0.3)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <img 
+              src={selectedTradeImage} 
+              alt="Captura de pantalla de la operativa" 
+              style={{ maxWidth: "100%", maxHeight: "calc(90vh - 40px)", objectFit: "contain" }} 
+            />
+            <button 
+              onClick={() => setSelectedTradeImage(null)}
+              style={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                background: "rgba(0, 0, 0, 0.5)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "50%",
+                width: 28,
+                height: 28,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                fontWeight: "bold",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

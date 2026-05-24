@@ -30,6 +30,7 @@ model Trade {
   strategy    String
   timeframe   String
   notes       String
+  image       String?
   createdAt   DateTime @default(now())
 }
 
