@@ -2449,6 +2449,21 @@ const trades = [
 ];
 
 async function main() {
+  console.log('Seeding accounts...');
+  // Clear existing accounts
+  await prisma.account.deleteMany({});
+  
+  const initialAccounts = [
+    { name: "BX103414-01 (25K)", size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500 },
+    { name: "BX101840-03 (50K)", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 },
+    { name: "BX101840-04 (50K)", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 },
+    { name: "BX101840-05 (50K)", size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500 },
+  ];
+
+  await prisma.account.createMany({
+    data: initialAccounts,
+  });
+
   console.log('Seeding trades...');
   // Clear existing trades
   await prisma.trade.deleteMany({});
@@ -2469,3 +2484,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

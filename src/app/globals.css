@@ -11,9 +11,20 @@
   --color-border-tertiary: #d1d5db;
 }
 
+/* Class-based dark theme */
+:root.dark {
+  --color-background-primary: #09090b;
+  --color-background-secondary: #18181b;
+  --color-text-primary: #f4f4f5;
+  --color-text-secondary: #a1a1aa;
+  --color-text-tertiary: #71717a;
+  --color-border-secondary: #27272a;
+  --color-border-tertiary: #3f3f46;
+}
+
+/* Media query fallback if no class is set explicitly */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Colors - Dark Theme */
+  :root:not(.light) {
     --color-background-primary: #09090b;
     --color-background-secondary: #18181b;
     --color-text-primary: #f4f4f5;
@@ -30,7 +41,9 @@ body {
   background-color: var(--color-background-secondary);
   color: var(--color-text-primary);
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
+
 
 #root {
   width: 100%;

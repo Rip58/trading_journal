@@ -2,12 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
-const ACCOUNT_RULES = {
-  "BX103414-01 (25K)": { size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500 },
-  "BX101840-03 (50K)": { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 },
-  "BX101840-04 (50K)": { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 },
-  "BX101840-05 (50K)": { size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500 },
-};
+// ACCOUNT_RULES is loaded dynamically from database now
+
 
 const ALL_MODULES = [
   { id: "kpis", label: "KPIs globales", icon: "📊" },
@@ -116,13 +112,13 @@ function Bar({ pct, color }) {
 }
 
 // ── Account DD Card ─────────────────────────────────────────────────────────
-function AccountCard({ account, trades }) {
-  const rules = ACCOUNT_RULES[account] || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 };
+function AccountCard({ account, rules, trades }) {
+  const activeRules = rules || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 };
   const { netPnl, maxDD, peak } = calcAccountDD(trades);
   const ddUsed = Math.abs(maxDD);
-  const ddPct = (ddUsed / rules.dd_limit) * 100;
-  const targetPct = Math.max(0, Math.min((netPnl / rules.target) * 100, 100));
-  const ddRemaining = rules.dd_limit - ddUsed;
+  const ddPct = (ddUsed / activeRules.dd_limit) * 100;
+  const targetPct = Math.max(0, Math.min((netPnl / activeRules.target) * 100, 100));
+  const ddRemaining = activeRules.dd_limit - ddUsed;
   const ddColor = ddPct >= 80 ? C.red : ddPct >= 50 ? C.amber : C.green;
   const borderColor = ddPct >= 80 ? "#F5C4B3" : ddPct >= 50 ? "#FAC775" : "#9FE1CB";
   const alertColor = ddPct >= 90 ? { bg: C.redBg, text: C.redText } : ddPct >= 60 ? { bg: "#FAEEDA", text: "#854F0B" } : { bg: C.greenBg, text: C.greenText };
@@ -132,7 +128,7 @@ function AccountCard({ account, trades }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 500 }}>{account.split(" ")[0]}</div>
-          <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>${(rules.size / 1000).toFixed(0)}K · obj ${ rules.target.toLocaleString()}</div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>${(activeRules.size / 1000).toFixed(0)}K · obj ${ activeRules.target.toLocaleString()}</div>
         </div>
         <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: netPnl >= 0 ? C.greenBg : C.redBg, color: netPnl >= 0 ? C.greenText : C.redText, fontWeight: 500 }}>
           {fmt(netPnl)}
@@ -148,13 +144,13 @@ function AccountCard({ account, trades }) {
       </div>
       <div style={{ marginBottom: 6 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-          <span>Objetivo</span><span>{fmt(netPnl)} / ${rules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
+          <span>Objetivo</span><span>{fmt(netPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
         </div>
         <Bar pct={targetPct} color={C.green} />
       </div>
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-          <span>Drawdown usado</span><span>${Math.round(ddUsed).toLocaleString()} / ${rules.dd_limit.toLocaleString()} · {fmtN(ddPct, 1)}%</span>
+          <span>Drawdown usado</span><span>${Math.round(ddUsed).toLocaleString()} / ${activeRules.dd_limit.toLocaleString()} · {fmtN(ddPct, 1)}%</span>
         </div>
         <Bar pct={ddPct} color={ddColor} />
       </div>
@@ -162,6 +158,7 @@ function AccountCard({ account, trades }) {
     </div>
   );
 }
+
 
 // ── Equity SVG ──────────────────────────────────────────────────────────────
 function EquityChart({ trades, accountFilter }) {
@@ -348,10 +345,78 @@ function BarChart({ labels, values, height = 120 }) {
 }
 
 // ── Trade Form ───────────────────────────────────────────────────────────────
-function TradeForm({ trade, onSave, onCancel, isNew }) {
+function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
   const [form, setForm] = useState({ ...EMPTY_TRADE, ...trade });
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [scanSuccess, setScanSuccess] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const accounts = Object.keys(ACCOUNT_RULES);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const provider = localStorage.getItem("tj_ai_provider") || "gemini";
+    const apiKey = localStorage.getItem("tj_ai_key") || "";
+
+    if (!apiKey) {
+      setScanError("Configura primero tu API Key en Ajustes ⚙️");
+      return;
+    }
+
+    setScanning(true);
+    setScanError("");
+    setScanSuccess(false);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const base64 = ev.target.result;
+          const res = await fetch("/api/parse-trade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: base64, provider, apiKey }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Error de la IA");
+          }
+
+          // Merge parsed data into form state
+          setForm((prev) => ({
+            ...prev,
+            ...data,
+            qty: parseInt(data.qty) || prev.qty,
+            entry: parseFloat(data.entry) || prev.entry,
+            exit_price: parseFloat(data.exit_price) || prev.exit_price,
+            gross: parseFloat(data.gross) || prev.gross,
+            commission: parseFloat(data.commission) || prev.commission,
+            pnl: parseFloat(data.pnl) || prev.pnl,
+            mae: parseFloat(data.mae) || prev.mae,
+            mfe: parseFloat(data.mfe) || prev.mfe,
+            etd: parseFloat(data.etd) || prev.etd,
+            rr: parseFloat(data.rr) || prev.rr,
+          }));
+
+          setScanSuccess(true);
+        } catch (err) {
+          console.error(err);
+          setScanError(err.message || "Error al procesar la imagen");
+        } finally {
+          setScanning(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setScanError("Error al leer el archivo");
+      setScanning(false);
+    }
+  };
+
   const F = ({ label, field, type = "text", opts }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
@@ -365,9 +430,48 @@ function TradeForm({ trade, onSave, onCancel, isNew }) {
       )}
     </div>
   );
+
   return (
     <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{isNew ? "Añadir operación" : `Editar trade #${form.id}`}</div>
+
+      {isNew && (
+        <div style={{
+          border: "1.5px dashed var(--color-border-tertiary)",
+          borderRadius: 8,
+          padding: "12px",
+          textAlign: "center",
+          background: "var(--color-background-secondary)",
+          marginBottom: 14,
+          position: "relative",
+          cursor: "pointer",
+        }}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            disabled={scanning}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              opacity: 0,
+              cursor: "pointer",
+            }}
+          />
+          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)" }}>
+            {scanning ? "⏳ Procesando captura con IA..." : "📸 Arrastra o selecciona una captura para autocompletar"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+            Soporta capturas de NinjaTrader, TradingView, MetaTrader, etc.
+          </div>
+          {scanError && <div style={{ fontSize: 11, color: C.red, marginTop: 6, fontWeight: 500 }}>⚠️ {scanError}</div>}
+          {scanSuccess && <div style={{ fontSize: 11, color: C.green, marginTop: 6, fontWeight: 500 }}>✓ Datos extraídos y completados. ¡Revisa los campos!</div>}
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
         <F label="Fecha" field="date" type="date" />
         <F label="Cuenta" field="account" opts={accounts} />
@@ -420,9 +524,249 @@ function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canU
   );
 }
 
+// ── Settings Panel ───────────────────────────────────────────────────────────
+function SettingsPanel({
+  accountsList,
+  fetchAccounts,
+  theme,
+  onChangeTheme,
+  aiProvider,
+  setAiProvider,
+  aiKey,
+  setAiKey,
+}) {
+  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 });
+  const [editingAcctId, setEditingAcctId] = useState(null);
+  const [editAcct, setEditAcct] = useState(null);
+  const [acctError, setAcctError] = useState("");
+  const [saveKeySuccess, setSaveKeySuccess] = useState(false);
+
+  const handleAddAccount = async () => {
+    if (!newAcct.name) {
+      setAcctError("El nombre de la cuenta es requerido");
+      return;
+    }
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newAcct),
+      });
+      if (res.ok) {
+        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 });
+        setAcctError("");
+        fetchAccounts();
+      } else {
+        const data = await res.json();
+        setAcctError(data.error || "Error al crear la cuenta");
+      }
+    } catch (e) {
+      setAcctError("Error de red al crear la cuenta");
+    }
+  };
+
+  const handleUpdateAccount = async (id) => {
+    if (!editAcct.name) {
+      setAcctError("El nombre de la cuenta es requerido");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editAcct),
+      });
+      if (res.ok) {
+        setEditingAcctId(null);
+        setEditAcct(null);
+        setAcctError("");
+        fetchAccounts();
+      } else {
+        const data = await res.json();
+        setAcctError(data.error || "Error al actualizar la cuenta");
+      }
+    } catch (e) {
+      setAcctError("Error de red al actualizar la cuenta");
+    }
+  };
+
+  const handleDeleteAccount = async (id) => {
+    if (!confirm("¿Seguro que deseas eliminar esta cuenta? Los trades asociados seguirán existiendo.")) return;
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchAccounts();
+      }
+    } catch (e) {
+      setAcctError("Error de red al eliminar la cuenta");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 1. Theme Configuration */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🌓</span> Tema visual
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[
+            { id: "light", label: "☀️ Claro" },
+            { id: "dark", label: "🌙 Oscuro" }
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onChangeTheme(t.id)}
+              style={{
+                flex: 1,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: theme === t.id ? `1px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)",
+                background: theme === t.id ? C.blueBg : "var(--color-background-secondary)",
+                color: theme === t.id ? C.blueText : "var(--color-text-secondary)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. AI Credentials Configuration */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🤖</span> Configuración de IA (Escaneo de Capturas)
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Proveedor de IA</label>
+            <select
+              value={aiProvider}
+              onChange={(e) => setAiProvider(e.target.value)}
+              style={{ fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+            >
+              <option value="gemini">Gemini (1.5 Flash - Recomendado)</option>
+              <option value="openai">OpenAI (GPT-4o-mini)</option>
+              <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>API Key / Token</label>
+            <input
+              type="password"
+              placeholder="Pega tu token de API aquí..."
+              value={aiKey}
+              onChange={(e) => setAiKey(e.target.value)}
+              style={{ fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+            <button
+              onClick={() => {
+                localStorage.setItem("tj_ai_provider", aiProvider);
+                localStorage.setItem("tj_ai_key", aiKey);
+                setSaveKeySuccess(true);
+                setTimeout(() => setSaveKeySuccess(false), 3000);
+              }}
+              style={{ padding: "6px 14px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}
+            >
+              Guardar Credenciales
+            </button>
+            {saveKeySuccess && <span style={{ fontSize: 11, color: C.green }}>✓ Credenciales guardadas en local</span>}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+            Las claves se guardan solo en tu navegador (localStorage) y nunca viajan a bases de datos de terceros.
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Account Management */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🏦</span> Cuentas de Trading
+        </div>
+        
+        {acctError && (
+          <div style={{ padding: "8px 12px", background: C.redBg, color: C.redText, borderRadius: 6, fontSize: 11, marginBottom: 12 }}>
+            {acctError}
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {accountsList.map((a) => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", flexWrap: "wrap", gap: 8 }}>
+              {editingAcctId === a.id ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, width: "100%" }}>
+                  <input type="text" value={editAcct.name} onChange={e => setEditAcct({...editAcct, name: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Nombre" />
+                  <input type="number" value={editAcct.size} onChange={e => setEditAcct({...editAcct, size: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Balance" />
+                  <input type="number" value={editAcct.target} onChange={e => setEditAcct({...editAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Objetivo" />
+                  <input type="number" value={editAcct.dd_limit} onChange={e => setEditAcct({...editAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Max DD" />
+                  <input type="number" value={editAcct.daily_limit} onChange={e => setEditAcct({...editAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Límite Diario" />
+                  <div style={{ display: "flex", gap: 4, gridColumn: "span 2" }}>
+                    <button onClick={() => handleUpdateAccount(a.id)} style={{ flex: 1, padding: "4px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Guardar</button>
+                    <button onClick={() => { setEditingAcctId(null); setEditAcct(null); }} style={{ flex: 1, padding: "4px 8px", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{a.name}</div>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                      Saldo: ${a.size.toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()} · Diario: ${a.daily_limit.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
+                    <button onClick={() => handleDeleteAccount(a.id)} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: C.red, cursor: "pointer" }}>✕ Borrar</button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
+              <input type="text" placeholder="Ej: BX101840-06 (100K)" value={newAcct.name} onChange={e => setNewAcct({...newAcct, name: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Saldo Inicial ($)</label>
+              <input type="number" placeholder="Ej: 50000" value={newAcct.size} onChange={e => setNewAcct({...newAcct, size: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Objetivo de Ganancia ($)</label>
+              <input type="number" placeholder="Ej: 3000" value={newAcct.target} onChange={e => setNewAcct({...newAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Drawdown ($)</label>
+              <input type="number" placeholder="Ej: 2500" value={newAcct.dd_limit} onChange={e => setNewAcct({...newAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, gridColumn: "span 2" }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Pérdida Diaria ($)</label>
+              <input type="number" placeholder="Ej: 1100" value={newAcct.daily_limit} onChange={e => setNewAcct({...newAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+          </div>
+          <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+            + Crear Cuenta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [trades, setTrades] = useState([]);
+  const [accountsList, setAccountsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [visibility, setVisibility] = useState({});
@@ -433,6 +777,10 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [importMsg, setImportMsg] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [currentTab, setCurrentTab] = useState("dashboard");
+  const [theme, setTheme] = useState("light");
+  const [aiProvider, setAiProvider] = useState("gemini");
+  const [aiKey, setAiKey] = useState("");
   const PER_PAGE = 20;
 
   // Load clientside options on mount
@@ -451,6 +799,31 @@ export default function App() {
     } catch {
       setVisibility(Object.fromEntries(ALL_MODULES.map(m => [m.id, true])));
     }
+    
+    // Read and initialize Theme
+    try {
+      const savedTheme = localStorage.getItem("tj_theme");
+      if (savedTheme) {
+        setTheme(savedTheme);
+        if (savedTheme === "dark") {
+          document.documentElement.classList.add("dark");
+          document.documentElement.classList.remove("light");
+        } else {
+          document.documentElement.classList.add("light");
+          document.documentElement.classList.remove("dark");
+        }
+      }
+    } catch {}
+
+    // Read AI configurations
+    try {
+      const savedProvider = localStorage.getItem("tj_ai_provider");
+      const savedKey = localStorage.getItem("tj_ai_key");
+      if (savedProvider) setAiProvider(savedProvider);
+      if (savedKey) setAiKey(savedKey);
+    } catch {}
+
+    fetchAccounts();
     fetchTrades();
   }, []);
 
@@ -462,6 +835,18 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("tj_visibility", JSON.stringify(visibility)); } catch {}
   }, [visibility]);
+
+  const fetchAccounts = async () => {
+    try {
+      const res = await fetch('/api/accounts');
+      if (res.ok) {
+        const data = await res.json();
+        setAccountsList(data);
+      }
+    } catch (err) {
+      console.error("Error cargando cuentas:", err);
+    }
+  };
 
   const fetchTrades = async () => {
     try {
@@ -476,6 +861,20 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const onChangeTheme = (newTheme) => {
+    setTheme(newTheme);
+    try {
+      localStorage.setItem("tj_theme", newTheme);
+      if (newTheme === "dark") {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.add("light");
+        document.documentElement.classList.remove("dark");
+      }
+    } catch {}
   };
 
   const saveTrade = async (t) => {
@@ -602,7 +1001,9 @@ export default function App() {
 
   const filtered = useMemo(() => acctFilter === "all" ? trades : trades.filter(t => t.account === acctFilter), [trades, acctFilter]);
   const stats = useMemo(() => calcStats(filtered), [filtered]);
-  const accounts = useMemo(() => [...new Set(trades.map(t => t.account))].sort(), [trades]);
+  
+  // List of accounts derived from database list
+  const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
 
   const equitySpark = useMemo(() => {
     let cum = 0;
@@ -684,7 +1085,9 @@ export default function App() {
     if (mod.id === "accounts") return (
       <Module {...props}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
-          {accounts.map(a => <AccountCard key={a} account={a} trades={trades.filter(t => t.account === a)} />)}
+          {accountsList.map(a => (
+            <AccountCard key={a.id} account={a.name} rules={a} trades={trades.filter(t => t.account === a.name)} />
+          ))}
         </div>
       </Module>
     );
@@ -733,13 +1136,13 @@ export default function App() {
           </label>
           {importMsg && <span style={{ fontSize: 12, color: C.green }}>{importMsg}</span>}
         </div>
-        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew />}
+        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={accounts} />}
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 700 }}>
             <thead>
               <tr>
                 {["#", "Fecha", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", ""].map(h => (
-                  <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-tertiary)", textAlign: "left", padding: "5px 6px", borderBottom: "0.5px solid var(--color-border-tertiary)", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                   <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-tertiary)", textAlign: "left", padding: "5px 6px", borderBottom: "0.5px solid var(--color-border-tertiary)", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -768,7 +1171,7 @@ export default function App() {
         </div>
         {editingTrade && (
           <div style={{ marginTop: 12 }}>
-            <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} />
+            <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={accounts} />
           </div>
         )}
         {deleteConfirm && (
@@ -800,13 +1203,49 @@ export default function App() {
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
-            <option value="all">Todas las cuentas</option>
-            {accounts.map(a => <option key={a}>{a}</option>)}
-          </select>
-          <button onClick={() => setEditMode(e => !e)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: editMode ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: editMode ? C.blueBg : "var(--color-background-primary)", color: editMode ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: editMode ? 500 : 400 }}>
-            {editMode ? "✓ Guardar layout" : "⚙️ Editar layout"}
-          </button>
+          {currentTab === "dashboard" && (
+            <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
+              <option value="all">Todas las cuentas</option>
+              {accounts.map(a => <option key={a}>{a}</option>)}
+            </select>
+          )}
+          <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 3, border: "0.5px solid var(--color-border-secondary)" }}>
+            <button
+              onClick={() => setCurrentTab("dashboard")}
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "none",
+                background: currentTab === "dashboard" ? "var(--color-background-primary)" : "transparent",
+                color: "var(--color-text-primary)",
+                cursor: "pointer",
+                fontWeight: currentTab === "dashboard" ? 500 : 400,
+              }}
+            >
+              📊 Dashboard
+            </button>
+            <button
+              onClick={() => setCurrentTab("settings")}
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "none",
+                background: currentTab === "settings" ? "var(--color-background-primary)" : "transparent",
+                color: "var(--color-text-primary)",
+                cursor: "pointer",
+                fontWeight: currentTab === "settings" ? 500 : 400,
+              }}
+            >
+              ⚙️ Ajustes
+            </button>
+          </div>
+          {currentTab === "dashboard" && (
+            <button onClick={() => setEditMode(e => !e)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: editMode ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: editMode ? C.blueBg : "var(--color-background-primary)", color: editMode ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: editMode ? 500 : 400 }}>
+              {editMode ? "✓ Guardar layout" : "⚙️ Editar layout"}
+            </button>
+          )}
         </div>
       </div>
       
@@ -816,14 +1255,30 @@ export default function App() {
         </div>
       ) : (
         <>
-          {editMode && (
-            <div style={{ background: C.blueBg, border: `0.5px solid #B5D4F4`, borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 12, color: C.blueText }}>
-              Modo edición activo — reordena módulos con ↑↓ y actívalos o desactívalos
-            </div>
+          {currentTab === "settings" ? (
+            <SettingsPanel
+              accountsList={accountsList}
+              fetchAccounts={fetchAccounts}
+              theme={theme}
+              onChangeTheme={onChangeTheme}
+              aiProvider={aiProvider}
+              setAiProvider={setAiProvider}
+              aiKey={aiKey}
+              setAiKey={setAiKey}
+            />
+          ) : (
+            <>
+              {editMode && (
+                <div style={{ background: C.blueBg, border: `0.5px solid #B5D4F4`, borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 12, color: C.blueText }}>
+                  Modo edición activo — reordena módulos con ↑↓ y actívalos o desactívalos
+                </div>
+              )}
+              {orderedModules.map((mod, idx) => renderModule(mod, idx))}
+            </>
           )}
-          {orderedModules.map((mod, idx) => renderModule(mod, idx))}
         </>
       )}
     </div>
   );
 }
+

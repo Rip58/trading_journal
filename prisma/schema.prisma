@@ -32,3 +32,14 @@ model Trade {
   notes       String
   createdAt   DateTime @default(now())
 }
+
+model Account {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  size        Float
+  target      Float
+  dd_limit    Float
+  daily_limit Float
+  createdAt   DateTime @default(now())
+}
+
