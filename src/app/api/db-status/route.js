@@ -41,6 +41,7 @@ export async function GET() {
         { name: 'target', type: 'Float', detail: 'Objetivo de beneficio ($)' },
         { name: 'dd_limit', type: 'Float', detail: 'Límite de Drawdown ($)' },
         { name: 'daily_limit', type: 'Float', detail: 'Límite de pérdida diaria ($)' },
+        { name: 'status', type: 'String', detail: 'Estado de la cuenta (ACTIVE / CLOSED / BURNED)' },
         { name: 'createdAt', type: 'DateTime', detail: 'Fecha de creación' },
       ],
       Trade: [

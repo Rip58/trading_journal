@@ -36,6 +36,7 @@ export async function POST(request) {
         target: parseFloat(body.target) || 0,
         dd_limit: parseFloat(body.dd_limit) || 0,
         daily_limit: parseFloat(body.daily_limit) || 0,
+        status: body.status || 'ACTIVE',
       },
     });
     

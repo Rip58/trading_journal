@@ -113,22 +113,48 @@ function Bar({ pct, color }) {
 
 // ── Account DD Card ─────────────────────────────────────────────────────────
 function AccountCard({ account, rules, trades }) {
-  const activeRules = rules || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 };
+  const activeRules = rules || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE" };
+  const isClosed = activeRules.status === "CLOSED";
+  const isBurned = activeRules.status === "BURNED";
+
   const { netPnl, maxDD, peak } = calcAccountDD(trades);
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
   const targetPct = Math.max(0, Math.min((netPnl / activeRules.target) * 100, 100));
   const ddRemaining = activeRules.dd_limit - ddUsed;
   const ddColor = ddPct >= 80 ? C.red : ddPct >= 50 ? C.amber : C.green;
-  const borderColor = ddPct >= 80 ? "#F5C4B3" : ddPct >= 50 ? "#FAC775" : "#9FE1CB";
-  const alertColor = ddPct >= 90 ? { bg: C.redBg, text: C.redText } : ddPct >= 60 ? { bg: "#FAEEDA", text: "#854F0B" } : { bg: C.greenBg, text: C.greenText };
-  const alertMsg = ddPct >= 90 ? `⚠️ CRÍTICO — $${Math.round(ddRemaining)} restantes` : ddPct >= 60 ? `⚡ Precaución — ${fmtN(ddPct, 1)}% usado` : `✓ Saludable — ${fmtN(100 - ddPct, 0)}% DD libre`;
+  
+  const normalBorderColor = ddPct >= 80 ? "#F5C4B3" : ddPct >= 50 ? "#FAC775" : "#9FE1CB";
+  const borderColor = isClosed ? "var(--color-border-secondary)" : isBurned ? C.red : normalBorderColor;
+  
+  const alertColor = isClosed
+    ? { bg: "var(--color-background-secondary)", text: "var(--color-text-secondary)" }
+    : isBurned
+      ? { bg: C.redBg, text: C.redText }
+      : (ddPct >= 90 ? { bg: C.redBg, text: C.redText } : ddPct >= 60 ? { bg: "#FAEEDA", text: "#854F0B" } : { bg: C.greenBg, text: C.greenText });
+      
+  const alertMsg = isClosed
+    ? "🔒 Cuenta Cerrada (Histórica)"
+    : isBurned
+      ? "💀 Cuenta Quemada (Superó DD)"
+      : (ddPct >= 90 ? `⚠️ CRÍTICO — $${Math.round(ddRemaining)} restantes` : ddPct >= 60 ? `⚡ Precaución — ${fmtN(ddPct, 1)}% usado` : `✓ Saludable — ${fmtN(100 - ddPct, 0)}% DD libre`);
+
   return (
-    <div style={{ background: "var(--color-background-primary)", border: `0.5px solid ${borderColor}`, borderRadius: 12, padding: 14 }}>
+    <div style={{ 
+      background: isClosed || isBurned ? "var(--color-background-secondary)" : "var(--color-background-primary)", 
+      border: `0.5px solid ${borderColor}`, 
+      borderRadius: 12, 
+      padding: 14,
+      opacity: isClosed || isBurned ? 0.75 : 1,
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>{account.split(" ")[0]}</div>
-          <div style={{ fontSize: 10, color: "var(--color-text-secondary)" }}>${(activeRules.size / 1000).toFixed(0)}K · obj ${ activeRules.target.toLocaleString()}</div>
+          <div style={{ fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
+            {account.split(" ")[0]}
+            {isClosed && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
+            {isBurned && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>${(activeRules.size / 1000).toFixed(0)}K · obj ${ activeRules.target.toLocaleString()}</div>
         </div>
         <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: netPnl >= 0 ? C.greenBg : C.redBg, color: netPnl >= 0 ? C.greenText : C.redText, fontWeight: 500 }}>
           {fmt(netPnl)}
@@ -422,7 +448,11 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
       {opts ? (
         <select value={form[field]} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
-          {opts.map(o => <option key={o}>{o}</option>)}
+          {opts.map(o => {
+            const val = typeof o === "object" ? o.value : o;
+            const lbl = typeof o === "object" ? o.label : o;
+            return <option key={val} value={val}>{lbl}</option>;
+          })}
         </select>
       ) : (
         <input type={type} value={form[field]} onChange={e => set(field, type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
@@ -805,6 +835,11 @@ function SettingsPanel({
                   <input type="number" value={editAcct.target} onChange={e => setEditAcct({...editAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Objetivo" />
                   <input type="number" value={editAcct.dd_limit} onChange={e => setEditAcct({...editAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Max DD" />
                   <input type="number" value={editAcct.daily_limit} onChange={e => setEditAcct({...editAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Límite Diario" />
+                  <select value={editAcct.status || "ACTIVE"} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                    <option value="ACTIVE">Activa</option>
+                    <option value="CLOSED">Cerrada</option>
+                    <option value="BURNED">Quemada 🔥</option>
+                  </select>
                   <div style={{ display: "flex", gap: 4, gridColumn: "span 2" }}>
                     <button onClick={() => handleUpdateAccount(a.id)} style={{ flex: 1, padding: "4px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Guardar</button>
                     <button onClick={() => { setEditingAcctId(null); setEditAcct(null); }} style={{ flex: 1, padding: "4px 8px", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancelar</button>
@@ -812,8 +847,12 @@ function SettingsPanel({
                 </div>
               ) : (
                 <>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{a.name}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      {a.name}
+                      {a.status === "CLOSED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
+                      {a.status === "BURNED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
+                    </div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
                       Saldo: ${a.size.toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()} · Diario: ${a.daily_limit.toLocaleString()}
                     </div>
@@ -1212,8 +1251,34 @@ export default function App() {
   const filtered = useMemo(() => acctFilter === "all" ? trades : trades.filter(t => t.account === acctFilter), [trades, acctFilter]);
   const stats = useMemo(() => calcStats(filtered), [filtered]);
   
-  // List of accounts derived from database list
   const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
+
+  const activeAccountsForForm = useMemo(() => {
+    return accountsList
+      .filter(a => a.status === "ACTIVE" || !a.status)
+      .map(a => ({ value: a.name, label: a.name }));
+  }, [accountsList]);
+
+  const allAccountsForForm = useMemo(() => {
+    return accountsList.map(a => {
+      let label = a.name;
+      if (a.status === "CLOSED") label += " (Cerrada)";
+      else if (a.status === "BURNED") label += " (Quemada 🔥)";
+      return { value: a.name, label };
+    });
+  }, [accountsList]);
+
+  const accountsButtons = useMemo(() => {
+    return [
+      ["all", "Todas"],
+      ...accountsList.map(a => {
+        let label = a.name.split(" ")[0];
+        if (a.status === "CLOSED") label += " 🔒";
+        else if (a.status === "BURNED") label += " 🔥";
+        return [a.name, label];
+      })
+    ];
+  }, [accountsList]);
 
   const equitySpark = useMemo(() => {
     let cum = 0;
@@ -1305,7 +1370,7 @@ export default function App() {
       <Module {...props}>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["all", "Todas"], ...accounts.map(a => [a, a.split(" ")[0]])].map(([v, l]) => (
+            {accountsButtons.map(([v, l]) => (
               <button key={v} onClick={() => setAcctFilter(v)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 16, border: acctFilter === v ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: acctFilter === v ? C.blueBg : "var(--color-background-primary)", color: acctFilter === v ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: acctFilter === v ? 500 : 400 }}>{l}</button>
             ))}
           </div>
@@ -1346,7 +1411,7 @@ export default function App() {
           </label>
           {importMsg && <span style={{ fontSize: 12, color: C.green }}>{importMsg}</span>}
         </div>
-        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={accounts} />}
+        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 700 }}>
             <thead>
@@ -1381,7 +1446,7 @@ export default function App() {
         </div>
         {editingTrade && (
           <div style={{ marginTop: 12 }}>
-            <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={accounts} />
+            <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} />
           </div>
         )}
         {deleteConfirm && (
@@ -1435,9 +1500,14 @@ export default function App() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {currentTab === "dashboard" && (
-            <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
+            <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
               <option value="all">Todas las cuentas</option>
-              {accounts.map(a => <option key={a}>{a}</option>)}
+              {accountsList.map(a => {
+                let label = a.name;
+                if (a.status === "CLOSED") label += " (Cerrada)";
+                else if (a.status === "BURNED") label += " (Quemada 🔥)";
+                return <option key={a.name} value={a.name}>{label}</option>;
+              })}
             </select>
           )}
           <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 3, border: "0.5px solid var(--color-border-secondary)" }}>
