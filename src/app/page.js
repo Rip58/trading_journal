@@ -228,15 +228,63 @@ function EquityChart({ trades, accountFilter }) {
 }
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
-function CalendarWidget({ trades, month = "2026-05" }) {
+function CalendarWidget({ trades }) {
+  const [currentMonth, setCurrentMonth] = useState("2026-05");
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  useEffect(() => {
+    if (trades && trades.length > 0 && !hasInitialized) {
+      const sorted = [...trades].sort((a, b) => b.date.localeCompare(a.date));
+      if (sorted[0]?.date) {
+        setCurrentMonth(sorted[0].date.slice(0, 7));
+        setHasInitialized(true);
+      }
+    }
+  }, [trades, hasInitialized]);
+
+  const year = parseInt(currentMonth.split("-")[0]);
+  const mo = parseInt(currentMonth.split("-")[1]) - 1;
+
+  const MONTH_NAMES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+
+  const handlePrevMonth = () => {
+    let y = year;
+    let m = mo - 1;
+    if (m < 0) {
+      m = 11;
+      y -= 1;
+    }
+    setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`);
+  };
+
+  const handleNextMonth = () => {
+    let y = year;
+    let m = mo + 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+    setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`);
+  };
+
+  const handleMonthSelect = (m) => {
+    setCurrentMonth(`${year}-${String(m + 1).padStart(2, "0")}`);
+  };
+
+  const handleYearSelect = (y) => {
+    setCurrentMonth(`${y}-${String(mo + 1).padStart(2, "0")}`);
+  };
+
   const byDate = {};
-  trades.filter(t => t.date.startsWith(month)).forEach(t => {
+  trades.filter(t => t.date.startsWith(currentMonth)).forEach(t => {
     if (!byDate[t.date]) byDate[t.date] = { pnl: 0, count: 0 };
     byDate[t.date].pnl += t.pnl;
     byDate[t.date].count++;
   });
-  const year = parseInt(month.split("-")[0]);
-  const mo = parseInt(month.split("-")[1]) - 1;
+
   const daysInMonth = new Date(year, mo + 1, 0).getDate();
   const startDow = (new Date(year, mo, 1).getDay() + 6) % 7;
 
@@ -250,7 +298,7 @@ function CalendarWidget({ trades, month = "2026-05" }) {
   const cells = [];
   for (let i = 0; i < startDow; i++) cells.push({ type: "empty" });
   for (let d = 1; d <= daysInMonth; d++) {
-    const key = `${month}-${String(d).padStart(2, "0")}`;
+    const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
     const dow = (new Date(year, mo, d).getDay() + 6) % 7;
     cells.push({ type: "day", d, key, dow, info: byDate[key] });
   }
@@ -260,6 +308,47 @@ function CalendarWidget({ trades, month = "2026-05" }) {
 
   return (
     <div>
+      {/* Navigation Controls */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <button 
+          onClick={handlePrevMonth} 
+          style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", fontWeight: 600, outline: "none" }}
+          title="Mes anterior"
+        >
+          ◀
+        </button>
+        
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <select 
+            value={mo} 
+            onChange={(e) => handleMonthSelect(parseInt(e.target.value))}
+            style={{ padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 12, cursor: "pointer", outline: "none", fontWeight: 500 }}
+          >
+            {MONTH_NAMES.map((name, idx) => (
+              <option key={idx} value={idx}>{name}</option>
+            ))}
+          </select>
+          
+          <select 
+            value={year} 
+            onChange={(e) => handleYearSelect(parseInt(e.target.value))}
+            style={{ padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 12, cursor: "pointer", outline: "none", fontWeight: 500 }}
+          >
+            {[2024, 2025, 2026, 2027, 2028].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+        
+        <button 
+          onClick={handleNextMonth} 
+          style={{ padding: "4px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", fontWeight: 600, outline: "none" }}
+          title="Mes siguiente"
+        >
+          ▶
+        </button>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
         {dayLabels.map((d, i) => (
           <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: i === 6 ? "#BA7517" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
