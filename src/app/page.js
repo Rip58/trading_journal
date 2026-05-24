@@ -555,6 +555,88 @@ function SettingsPanel({
   const [acctError, setAcctError] = useState("");
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
 
+  // Database Integrity and Structure states
+  const [dbStatus, setDbStatus] = useState(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState("");
+  const [repairMsg, setRepairMsg] = useState("");
+  const [selectedRelinkTargets, setSelectedRelinkTargets] = useState({});
+  const [structureTab, setStructureTab] = useState("Trade");
+
+  const fetchDbStatus = async () => {
+    try {
+      setDbLoading(true);
+      setDbError("");
+      const res = await fetch("/api/db-status");
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus(data);
+      } else {
+        setDbError("No se pudo obtener el estado de la base de datos");
+      }
+    } catch (e) {
+      setDbError("Error de conexión");
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDbStatus();
+  }, []);
+
+  const handleCreateMissing = async (missingAccountName) => {
+    try {
+      setRepairMsg("Creando cuenta...");
+      const res = await fetch("/api/db-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create_missing", missingAccountName }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRepairMsg(`✓ ${data.message}`);
+        await fetchAccounts();
+        await fetchTrades();
+        await fetchDbStatus();
+      } else {
+        setRepairMsg(`⚠️ ${data.error}`);
+      }
+    } catch (e) {
+      setRepairMsg("⚠️ Error de conexión");
+    } finally {
+      setTimeout(() => setRepairMsg(""), 4000);
+    }
+  };
+
+  const handleRelinkAll = async (missingAccountName, targetAccount) => {
+    if (!targetAccount) {
+      alert("Seleccione una cuenta de destino");
+      return;
+    }
+    try {
+      setRepairMsg("Vinculando trades...");
+      const res = await fetch("/api/db-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "relink_all", missingAccountName, targetAccount }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRepairMsg(`✓ ${data.message}`);
+        await fetchAccounts();
+        await fetchTrades();
+        await fetchDbStatus();
+      } else {
+        setRepairMsg(`⚠️ ${data.error}`);
+      }
+    } catch (e) {
+      setRepairMsg("⚠️ Error de conexión");
+    } finally {
+      setTimeout(() => setRepairMsg(""), 4000);
+    }
+  };
+
   const handleAddAccount = async () => {
     if (!newAcct.name) {
       setAcctError("El nombre de la cuenta es requerido");
@@ -746,7 +828,7 @@ function SettingsPanel({
           ))}
         </div>
 
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12 }}>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12, marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -774,6 +856,118 @@ function SettingsPanel({
             + Crear Cuenta
           </button>
         </div>
+      </div>
+
+      {/* 4. Database Structure & Integrity */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>⚙️ Integridad de Base de Datos</span>
+          <button 
+            onClick={fetchDbStatus} 
+            disabled={dbLoading}
+            style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+          >
+            {dbLoading ? "Analizando..." : "Re-analizar"}
+          </button>
+        </div>
+
+        {dbError && <div style={{ fontSize: 11, color: C.red, marginBottom: 12 }}>⚠️ {dbError}</div>}
+        {repairMsg && <div style={{ fontSize: 11, color: C.blue, marginBottom: 12, fontWeight: 500 }}>{repairMsg}</div>}
+
+        {dbStatus && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: dbStatus.integrity.status === "healthy" ? C.greenBg : C.redBg, color: dbStatus.integrity.status === "healthy" ? C.greenText : C.redText, fontSize: 12, fontWeight: 500 }}>
+              {dbStatus.integrity.status === "healthy" ? "✓ Base de datos íntegra" : "⚠️ Problemas de vinculación detectados"}
+              <div style={{ fontWeight: 400, fontSize: 11, marginTop: 4 }}>
+                {dbStatus.integrity.message}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, padding: "8px 10px", fontSize: 11 }}>
+                <span style={{ color: "var(--color-text-tertiary)" }}>Total de Cuentas:</span> <strong>{dbStatus.integrity.totalAccounts}</strong>
+              </div>
+              <div style={{ background: "var(--color-background-secondary)", borderRadius: 6, padding: "8px 10px", fontSize: 11 }}>
+                <span style={{ color: "var(--color-text-tertiary)" }}>Total de Trades:</span> <strong>{dbStatus.integrity.totalTrades}</strong>
+              </div>
+            </div>
+
+            {dbStatus.integrity.orphans.length > 0 && (
+              <div style={{ border: `1px solid ${C.red}`, borderRadius: 8, padding: 12, background: "var(--color-background-secondary)" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.red, marginBottom: 8 }}>Trades huérfanos detectados:</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {dbStatus.integrity.orphans.map((o) => (
+                    <div key={o.accountName} style={{ fontSize: 11, borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 8 }}>
+                      <div>• Cuenta <strong>"{o.accountName}"</strong> tiene <strong>{o.tradeCount} trades</strong> pero no existe.</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <button 
+                          onClick={() => handleCreateMissing(o.accountName)} 
+                          style={{ padding: "3px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 10, cursor: "pointer" }}
+                        >
+                          Crear cuenta "{o.accountName}"
+                        </button>
+                        <span style={{ color: "var(--color-text-tertiary)" }}>o migrar a:</span>
+                        <select 
+                          value={selectedRelinkTargets[o.accountName] || ""} 
+                          onChange={(e) => setSelectedRelinkTargets({ ...selectedRelinkTargets, [o.accountName]: e.target.value })}
+                          style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                        >
+                          <option value="">Selecciona...</option>
+                          {accountsList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                        </select>
+                        <button 
+                          onClick={() => handleRelinkAll(o.accountName, selectedRelinkTargets[o.accountName])}
+                          style={{ padding: "3px 8px", background: C.blue, color: "#fff", border: "none", borderRadius: 4, fontSize: 10, cursor: "pointer" }}
+                        >
+                          Migrar trades
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Structure Inspector */}
+            <div style={{ marginTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Estructura de Tablas (Prisma)</span>
+                <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 6, padding: 2 }}>
+                  {["Trade", "Account"].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setStructureTab(tab)}
+                      style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "none", background: structureTab === tab ? "var(--color-background-primary)" : "transparent", color: "var(--color-text-primary)", cursor: "pointer" }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ maxHeight: 200, overflowY: "auto", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)" }}>
+                <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-secondary)" }}>
+                      <th style={{ padding: "5px 8px", fontWeight: 600 }}>Campo</th>
+                      <th style={{ padding: "5px 8px", fontWeight: 600 }}>Tipo</th>
+                      <th style={{ padding: "5px 8px", fontWeight: 600 }}>Descripción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dbStatus.structure[structureTab].map((col) => (
+                      <tr key={col.name} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                        <td style={{ padding: "4px 8px", fontFamily: "monospace", fontWeight: 600 }}>{col.name}</td>
+                        <td style={{ padding: "4px 8px", color: C.blue, fontFamily: "monospace" }}>{col.type}</td>
+                        <td style={{ padding: "4px 8px", color: "var(--color-text-secondary)" }}>{col.detail}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
