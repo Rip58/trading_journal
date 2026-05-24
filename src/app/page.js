@@ -300,7 +300,7 @@ function DonutChart({ wins, losses }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <svg width={140} height={140} style={{ flexShrink: 0 }}>
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.redBg} strokeWidth={stroke} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.red} strokeWidth={stroke} />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.green} strokeWidth={stroke} strokeDasharray={`${winDash} ${circ}`} strokeDashoffset={circ * 0.25} strokeLinecap="round" />
         <text x={cx} y={cy - 6} textAnchor="middle" fontSize={18} fontWeight={500} fill={C.green}>{fmtN(winPct * 100, 1)}%</text>
         <text x={cx} y={cy + 12} textAnchor="middle" fontSize={10} fill={C.gray}>win rate</text>
@@ -517,7 +517,20 @@ function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canU
             <button onClick={() => onToggle(id)} style={{ padding: "2px 8px", fontSize: 11, border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: visible ? C.redBg : C.greenBg, color: visible ? C.redText : C.greenText, cursor: "pointer" }}>{visible ? "Ocultar" : "Mostrar"}</button>
           </div>
         )}
-        {!editMode && <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{collapsed ? "▸" : "▾"}</span>}
+        {!editMode && (
+          <span
+            style={{
+              fontSize: 14,
+              cursor: "pointer",
+              userSelect: "none",
+              opacity: collapsed ? 0.45 : 1,
+              transition: "opacity 0.2s ease",
+            }}
+            title={collapsed ? "Mostrar módulo" : "Ocultar módulo"}
+          >
+            {collapsed ? "🙈" : "👁️"}
+          </span>
+        )}
       </div>
       {!collapsed && <div style={{ padding: 14 }}>{children}</div>}
     </div>
