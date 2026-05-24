@@ -14,6 +14,11 @@ export async function PUT(request, { params }) {
       );
     }
 
+    // Fetch the old account to check if name changed
+    const oldAccount = await db.account.findUnique({
+      where: { id: accountId },
+    });
+
     const updatedAccount = await db.account.update({
       where: { id: accountId },
       data: {
@@ -24,6 +29,14 @@ export async function PUT(request, { params }) {
         daily_limit: parseFloat(body.daily_limit) || 0,
       },
     });
+
+    // Cascade name update to all associated trades
+    if (oldAccount && oldAccount.name !== body.name) {
+      await db.trade.updateMany({
+        where: { account: oldAccount.name },
+        data: { account: body.name },
+      });
+    }
 
     return NextResponse.json(updatedAccount);
   } catch (error) {

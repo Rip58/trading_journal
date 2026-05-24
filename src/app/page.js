@@ -1212,7 +1212,28 @@ export default function App() {
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>📈 Trading Journal</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 500, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>📈 Trading Journal</span>
+            <button
+              onClick={async () => {
+                setLoading(true);
+                await Promise.all([fetchAccounts(), fetchTrades()]);
+                setLoading(false);
+              }}
+              title="Sincronizar con Neon"
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: 14,
+                cursor: "pointer",
+                padding: "2px",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            >
+              🔄
+            </button>
+          </h1>
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
