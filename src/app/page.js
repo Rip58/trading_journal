@@ -1564,7 +1564,7 @@ export default function App() {
         </div>
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 700 }}>
+          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 950 }}>
             <thead>
               <tr>
                 {["#", "Fecha", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", "Captura", ""].map(h => (
@@ -1577,14 +1577,14 @@ export default function App() {
                 <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                   <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.id}</td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.date.slice(5)}</td>
-                  <td style={{ padding: "5px 6px", fontSize: 10 }}>{t.account.split(" ")[0]}</td>
+                  <td style={{ padding: "5px 6px", fontSize: 10, whiteSpace: "nowrap" }}>{t.account.split(" ")[0]}</td>
                   <td style={{ padding: "5px 6px", color: t.direction === "Long" ? C.green : C.red, fontWeight: 500 }}>{t.direction}</td>
                   <td style={{ padding: "5px 6px", fontSize: 10 }}>{t.instrument === "NQ Futures" ? "NQ" : "ES"}</td>
                   <td style={{ padding: "5px 6px" }}>{t.entry}</td>
                   <td style={{ padding: "5px 6px" }}>{t.exit_price}</td>
                   <td style={{ padding: "5px 6px", color: t.pnl > 0 ? C.green : t.pnl < 0 ? C.red : "inherit", fontWeight: 500 }}>{fmt(t.pnl)}</td>
                   <td style={{ padding: "5px 6px" }}>{fmtN(t.rr, 2)}R</td>
-                  <td style={{ padding: "5px 6px", fontSize: 10, color: "var(--color-text-secondary)" }}>{t.strategy || "—"}</td>
+                  <td style={{ padding: "5px 6px", fontSize: 10, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.strategy || "—"}</td>
                   <td style={{ padding: "5px 6px" }}><span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: t.result === "Win" ? C.greenBg : C.redBg, color: t.result === "Win" ? C.greenText : C.redText }}>{t.result}</span></td>
                   <td style={{ padding: "5px 6px", textAlign: "center" }}>
                     {t.image ? (
@@ -1632,7 +1632,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ maxWidth: 740, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: 8 }}>
         <div>
