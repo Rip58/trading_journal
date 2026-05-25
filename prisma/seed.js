@@ -2432,7 +2432,7 @@ async function main() {
   await prisma.account.deleteMany({});
   
   const initialAccounts = [
-    { name: "BX103414-01 (25K)", size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500, activeDays: 12 },
+    { name: "BX103414-01 (25K)", size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500, balance: 24587.96, threshold: 24617.75, updateDate: "05/22/26", activeDays: 12 },
     { name: "BX101840-03 (50K)", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: 50680.30, threshold: 48647.75, updateDate: "05/22/26", activeDays: 14 },
     { name: "BX101840-04 (50K)", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: 50657.06, threshold: 48410.74, updateDate: "05/22/26", activeDays: 9 },
     { name: "BX101840-05 (25K)", size: 25000, target: 1500, dd_limit: 1500, daily_limit: 500, balance: 25105.66, threshold: 23797.83, updateDate: "05/22/26", activeDays: 2 },
