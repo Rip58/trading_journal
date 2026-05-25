@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export async function GET() {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const accounts = await db.account.findMany({
+      where: {
+        clerkUserId: userId,
+      },
       orderBy: {
         name: 'asc',
       },
@@ -20,6 +29,11 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     if (!body.name) {
@@ -31,6 +45,7 @@ export async function POST(request) {
 
     const newAccount = await db.account.create({
       data: {
+        clerkUserId: userId,
         name: body.name,
         size: parseFloat(body.size) || 0,
         target: parseFloat(body.target) || 0,

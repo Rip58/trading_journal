@@ -1,21 +1,34 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export async function GET() {
   try {
-    const totalTrades = await db.trade.count();
-    const totalAccounts = await db.account.count();
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
+    const totalTrades = await db.trade.count({
+      where: { clerkUserId: userId },
+    });
+    const totalAccounts = await db.account.count({
+      where: { clerkUserId: userId },
+    });
     
-    // Fetch all unique account names from trades
+    // Fetch unique account names from trades of this user
     const tradesAccounts = await db.trade.groupBy({
       by: ['account'],
+      where: { clerkUserId: userId },
       _count: {
         account: true,
       },
     });
 
-    // Fetch all accounts
-    const dbAccounts = await db.account.findMany();
+    // Fetch accounts of this user
+    const dbAccounts = await db.account.findMany({
+      where: { clerkUserId: userId },
+    });
     const dbAccountNames = new Set(dbAccounts.map(a => a.name));
 
     // Identify orphaned trades
@@ -32,11 +45,12 @@ export async function GET() {
       }
     }
 
-    // Database structure description
+    // Database structure description (metadata, same for all users)
     const structure = {
       Account: [
         { name: 'id', type: 'Int', detail: 'Clave primaria autoincremental' },
-        { name: 'name', type: 'String', detail: 'Nombre único de la cuenta' },
+        { name: 'clerkUserId', type: 'String', detail: 'ID único del usuario propietario (Clerk)' },
+        { name: 'name', type: 'String', detail: 'Nombre de la cuenta' },
         { name: 'size', type: 'Float', detail: 'Balance o tamaño inicial ($)' },
         { name: 'target', type: 'Float', detail: 'Objetivo de beneficio ($)' },
         { name: 'dd_limit', type: 'Float', detail: 'Límite de Drawdown ($)' },
@@ -46,6 +60,7 @@ export async function GET() {
       ],
       Trade: [
         { name: 'id', type: 'Int', detail: 'Clave primaria autoincremental' },
+        { name: 'clerkUserId', type: 'String', detail: 'ID único del usuario propietario (Clerk)' },
         { name: 'date', type: 'String', detail: 'Fecha del trade (YYYY-MM-DD)' },
         { name: 'entry_time', type: 'String', detail: 'Hora de entrada' },
         { name: 'exit_time', type: 'String', detail: 'Hora de salida' },
@@ -76,7 +91,7 @@ export async function GET() {
         status: totalOrphansCount === 0 ? 'healthy' : 'warning',
         message: totalOrphansCount === 0 
           ? 'Todos los trades están correctamente vinculados a cuentas existentes.' 
-          : `Se encontraron ${totalOrphansCount} trades sin cuenta asociada en la base de datos.`,
+          : `Se encontraron ${totalOrphansCount} trades sin cuenta asociada en tu perfil.`,
         totalTrades,
         totalAccounts,
         orphans,
@@ -93,6 +108,11 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { action, targetAccount, missingAccountName } = await request.json();
 
     if (action === 'create_missing') {
@@ -101,6 +121,7 @@ export async function POST(request) {
       }
       const newAccount = await db.account.create({
         data: {
+          clerkUserId: userId,
           name: missingAccountName,
           size: 50000,
           target: 3000,
@@ -116,16 +137,23 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Faltan parámetros para la re-vinculación' }, { status: 400 });
       }
       const result = await db.trade.updateMany({
-        where: { account: missingAccountName },
+        where: { 
+          account: missingAccountName,
+          clerkUserId: userId
+        },
         data: { account: targetAccount },
       });
       return NextResponse.json({ success: true, message: `Se migraron con éxito ${result.count} trades a la cuenta "${targetAccount}".` });
     }
 
     if (action === 'clean_database') {
-      await db.trade.deleteMany({});
-      await db.account.deleteMany({});
-      return NextResponse.json({ success: true, message: 'La base de datos se ha vaciado por completo (cuentas y trades eliminados).' });
+      await db.trade.deleteMany({
+        where: { clerkUserId: userId }
+      });
+      await db.account.deleteMany({
+        where: { clerkUserId: userId }
+      });
+      return NextResponse.json({ success: true, message: 'Tu base de datos personal se ha vaciado por completo (cuentas y trades eliminados).' });
     }
 
     return NextResponse.json({ error: 'Acción no soportada' }, { status: 400 });

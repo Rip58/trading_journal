@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export async function GET() {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const trades = await db.trade.findMany({
+      where: {
+        clerkUserId: userId,
+      },
       orderBy: {
         id: 'asc',
       },
@@ -20,11 +29,17 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     // Convert and sanitize values if necessary
     const newTrade = await db.trade.create({
       data: {
+        clerkUserId: userId,
         date: body.date || new Date().toISOString().slice(0, 10),
         entry_time: body.entry_time || '',
         exit_time: body.exit_time || '',

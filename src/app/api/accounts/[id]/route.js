@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export async function PUT(request, { params }) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const accountId = parseInt(id);
@@ -14,10 +20,14 @@ export async function PUT(request, { params }) {
       );
     }
 
-    // Fetch the old account to check if name changed
+    // Fetch the old account to check ownership and if name changed
     const oldAccount = await db.account.findUnique({
       where: { id: accountId },
     });
+
+    if (!oldAccount || oldAccount.clerkUserId !== userId) {
+      return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 });
+    }
 
     const updatedAccount = await db.account.update({
       where: { id: accountId },
@@ -35,10 +45,13 @@ export async function PUT(request, { params }) {
       },
     });
 
-    // Cascade name update to all associated trades
-    if (oldAccount && oldAccount.name !== body.name) {
+    // Cascade name update to all associated trades of this user
+    if (oldAccount.name !== body.name) {
       await db.trade.updateMany({
-        where: { account: oldAccount.name },
+        where: { 
+          account: oldAccount.name,
+          clerkUserId: userId
+        },
         data: { account: body.name },
       });
     }
@@ -55,8 +68,21 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { id } = await params;
     const accountId = parseInt(id);
+
+    const oldAccount = await db.account.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!oldAccount || oldAccount.clerkUserId !== userId) {
+      return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 });
+    }
 
     await db.account.delete({
       where: { id: accountId },

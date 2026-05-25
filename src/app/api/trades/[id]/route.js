@@ -1,11 +1,25 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
 export async function PUT(request, { params }) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const tradeId = parseInt(id);
+
+    const oldTrade = await db.trade.findUnique({
+      where: { id: tradeId },
+    });
+
+    if (!oldTrade || oldTrade.clerkUserId !== userId) {
+      return NextResponse.json({ error: 'Trade no encontrado' }, { status: 404 });
+    }
 
     const updatedTrade = await db.trade.update({
       where: { id: tradeId },
@@ -46,8 +60,21 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { id } = await params;
     const tradeId = parseInt(id);
+
+    const oldTrade = await db.trade.findUnique({
+      where: { id: tradeId },
+    });
+
+    if (!oldTrade || oldTrade.clerkUserId !== userId) {
+      return NextResponse.json({ error: 'Trade no encontrado' }, { status: 404 });
+    }
 
     await db.trade.delete({
       where: { id: tradeId },

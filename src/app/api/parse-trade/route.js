@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 
 function parseBase64(base64Str) {
   const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -16,6 +17,11 @@ function parseBase64(base64Str) {
 
 export async function POST(request) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const { image, provider, apiKey } = await request.json();
 
     if (!image) {

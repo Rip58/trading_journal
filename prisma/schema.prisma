@@ -10,6 +10,7 @@ generator client {
 
 model Trade {
   id          Int      @id @default(autoincrement())
+  clerkUserId String
   date        String
   entry_time  String
   exit_time   String
@@ -36,7 +37,8 @@ model Trade {
 
 model Account {
   id          Int      @id @default(autoincrement())
-  name        String   @unique
+  clerkUserId String
+  name        String
   size        Float
   target      Float
   dd_limit    Float
@@ -47,5 +49,7 @@ model Account {
   updateDate  String?
   activeDays  Int?
   createdAt   DateTime @default(now())
+
+  @@unique([clerkUserId, name])
 }
 
