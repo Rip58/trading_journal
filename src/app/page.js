@@ -526,7 +526,20 @@ function BarChart({ labels, values, height = 120 }) {
 
 // ── Trade Form ───────────────────────────────────────────────────────────────
 function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
-  const [form, setForm] = useState({ ...EMPTY_TRADE, ...trade });
+  const [form, setForm] = useState(() => {
+    const initial = { ...EMPTY_TRADE, ...trade };
+    if (initial.date && initial.date.includes("/")) {
+      const parts = initial.date.split("/");
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          initial.date = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+        } else if (parts[0].length === 4) {
+          initial.date = `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+        }
+      }
+    }
+    return initial;
+  });
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanSuccess, setScanSuccess] = useState(false);
@@ -616,6 +629,19 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
     </div>
   );
 
+  const defaultInstruments = ["NQ Futures", "ES Futures", "MNQ Micro"];
+  const instrumentOpts = defaultInstruments.includes(form.instrument)
+    ? defaultInstruments
+    : form.instrument 
+      ? [form.instrument, ...defaultInstruments] 
+      : defaultInstruments;
+
+  const accountOpts = accounts.some(a => a.value === form.account)
+    ? accounts
+    : form.account 
+      ? [{ value: form.account, label: form.account }, ...accounts]
+      : accounts;
+
   return (
     <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{isNew ? "Añadir operación" : `Editar trade #${form.id}`}</div>
@@ -659,8 +685,8 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
         <F label="Fecha" field="date" type="date" />
-        <F label="Cuenta" field="account" opts={accounts} />
-        <F label="Instrumento" field="instrument" opts={["NQ Futures", "ES Futures", "MNQ Micro"]} />
+        <F label="Cuenta" field="account" opts={accountOpts} />
+        <F label="Instrumento" field="instrument" opts={instrumentOpts} />
         <F label="Dirección" field="direction" opts={["Long", "Short"]} />
         <F label="Resultado" field="result" opts={["Win", "Loss", "Break Even"]} />
         <F label="Cantidad" field="qty" type="number" />
