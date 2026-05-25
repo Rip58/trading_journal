@@ -781,6 +781,191 @@ function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canU
   );
 }
 
+// ── Lock Screen Component ──────────────────────────────────────────────────
+function LockScreen({ storedPin, onUnlock }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState(false);
+
+  const handleKeyPress = (num) => {
+    if (error) setError(false);
+    if (pin.length < 4) {
+      const newPin = pin + num;
+      setPin(newPin);
+      if (newPin.length === 4) {
+        if (newPin === storedPin) {
+          onUnlock();
+        } else {
+          setError(true);
+          setTimeout(() => {
+            setPin("");
+            setError(false);
+          }, 800);
+        }
+      }
+    }
+  };
+
+  const handleBackspace = () => {
+    if (error) return;
+    setPin(p => p.slice(0, -1));
+  };
+
+  const handleClear = () => {
+    if (error) return;
+    setPin("");
+  };
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "var(--color-background-secondary)",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 9999,
+      fontFamily: "var(--font-sans)",
+    }}>
+      <div style={{
+        maxWidth: 320,
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        padding: 24,
+      }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>🔒</div>
+        <h2 style={{ fontSize: 18, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>Acceso Protegido</h2>
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 24, textAlign: "center" }}>
+          Introduce tu código PIN para acceder al diario
+        </p>
+
+        {/* PIN dots */}
+        <div style={{
+          display: "flex",
+          gap: 16,
+          marginBottom: 32,
+          transform: error ? "translateX(0px)" : "none",
+          animation: error ? "shake 0.3s ease-in-out infinite" : "none"
+        }}>
+          {[0, 1, 2, 3].map(i => (
+            <div
+              key={i}
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                border: `1.5px solid ${error ? C.red : (pin.length > i ? C.blue : "var(--color-border-tertiary)")}`,
+                background: error ? C.red : (pin.length > i ? C.blue : "transparent"),
+                transition: "all 0.15s ease",
+              }}
+            />
+          ))}
+        </div>
+
+        {error && (
+          <style>{`
+            @keyframes shake {
+              0%, 100% { transform: translateX(0); }
+              25% { transform: translateX(-6px); }
+              75% { transform: translateX(6px); }
+            }
+          `}</style>
+        )}
+
+        {/* Numeric keypad */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: "16px 20px",
+          width: "100%",
+        }}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+            <button
+              key={num}
+              onClick={() => handleKeyPress(String(num))}
+              style={{
+                height: 64,
+                borderRadius: "50%",
+                background: "var(--color-background-primary)",
+                border: "0.5px solid var(--color-border-secondary)",
+                color: "var(--color-text-primary)",
+                fontSize: 20,
+                fontWeight: 500,
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+              }}
+            >
+              {num}
+            </button>
+          ))}
+          <button
+            onClick={handleClear}
+            style={{
+              height: 64,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "var(--color-text-secondary)",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            Limpiar
+          </button>
+          <button
+            onClick={() => handleKeyPress("0")}
+            style={{
+              height: 64,
+              borderRadius: "50%",
+              background: "var(--color-background-primary)",
+              border: "0.5px solid var(--color-border-secondary)",
+              color: "var(--color-text-primary)",
+              fontSize: 20,
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+            }}
+          >
+            0
+          </button>
+          <button
+            onClick={handleBackspace}
+            style={{
+              height: 64,
+              borderRadius: "50%",
+              background: "transparent",
+              border: "none",
+              color: "var(--color-text-secondary)",
+              fontSize: 18,
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            ⌫
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Settings Panel ───────────────────────────────────────────────────────────
 function SettingsPanel({
   accountsList,
@@ -792,12 +977,53 @@ function SettingsPanel({
   setAiProvider,
   aiKey,
   setAiKey,
+  pinEnabled,
+  setPinEnabled,
+  storedPin,
+  setStoredPin,
 }) {
   const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
+  const [newPinInput, setNewPinInput] = useState("");
+  const [changePinSuccess, setChangePinSuccess] = useState(false);
+  const [wipeLoading, setWipeLoading] = useState(false);
+
+  const handleWipeDatabase = async () => {
+    if (!confirm("⚠️ ¿ESTÁS COMPLETAMENTE SEGURO?\n\nEsta acción eliminará permanentemente todas las cuentas de trading y todas las operaciones (trades) guardadas en la base de datos. Esta operación es irreversible.")) {
+      return;
+    }
+    
+    const confirmPhrase = prompt("Para confirmar la eliminación completa de la base de datos, escribe la palabra VACIAR en mayúsculas:");
+    if (confirmPhrase !== "VACIAR") {
+      alert("Confirmación incorrecta. Operación cancelada.");
+      return;
+    }
+
+    try {
+      setWipeLoading(true);
+      const res = await fetch("/api/db-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clean_database" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("✓ Base de datos vaciada con éxito. La aplicación se reiniciará limpia.");
+        await fetchAccounts();
+        await fetchTrades();
+        await fetchDbStatus();
+      } else {
+        alert(`⚠️ Error: ${data.error}`);
+      }
+    } catch (e) {
+      alert("⚠️ Error de red al intentar vaciar la base de datos.");
+    } finally {
+      setWipeLoading(false);
+    }
+  };
 
   // Database Integrity and Structure states
   const [dbStatus, setDbStatus] = useState(null);
@@ -1242,6 +1468,106 @@ function SettingsPanel({
           </div>
         )}
       </div>
+
+      {/* 5. Seguridad de Acceso (PIN) */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🔒</span> Seguridad de Acceso (PIN)
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--color-background-secondary)", padding: "10px 12px", borderRadius: 8 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 500 }}>Bloqueo por PIN de Inicio</div>
+              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+                Solicita un PIN de seguridad cada vez que inicies la aplicación.
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const nextVal = !pinEnabled;
+                setPinEnabled(nextVal);
+                localStorage.setItem("tj_pin_enabled", String(nextVal));
+              }}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 6,
+                border: "none",
+                background: pinEnabled ? C.green : "var(--color-border-tertiary)",
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 500,
+                cursor: "pointer"
+              }}
+            >
+              {pinEnabled ? "Habilitado" : "Deshabilitado"}
+            </button>
+          </div>
+
+          {pinEnabled && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)" }}>Cambiar PIN de Seguridad</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="password"
+                  maxLength={4}
+                  placeholder="Nuevo PIN (4 dígitos)"
+                  value={newPinInput}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    setNewPinInput(val);
+                  }}
+                  style={{ flex: 1, fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                />
+                <button
+                  onClick={() => {
+                    if (newPinInput.length !== 4) {
+                      alert("El PIN debe tener exactamente 4 dígitos numéricos.");
+                      return;
+                    }
+                    setStoredPin(newPinInput);
+                    localStorage.setItem("tj_pin", newPinInput);
+                    setNewPinInput("");
+                    setChangePinSuccess(true);
+                    setTimeout(() => setChangePinSuccess(false), 3000);
+                  }}
+                  style={{ padding: "6px 14px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: 500 }}
+                >
+                  Actualizar PIN
+                </button>
+              </div>
+              {changePinSuccess && <span style={{ fontSize: 10, color: C.green }}>✓ PIN actualizado correctamente</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 6. Danger Zone */}
+      <div style={{ background: "var(--color-background-primary)", border: `0.5px solid ${C.red}`, borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: C.red, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>⚠️</span> Zona de Peligro
+        </div>
+        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 12 }}>
+          Acciones irreversibles sobre la base de datos. Por favor, procede con cautela.
+        </p>
+        <button
+          onClick={handleWipeDatabase}
+          disabled={wipeLoading}
+          style={{
+            width: "100%",
+            padding: "8px 12px",
+            background: C.redBg,
+            color: C.redText,
+            border: `0.5px solid ${C.red}`,
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: wipeLoading ? "not-allowed" : "pointer",
+            transition: "all 0.2s ease"
+          }}
+        >
+          {wipeLoading ? "Eliminando datos..." : "Vaciar Base de Datos (Cuentas y Trades)"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1265,6 +1591,10 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
   const [selectedTradeImage, setSelectedTradeImage] = useState(null);
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [storedPin, setStoredPin] = useState("0001");
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [loadingLockState, setLoadingLockState] = useState(true);
   const PER_PAGE = 20;
 
   // Load clientside options on mount
@@ -1306,6 +1636,25 @@ export default function App() {
       if (savedProvider) setAiProvider(savedProvider);
       if (savedKey) setAiKey(savedKey);
     } catch {}
+
+    // Read and initialize PIN Security options
+    try {
+      const savedPinEnabled = localStorage.getItem("tj_pin_enabled");
+      const savedPin = localStorage.getItem("tj_pin");
+      const enabled = savedPinEnabled !== null ? savedPinEnabled === "true" : true;
+      const pin = savedPin !== null ? savedPin : "0001";
+
+      setPinEnabled(enabled);
+      setStoredPin(pin);
+      if (!enabled) {
+        setIsUnlocked(true);
+      }
+    } catch (e) {
+      setPinEnabled(true);
+      setStoredPin("0001");
+    } finally {
+      setLoadingLockState(false);
+    }
 
     fetchAccounts();
     fetchTrades();
@@ -1715,6 +2064,29 @@ export default function App() {
     return null;
   };
 
+  if (loadingLockState) {
+    return (
+      <div style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "var(--color-background-secondary)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 9999,
+      }}>
+        <div style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Cargando diario...</div>
+      </div>
+    );
+  }
+
+  if (pinEnabled && !isUnlocked) {
+    return <LockScreen storedPin={storedPin} onUnlock={() => setIsUnlocked(true)} />;
+  }
+
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
@@ -1813,6 +2185,10 @@ export default function App() {
               setAiProvider={setAiProvider}
               aiKey={aiKey}
               setAiKey={setAiKey}
+              pinEnabled={pinEnabled}
+              setPinEnabled={setPinEnabled}
+              storedPin={storedPin}
+              setStoredPin={setStoredPin}
             />
           ) : (
             <>

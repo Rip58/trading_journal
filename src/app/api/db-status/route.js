@@ -122,6 +122,12 @@ export async function POST(request) {
       return NextResponse.json({ success: true, message: `Se migraron con éxito ${result.count} trades a la cuenta "${targetAccount}".` });
     }
 
+    if (action === 'clean_database') {
+      await db.trade.deleteMany({});
+      await db.account.deleteMany({});
+      return NextResponse.json({ success: true, message: 'La base de datos se ha vaciado por completo (cuentas y trades eliminados).' });
+    }
+
     return NextResponse.json({ error: 'Acción no soportada' }, { status: 400 });
   } catch (error) {
     console.error('Error repairing DB integrity:', error);
