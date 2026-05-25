@@ -765,17 +765,18 @@ function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canU
         {!editMode && (
           <span
             style={{
-              fontSize: 14,
+              fontSize: 12,
               cursor: "pointer",
               userSelect: "none",
-              opacity: collapsed ? 0.45 : 1,
-              transition: "opacity 0.2s ease",
+              filter: collapsed ? "grayscale(100%)" : "none",
+              opacity: collapsed ? 0.35 : 1,
+              transition: "all 0.2s ease",
             }}
             title={collapsed ? "Mostrar módulo" : "Ocultar módulo"}
           >
-            {collapsed ? "🙈" : "👁️"}
+            ✅
           </span>
-        )}
+        ) }
       </div>
       {!collapsed && <div style={{ padding: 14 }}>{children}</div>}
     </div>
