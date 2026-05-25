@@ -2423,28 +2423,6 @@ const trades = [
     "strategy": "ATM 1 250-500",
     "timeframe": "15s",
     "notes": ""
-  },
-  {
-    "date": "2026-05-23",
-    "entry_time": "2026-05-23T15:46:19",
-    "exit_time": "2026-05-23T15:46:28",
-    "account": "BX101840-05 (50K)",
-    "instrument": "NQ Futures",
-    "direction": "Long",
-    "qty": 1,
-    "entry": 29500,
-    "exit_price": 29600,
-    "gross": 1200,
-    "commission": -4,
-    "pnl": 1196,
-    "mae": 100,
-    "mfe": 0,
-    "etd": 0,
-    "rr": 12,
-    "result": "Win",
-    "strategy": "ATM 1 250-500",
-    "timeframe": "15s",
-    "notes": ""
   }
 ];
 

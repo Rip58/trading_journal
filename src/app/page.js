@@ -90,12 +90,35 @@ function Sparkline({ data, color, height = 40 }) {
   );
 }
 
+// ── Mini Donut ──────────────────────────────────────────────────────────────
+function MiniDonut({ wins, losses, size = 30 }) {
+  const total = wins + losses || 1;
+  const winPct = wins / total;
+  const stroke = 4;
+  const r = (size - stroke) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circ = 2 * Math.PI * r;
+  const winDash = circ * winPct;
+  return (
+    <svg width={size} height={size} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.redBg} strokeWidth={stroke} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.green} strokeWidth={stroke} strokeDasharray={`${winDash} ${circ}`} strokeDashoffset={circ * 0.25} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ── KPI Card ────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color, spark }) {
+function KpiCard({ label, value, sub, color, spark, rightElement }) {
   return (
     <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px" }}>
-      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 500, color: color || "var(--color-text-primary)" }}>{value}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+          <div style={{ fontSize: 20, fontWeight: 500, color: color || "var(--color-text-primary)" }}>{value}</div>
+        </div>
+        {rightElement && <div style={{ marginLeft: 8, flexShrink: 0 }}>{rightElement}</div>}
+      </div>
       {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{sub}</div>}
       {spark && <div style={{ marginTop: 6 }}><Sparkline data={spark} color={color || C.blue} /></div>}
     </div>
@@ -1498,7 +1521,7 @@ export default function App() {
       <Module {...props}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10 }}>
           <KpiCard label="Net P&L" value={fmt(Math.round(stats.totalPnl || 0))} color={stats.totalPnl >= 0 ? C.green : C.red} spark={equitySpark} />
-          <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W / ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} />
+          <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W / ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
           <KpiCard label="Profit factor" value={fmtN(stats.pf || 0, 2)} color={(stats.pf || 0) >= 1 ? C.green : C.red} />
           <KpiCard label="Avg RR" value={`${fmtN(stats.avgRR || 0, 2)}R`} color={(stats.avgRR || 0) > 0 ? C.green : C.red} />
           <KpiCard label="Mejor trade" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
