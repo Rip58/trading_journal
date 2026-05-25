@@ -1327,6 +1327,9 @@ export default function App() {
   const [addingTrade, setAddingTrade] = useState(false);
   const [page, setPage] = useState(1);
   const [importMsg, setImportMsg] = useState("");
+  const [pendingImport, setPendingImport] = useState(null);
+  const [wizardStatus, setWizardStatus] = useState("");
+  const [wizardError, setWizardError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [theme, setTheme] = useState("light");
@@ -1484,6 +1487,77 @@ export default function App() {
     }
   };
 
+  const handleFieldChange = (index, field, value) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const updated = [...prev.missingAccounts];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, missingAccounts: updated };
+    });
+  };
+
+  const handleWizardSubmit = async () => {
+    if (!pendingImport) return;
+    try {
+      setWizardStatus("creando_cuentas");
+      setWizardError("");
+
+      // 1. Create missing accounts
+      for (const acct of pendingImport.missingAccounts) {
+        const res = await fetch("/api/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(acct),
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(`Error creando la cuenta "${acct.name}": ${errData.error || "Error de red"}`);
+        }
+      }
+
+      // 2. Fetch updated accounts
+      setWizardStatus("cargando_cuentas");
+      await fetchAccounts();
+
+      // 3. Import trades
+      setWizardStatus("importando_trades");
+      let importedCount = 0;
+      const savedTrades = [];
+      const totalTrades = pendingImport.trades.length;
+
+      for (let i = 0; i < totalTrades; i++) {
+        const t = pendingImport.trades[i];
+        setWizardStatus(`importando_trades_progress:${i + 1}:${totalTrades}`);
+        const res = await fetch('/api/trades', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(t),
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          savedTrades.push(saved);
+          importedCount++;
+        }
+      }
+
+      if (importedCount > 0) {
+        setTrades(prev => [...prev, ...savedTrades]);
+        setImportMsg(`✓ ${importedCount} trades importados`);
+      } else {
+        setImportMsg("No se pudieron importar trades");
+      }
+      setTimeout(() => setImportMsg(""), 3000);
+
+      // Reset wizard
+      setPendingImport(null);
+      setWizardStatus("");
+    } catch (err) {
+      console.error(err);
+      setWizardError(err.message || "Error durante el proceso de importación");
+      setWizardStatus("error");
+    }
+  };
+
   const handleCSVImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1520,6 +1594,26 @@ export default function App() {
           };
         }).filter(t => !isNaN(t.pnl));
 
+        // Check if there are missing accounts
+        const csvAccounts = [...new Set(newTradesData.map(t => t.account))].filter(Boolean);
+        const existingNames = accountsList.map(a => a.name);
+        const missingNames = csvAccounts.filter(name => !existingNames.includes(name));
+
+        if (missingNames.length > 0) {
+          setPendingImport({
+            trades: newTradesData,
+            missingAccounts: missingNames.map(name => ({
+              name,
+              size: 50000,
+              target: 3000,
+              dd_limit: 2500,
+              daily_limit: 1100,
+            })),
+          });
+          return;
+        }
+
+        // If no missing accounts, import directly
         setImportMsg("Importando...");
         let importedCount = 0;
         const savedTrades = [];
@@ -1963,6 +2057,174 @@ export default function App() {
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.6)",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+          padding: 20,
+        }}>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes wizard-spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+            .wizard-spinner {
+              display: inline-block;
+              animation: wizard-spin 1s linear infinite;
+            }
+          `}} />
+          <div style={{
+            width: "100%",
+            maxWidth: 600,
+            maxHeight: "90vh",
+            overflowY: "auto",
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 16,
+            padding: 24,
+            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+                ⚙️ Configurar Cuentas Faltantes
+              </h3>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0 }}>
+                El archivo CSV contiene trades asociados a cuentas que no existen en tu base de datos.
+                Por favor, define los parámetros para crearlas automáticamente antes de importar.
+              </p>
+            </div>
+
+            {wizardError && (
+              <div style={{ padding: "10px 14px", background: C.redBg, color: C.redText, borderRadius: 8, fontSize: 12, fontWeight: 500 }}>
+                ⚠️ {wizardError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", paddingRight: 4 }}>
+              {pendingImport.missingAccounts.map((acct, index) => (
+                <div key={acct.name} style={{
+                  padding: 14,
+                  background: "var(--color-background-secondary)",
+                  border: "0.5px solid var(--color-border-secondary)",
+                  borderRadius: 10,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                      🏦 Cuenta: <code style={{ background: "rgba(128,128,128,0.1)", padding: "2px 6px", borderRadius: 4, fontStyle: "normal" }}>{acct.name}</code>
+                    </span>
+                  </div>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
+                      <input 
+                        type="number" 
+                        value={acct.size} 
+                        onChange={(e) => handleFieldChange(index, "size", parseFloat(e.target.value) || 0)}
+                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>OBJETIVO (TARGET)</label>
+                      <input 
+                        type="number" 
+                        value={acct.target} 
+                        onChange={(e) => handleFieldChange(index, "target", parseFloat(e.target.value) || 0)}
+                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DRAWDOWN (DD LIMIT)</label>
+                      <input 
+                        type="number" 
+                        value={acct.dd_limit} 
+                        onChange={(e) => handleFieldChange(index, "dd_limit", parseFloat(e.target.value) || 0)}
+                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DIARIO (DAILY LIMIT)</label>
+                      <input 
+                        type="number" 
+                        value={acct.daily_limit} 
+                        onChange={(e) => handleFieldChange(index, "daily_limit", parseFloat(e.target.value) || 0)}
+                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8, alignItems: "center", borderTop: "0.5px solid var(--color-border-secondary)", paddingTop: 16 }}>
+              {wizardStatus && (
+                <div style={{ flex: 1, fontSize: 12, color: C.blue, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="wizard-spinner">🔄</span>
+                  {wizardStatus === "creando_cuentas" && "Creando cuentas..."}
+                  {wizardStatus === "cargando_cuentas" && "Actualizando panel..."}
+                  {wizardStatus.startsWith("importando_trades_progress") && (
+                    `Importando: ${wizardStatus.split(":")[2] ? `${wizardStatus.split(":")[1]} de ${wizardStatus.split(":")[2]}` : "trades..."}`
+                  )}
+                  {wizardStatus === "importando_trades" && "Importando trades..."}
+                </div>
+              )}
+              
+              <button 
+                onClick={() => { setPendingImport(null); setWizardStatus(""); setWizardError(""); }}
+                disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                style={{
+                  fontSize: 12,
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "0.5px solid var(--color-border-secondary)",
+                  background: "transparent",
+                  color: "var(--color-text-secondary)",
+                  cursor: (wizardStatus !== "" && wizardStatus !== "error") ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleWizardSubmit}
+                disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                style={{
+                  fontSize: 12,
+                  padding: "8px 18px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: C.green,
+                  color: "#fff",
+                  cursor: (wizardStatus !== "" && wizardStatus !== "error") ? "not-allowed" : "pointer",
+                  fontWeight: 500,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                Confirmar y Continuar
+              </button>
+            </div>
           </div>
         </div>
       )}
