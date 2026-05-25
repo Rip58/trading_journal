@@ -1565,32 +1565,98 @@ export default function App() {
     reader.onload = async (ev) => {
       try {
         const lines = ev.target.result.split("\n").filter(Boolean);
-        const headers = lines[0].split(",").map(h => h.trim().replace(/"/g, ""));
+        if (lines.length === 0) return;
+
+        const firstLine = lines[0];
+        // Automatically detect delimiter: semicolon or comma
+        const delimiter = firstLine.includes(";") ? ";" : ",";
+
+        // Split CSV line helper ignoring delimiters inside quotes
+        const splitCSVLine = (lineText, delim) => {
+          const result = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < lineText.length; i++) {
+            const char = lineText[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === delim && !inQuotes) {
+              result.push(current.trim().replace(/"/g, ""));
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim().replace(/"/g, ""));
+          return result;
+        };
+
+        // Parse float numbers supporting both dot and comma as decimal separator
+        const parseLocaleFloat = (val) => {
+          if (val === undefined || val === null || val === "") return 0;
+          let cleaned = String(val).trim();
+          
+          const hasComma = cleaned.includes(",");
+          const hasDot = cleaned.includes(".");
+          
+          if (hasComma && hasDot) {
+            const commaIndex = cleaned.indexOf(",");
+            const dotIndex = cleaned.indexOf(".");
+            if (commaIndex < dotIndex) {
+              // US Format: 1,234.56 -> Remove commas
+              cleaned = cleaned.replace(/,/g, "");
+            } else {
+              // European Format: 1.234,56 -> Remove dots, replace comma with dot
+              cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+            }
+          } else if (hasComma) {
+            // Just a comma: 1234,56 -> Replace with dot
+            cleaned = cleaned.replace(",", ".");
+          }
+          
+          const parsed = parseFloat(cleaned);
+          return isNaN(parsed) ? 0 : parsed;
+        };
+
+        const headers = splitCSVLine(firstLine, delimiter).map(h => h.toLowerCase().trim());
+        
         const newTradesData = lines.slice(1).map((line) => {
-          const vals = line.split(",").map(v => v.trim().replace(/"/g, ""));
+          const vals = splitCSVLine(line, delimiter);
           const obj = {};
           headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
+
+          // Helper to fetch value using list of potential keys
+          const getVal = (aliases, defaultVal = "") => {
+            for (const alias of aliases) {
+              const lowerAlias = alias.toLowerCase();
+              if (obj[lowerAlias] !== undefined) return obj[lowerAlias];
+            }
+            return defaultVal;
+          };
+
+          const accountName = getVal(["account", "cuenta"], "BX101840-05 (50K)");
+
           return {
-            date: obj.date || obj.Date || new Date().toISOString().slice(0, 10),
-            account: obj.account || obj.Account || "BX101840-05 (50K)",
-            instrument: obj.instrument || obj.Instrument || "NQ Futures",
-            direction: obj.direction || obj.Direction || "Long",
-            qty: parseInt(obj.qty || obj.Qty || 1),
-            entry: parseFloat(obj.entry || obj.Entry || 0),
-            exit_price: parseFloat(obj.exit_price || obj.Exit || 0),
-            gross: parseFloat(obj.gross || obj.Gross || 0),
-            commission: parseFloat(obj.commission || obj.Commission || -4),
-            pnl: parseFloat(obj.pnl || obj.PnL || obj["Net Profit"] || 0),
-            mae: parseFloat(obj.mae || obj.MAE || 0),
-            mfe: parseFloat(obj.mfe || obj.MFE || 0),
-            etd: parseFloat(obj.etd || obj.ETD || 0),
-            rr: parseFloat(obj.rr || obj.RR || obj["R Multiple"] || 0),
-            result: obj.result || obj.Result || obj["Win/Loss"] || "Win",
-            strategy: obj.strategy || obj.Strategy || "",
-            timeframe: obj.timeframe || "15s",
-            notes: obj.notes || "",
-            entry_time: obj.entry_time || "",
-            exit_time: obj.exit_time || "",
+            date: getVal(["date", "fecha"], new Date().toISOString().slice(0, 10)),
+            account: accountName,
+            instrument: getVal(["instrument", "instrumento", "instr"], "NQ Futures"),
+            direction: getVal(["direction", "dirección", "direccion", "dir"], "Long"),
+            qty: Math.round(parseLocaleFloat(getVal(["qty", "cantidad", "contratos"], "1"))) || 1,
+            entry: parseLocaleFloat(getVal(["entry", "entrada"], "0")),
+            exit_price: parseLocaleFloat(getVal(["exit_price", "salida"], "0")),
+            gross: parseLocaleFloat(getVal(["gross", "bruto"], "0")),
+            commission: parseLocaleFloat(getVal(["commission", "comisión", "comision", "comisiones"], "-4")),
+            pnl: parseLocaleFloat(getVal(["pnl", "net profit", "neto", "p&l", "resultado"], "0")),
+            mae: parseLocaleFloat(getVal(["mae"], "0")),
+            mfe: parseLocaleFloat(getVal(["mfe"], "0")),
+            etd: parseLocaleFloat(getVal(["etd"], "0")),
+            rr: parseLocaleFloat(getVal(["rr", "r multiple", "ratio", "r"], "0")),
+            result: getVal(["result", "win/loss", "res", "resultado_op"], "Win"),
+            strategy: getVal(["strategy", "estrategia"], ""),
+            timeframe: getVal(["timeframe", "temporalidad"], "15s"),
+            notes: getVal(["notes", "notas", "comentarios"], ""),
+            entry_time: getVal(["entry_time", "hora_entrada", "hora entrada", "hora_ent"], ""),
+            exit_time: getVal(["exit_time", "hora_salida", "hora salida", "hora_sal"], ""),
           };
         }).filter(t => !isNaN(t.pnl));
 
