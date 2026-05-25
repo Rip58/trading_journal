@@ -1620,6 +1620,34 @@ export default function App() {
 
         const headers = splitCSVLine(firstLine, delimiter).map(h => h.toLowerCase().trim());
         
+        const extractDateOnly = (val) => {
+          if (!val) return new Date().toISOString().slice(0, 10);
+          const cleaned = String(val).trim();
+          if (cleaned.includes(" ")) {
+            return cleaned.split(" ")[0];
+          }
+          if (cleaned.includes("T")) {
+            return cleaned.split("T")[0];
+          }
+          return cleaned;
+        };
+
+        const extractTimeOnly = (val) => {
+          if (!val) return "";
+          const cleaned = String(val).trim();
+          if (cleaned.includes(" ")) {
+            return cleaned.split(" ")[1];
+          }
+          if (cleaned.includes("T")) {
+            const timePart = cleaned.split("T")[1];
+            if (timePart.includes(".")) {
+              return timePart.split(".")[0];
+            }
+            return timePart;
+          }
+          return cleaned;
+        };
+
         const newTradesData = lines.slice(1).map((line) => {
           const vals = splitCSVLine(line, delimiter);
           const obj = {};
@@ -1628,35 +1656,42 @@ export default function App() {
           // Helper to fetch value using list of potential keys
           const getVal = (aliases, defaultVal = "") => {
             for (const alias of aliases) {
-              const lowerAlias = alias.toLowerCase();
+              const lowerAlias = alias.toLowerCase().trim();
               if (obj[lowerAlias] !== undefined) return obj[lowerAlias];
             }
             return defaultVal;
           };
 
+          const rawEntryTime = getVal(["entry_time", "hora_entrada", "hora entrada", "entry time", "fecha", "date"], "");
+          const rawExitTime = getVal(["exit_time", "hora_salida", "hora salida", "exit time"], "");
+
+          const dateVal = extractDateOnly(rawEntryTime);
+          const entryTimeVal = extractTimeOnly(rawEntryTime);
+          const exitTimeVal = extractTimeOnly(rawExitTime);
+
           const accountName = getVal(["account", "cuenta"], "BX101840-05 (50K)");
 
           return {
-            date: getVal(["date", "fecha"], new Date().toISOString().slice(0, 10)),
+            date: dateVal,
             account: accountName,
             instrument: getVal(["instrument", "instrumento", "instr"], "NQ Futures"),
-            direction: getVal(["direction", "dirección", "direccion", "dir"], "Long"),
+            direction: getVal(["direction", "dirección", "direccion", "dir", "market pos.", "market pos"], "Long"),
             qty: Math.round(parseLocaleFloat(getVal(["qty", "cantidad", "contratos"], "1"))) || 1,
-            entry: parseLocaleFloat(getVal(["entry", "entrada"], "0")),
-            exit_price: parseLocaleFloat(getVal(["exit_price", "salida"], "0")),
-            gross: parseLocaleFloat(getVal(["gross", "bruto"], "0")),
+            entry: parseLocaleFloat(getVal(["entry", "entrada", "entry price", "entry_price"], "0")),
+            exit_price: parseLocaleFloat(getVal(["exit_price", "salida", "exit price", "exit_price"], "0")),
+            gross: parseLocaleFloat(getVal(["gross", "bruto", "profit", "ganancia"], "0")),
             commission: parseLocaleFloat(getVal(["commission", "comisión", "comision", "comisiones"], "-4")),
-            pnl: parseLocaleFloat(getVal(["pnl", "net profit", "neto", "p&l", "resultado"], "0")),
-            mae: parseLocaleFloat(getVal(["mae"], "0")),
-            mfe: parseLocaleFloat(getVal(["mfe"], "0")),
-            etd: parseLocaleFloat(getVal(["etd"], "0")),
-            rr: parseLocaleFloat(getVal(["rr", "r multiple", "ratio", "r"], "0")),
-            result: getVal(["result", "win/loss", "res", "resultado_op"], "Win"),
+            pnl: parseLocaleFloat(getVal(["pnl", "net profit", "neto", "p&l", "resultado", "net_profit"], "0")),
+            mae: parseLocaleFloat(getVal(["mae", "MAE"], "0")),
+            mfe: parseLocaleFloat(getVal(["mfe", "MFE"], "0")),
+            etd: parseLocaleFloat(getVal(["etd", "ETD"], "0")),
+            rr: parseLocaleFloat(getVal(["rr", "r multiple", "ratio", "r", "r_multiple"], "0")),
+            result: getVal(["result", "win/loss", "res", "resultado_op", "win_loss"], "Win"),
             strategy: getVal(["strategy", "estrategia"], ""),
             timeframe: getVal(["timeframe", "temporalidad"], "15s"),
             notes: getVal(["notes", "notas", "comentarios"], ""),
-            entry_time: getVal(["entry_time", "hora_entrada", "hora entrada", "hora_ent"], ""),
-            exit_time: getVal(["exit_time", "hora_salida", "hora salida", "hora_sal"], ""),
+            entry_time: entryTimeVal,
+            exit_time: exitTimeVal,
           };
         }).filter(t => !isNaN(t.pnl));
 
