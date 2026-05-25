@@ -141,6 +141,7 @@ function AccountCard({ account, rules, trades }) {
   const isBurned = activeRules.status === "BURNED";
 
   const { netPnl, maxDD, peak } = calcAccountDD(trades);
+  const uniqueDays = [...new Set(trades.map(t => t.date))].length;
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
   const targetPct = Math.max(0, Math.min((netPnl / activeRules.target) * 100, 100));
@@ -184,7 +185,7 @@ function AccountCard({ account, rules, trades }) {
         </span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-        {[["Pico", `+$${Math.round(peak).toLocaleString()}`, C.green], ["Max DD", `-$${Math.round(ddUsed).toLocaleString()}`, C.red], ["Trades", trades.length, "var(--color-text-primary)"], ["DD libre", `$${Math.round(ddRemaining).toLocaleString()}`, ddRemaining < 300 ? C.red : C.green]].map(([l, v, c]) => (
+        {[["Pico", `+$${Math.round(peak).toLocaleString()}`, C.green], ["Max DD", `-$${Math.round(ddUsed).toLocaleString()}`, C.red], ["Trades", `${trades.length} (${uniqueDays} d)`, "var(--color-text-primary)"], ["DD libre", `$${Math.round(ddRemaining).toLocaleString()}`, ddRemaining < 300 ? C.red : C.green]].map(([l, v, c]) => (
           <div key={l}>
             <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{l}</div>
             <div style={{ fontSize: 13, fontWeight: 500, color: c }}>{v}</div>
