@@ -37,6 +37,10 @@ export async function POST(request) {
         dd_limit: parseFloat(body.dd_limit) || 0,
         daily_limit: parseFloat(body.daily_limit) || 0,
         status: body.status || 'ACTIVE',
+        balance: body.balance !== undefined && body.balance !== null && body.balance !== '' ? parseFloat(body.balance) : null,
+        threshold: body.threshold !== undefined && body.threshold !== null && body.threshold !== '' ? parseFloat(body.threshold) : null,
+        updateDate: body.updateDate !== undefined && body.updateDate !== null && body.updateDate !== '' ? body.updateDate : null,
+        activeDays: body.activeDays !== undefined && body.activeDays !== null && body.activeDays !== '' ? parseInt(body.activeDays) : null,
       },
     });
     

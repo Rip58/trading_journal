@@ -203,6 +203,46 @@ function AccountCard({ account, rules, trades }) {
         </div>
         <Bar pct={ddPct} color={ddColor} />
       </div>
+      {/* Rithmic section */}
+      {(activeRules.balance !== undefined && activeRules.balance !== null) && (
+        <div style={{ 
+          marginBottom: 8, 
+          padding: "8px 10px", 
+          borderRadius: 8, 
+          background: "rgba(128,128,128,0.05)", 
+          border: "0.5px solid var(--color-border-tertiary)" 
+        }}>
+          <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6, fontWeight: 600 }}>
+            Datos Reales (Rithmic)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 8px" }}>
+            <div>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Saldo Rithmic</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                ${activeRules.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Umbral Liq.</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: C.red }}>
+                ${activeRules.threshold ? activeRules.threshold.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Días Operados</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                {activeRules.activeDays ?? "N/A"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Actualizado</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)" }}>
+                {activeRules.updateDate || "N/A"}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ fontSize: 10, padding: "4px 8px", borderRadius: 4, background: alertColor.bg, color: alertColor.text }}>{alertMsg}</div>
     </div>
   );
@@ -752,7 +792,7 @@ function SettingsPanel({
   aiKey,
   setAiKey,
 }) {
-  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 });
+  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
@@ -852,7 +892,7 @@ function SettingsPanel({
         body: JSON.stringify(newAcct),
       });
       if (res.ok) {
-        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100 });
+        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
         setAcctError("");
         fetchAccounts();
       } else {
@@ -1013,6 +1053,10 @@ function SettingsPanel({
                     <option value="CLOSED">Cerrada</option>
                     <option value="BURNED">Quemada 🔥</option>
                   </select>
+                  <input type="number" value={editAcct.balance !== undefined && editAcct.balance !== null ? editAcct.balance : ""} onChange={e => setEditAcct({...editAcct, balance: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Saldo Broker" />
+                  <input type="number" value={editAcct.threshold !== undefined && editAcct.threshold !== null ? editAcct.threshold : ""} onChange={e => setEditAcct({...editAcct, threshold: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Umbral Liq." />
+                  <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha Act. (MM/DD/AA)" />
+                  <input type="number" value={editAcct.activeDays !== undefined && editAcct.activeDays !== null ? editAcct.activeDays : ""} onChange={e => setEditAcct({...editAcct, activeDays: e.target.value === "" ? null : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Días Operados" />
                   <div style={{ display: "flex", gap: 4, gridColumn: "span 2" }}>
                     <button onClick={() => handleUpdateAccount(a.id)} style={{ flex: 1, padding: "4px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Guardar</button>
                     <button onClick={() => { setEditingAcctId(null); setEditAcct(null); }} style={{ flex: 1, padding: "4px 8px", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancelar</button>
@@ -1060,8 +1104,24 @@ function SettingsPanel({
               <input type="number" placeholder="Ej: 2500" value={newAcct.dd_limit} onChange={e => setNewAcct({...newAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2, gridColumn: "span 2" }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Pérdida Diaria ($)</label>
-              <input type="number" placeholder="Ej: 1100" value={newAcct.daily_limit} onChange={e => setNewAcct({...newAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Pérdida Diaria ($)</label>
+               <input type="number" placeholder="Ej: 1100" value={newAcct.daily_limit} onChange={e => setNewAcct({...newAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Saldo Rithmic ($ · Opcional)</label>
+              <input type="number" placeholder="Ej: 25105.66" value={newAcct.balance} onChange={e => setNewAcct({...newAcct, balance: e.target.value === "" ? "" : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Umbral Liq. ($ · Opcional)</label>
+              <input type="number" placeholder="Ej: 23797.83" value={newAcct.threshold} onChange={e => setNewAcct({...newAcct, threshold: e.target.value === "" ? "" : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Fecha Act. (MM/DD/AA · Opcional)</label>
+              <input type="text" placeholder="Ej: 05/22/26" value={newAcct.updateDate} onChange={e => setNewAcct({...newAcct, updateDate: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Días Operados (Opcional)</label>
+              <input type="number" placeholder="Ej: 2" value={newAcct.activeDays} onChange={e => setNewAcct({...newAcct, activeDays: e.target.value === "" ? "" : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
             </div>
           </div>
           <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>

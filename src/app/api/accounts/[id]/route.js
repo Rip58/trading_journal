@@ -28,6 +28,10 @@ export async function PUT(request, { params }) {
         dd_limit: parseFloat(body.dd_limit) || 0,
         daily_limit: parseFloat(body.daily_limit) || 0,
         status: body.status || undefined,
+        balance: body.balance !== undefined ? (body.balance === null || body.balance === '' ? null : parseFloat(body.balance)) : undefined,
+        threshold: body.threshold !== undefined ? (body.threshold === null || body.threshold === '' ? null : parseFloat(body.threshold)) : undefined,
+        updateDate: body.updateDate !== undefined ? (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) : undefined,
+        activeDays: body.activeDays !== undefined ? (body.activeDays === null || body.activeDays === '' ? null : parseInt(body.activeDays)) : undefined,
       },
     });
 

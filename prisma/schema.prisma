@@ -42,6 +42,10 @@ model Account {
   dd_limit    Float
   daily_limit Float
   status      String   @default("ACTIVE")
+  balance     Float?
+  threshold   Float?
+  updateDate  String?
+  activeDays  Int?
   createdAt   DateTime @default(now())
 }
 
