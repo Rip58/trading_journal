@@ -196,6 +196,8 @@ function Bar({ pct, color }) {
 
 // ── Account DD Card ─────────────────────────────────────────────────────────
 function AccountCard({ account, rules, trades }) {
+  const [expanded, setExpanded] = useState(false);
+  
   const activeRules = rules || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE" };
   const isClosed = activeRules.status === "CLOSED";
   const isBurned = activeRules.status === "BURNED";
@@ -228,83 +230,215 @@ function AccountCard({ account, rules, trades }) {
       background: isClosed || isBurned ? "var(--color-background-secondary)" : "var(--color-background-primary)", 
       border: `0.5px solid ${borderColor}`, 
       borderRadius: 12, 
-      padding: 14,
-      opacity: isClosed || isBurned ? 0.75 : 1,
+      overflow: "hidden",
+      opacity: isClosed || isBurned ? 0.85 : 1,
+      transition: "all 0.2s ease-in-out",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
-            {account.split(" ")[0]}
-            {isClosed && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
-            {isBurned && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
+      {/* CABECERA (Resumen de la cuenta) */}
+      <div 
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 16px",
+          cursor: "pointer",
+          userSelect: "none",
+          background: expanded ? "var(--color-background-secondary)" : "transparent",
+          transition: "background-color 0.2s ease",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+        onMouseEnter={(e) => {
+          if (!expanded) e.currentTarget.style.background = "var(--color-background-secondary)";
+        }}
+        onMouseLeave={(e) => {
+          if (!expanded) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        {/* Lado Izquierdo: Chevron, Nombre, Tamaño, Badge de Estado */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 200px", minWidth: 0 }}>
+          <span style={{ 
+            fontSize: 9, 
+            color: "var(--color-text-secondary)",
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            display: "inline-block",
+          }}>
+            ▶
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, color: "var(--color-text-primary)" }}>
+              {account.split(" ")[0]}
+              <span style={{
+                fontSize: 9,
+                fontWeight: 500,
+                padding: "2px 6px",
+                borderRadius: 4,
+                background: "var(--color-background-secondary)",
+                border: "0.5px solid var(--color-border-secondary)",
+                color: "var(--color-text-secondary)",
+              }}>
+                ${(activeRules.size / 1000).toFixed(0)}K
+              </span>
+              {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
+              {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
+              {!isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 500 }}>Activa</span>}
+            </div>
           </div>
-          <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>${(activeRules.size / 1000).toFixed(0)}K · obj ${ activeRules.target.toLocaleString()}</div>
         </div>
-        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: netPnl >= 0 ? C.greenBg : C.redBg, color: netPnl >= 0 ? C.greenText : C.redText, fontWeight: 500 }}>
-          {fmt(netPnl)}
-        </span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-        {[["Pico", `+$${Math.round(peak).toLocaleString()}`, C.green], ["Max DD", `-$${Math.round(ddUsed).toLocaleString()}`, C.red], ["Trades", `${trades.length} (${uniqueDays} d)`, "var(--color-text-primary)"], ["DD libre", `$${Math.round(ddRemaining).toLocaleString()}`, ddRemaining < 300 ? C.red : C.green]].map(([l, v, c]) => (
-          <div key={l}>
-            <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{l}</div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: c }}>{v}</div>
+
+        {/* Lado Central/Derecho: Columnas de información (Obj, DD, Días, PnL) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap", flex: "2 1 auto", justifyContent: "flex-end" }}>
+          
+          {/* Valor / Objetivo */}
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Valor / Objetivo</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+              <span style={{ color: netPnl >= 0 ? C.green : C.red }}>{fmt(netPnl)}</span>
+              <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.target.toLocaleString()}</span>
+            </div>
+            {/* Barra de progreso pequeña */}
+            <div style={{ width: "100%", height: 3, background: "var(--color-border-secondary)", borderRadius: 1.5, marginTop: 4, overflow: "hidden" }}>
+              <div style={{ width: `${targetPct}%`, height: "100%", background: C.green, borderRadius: 1.5 }} />
+            </div>
           </div>
-        ))}
-      </div>
-      <div style={{ marginBottom: 6 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-          <span>Objetivo</span><span>{fmt(netPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
+
+          {/* Drawdown */}
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Drawdown (DD)</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+              <span style={{ color: ddColor }}>-${Math.round(ddUsed).toLocaleString()}</span>
+              <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.dd_limit.toLocaleString()}</span>
+            </div>
+            {/* Barra de progreso pequeña */}
+            <div style={{ width: "100%", height: 3, background: "var(--color-border-secondary)", borderRadius: 1.5, marginTop: 4, overflow: "hidden" }}>
+              <div style={{ width: `${ddPct}%`, height: "100%", background: ddColor, borderRadius: 1.5 }} />
+            </div>
+          </div>
+
+          {/* Días de Trade */}
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 60 }}>
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Días Trade</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+              {activeRules.activeDays ?? uniqueDays} <span style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 400 }}>días</span>
+            </div>
+          </div>
+
+          {/* Badge de P&L */}
+          <div style={{ minWidth: 80, textAlign: "right" }}>
+            <span style={{ 
+              fontSize: 11, 
+              padding: "4px 10px", 
+              borderRadius: 8, 
+              background: netPnl >= 0 ? C.greenBg : C.redBg, 
+              color: netPnl >= 0 ? C.greenText : C.redText, 
+              fontWeight: 600,
+              display: "inline-block",
+            }}>
+              {fmt(netPnl)}
+            </span>
+          </div>
+
         </div>
-        <Bar pct={targetPct} color={C.green} />
       </div>
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-          <span>Drawdown usado</span><span>${Math.round(ddUsed).toLocaleString()} / ${activeRules.dd_limit.toLocaleString()} · {fmtN(ddPct, 1)}%</span>
-        </div>
-        <Bar pct={ddPct} color={ddColor} />
-      </div>
-      {/* Rithmic section */}
-      {(activeRules.balance !== undefined && activeRules.balance !== null) && (
+
+      {/* CONTENIDO DESPLEGADO */}
+      {expanded && (
         <div style={{ 
-          marginBottom: 8, 
-          padding: "8px 10px", 
-          borderRadius: 8, 
-          background: "rgba(128,128,128,0.05)", 
-          border: "0.5px solid var(--color-border-tertiary)" 
+          padding: "16px 20px", 
+          borderTop: "0.5px solid var(--color-border-secondary)", 
+          background: "var(--color-background-primary)",
         }}>
-          <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6, fontWeight: 600 }}>
-            Datos Reales (Rithmic)
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
+            {[
+              ["Saldo Estimado", `$${(activeRules.size + netPnl).toLocaleString()}`, "var(--color-text-primary)"],
+              ["Pico de Cuenta", `+$${Math.round(peak).toLocaleString()}`, C.green],
+              ["Max Drawdown", `-$${Math.round(ddUsed).toLocaleString()}`, C.red],
+              ["Días de Operativa", `${trades.length} trades (${uniqueDays} d)`, "var(--color-text-primary)"],
+              ["Drawdown Restante", `$${Math.round(ddRemaining).toLocaleString()}`, ddRemaining < 300 ? C.red : C.green],
+              ["Límite Diario", activeRules.daily_limit ? `$${activeRules.daily_limit.toLocaleString()}` : "N/A", "var(--color-text-primary)"]
+            ].map(([l, v, c]) => (
+              <div key={l} style={{ background: "var(--color-background-secondary)", padding: "8px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)" }}>
+                <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{l}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: c, marginTop: 2 }}>{v}</div>
+              </div>
+            ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 8px" }}>
-            <div>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Saldo Rithmic</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                ${activeRules.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+              <span>Objetivo de Ganancia</span>
+              <span>{fmt(netPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
+            </div>
+            <Bar pct={targetPct} color={C.green} />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
+              <span>Límite de Drawdown</span>
+              <span>${Math.round(ddUsed).toLocaleString()} / ${activeRules.dd_limit.toLocaleString()} · {fmtN(ddPct, 1)}%</span>
+            </div>
+            <Bar pct={ddPct} color={ddColor} />
+          </div>
+
+          {/* Sección de Datos de Rithmic */}
+          {(activeRules.balance !== undefined && activeRules.balance !== null) && (
+            <div style={{ 
+              marginBottom: 16, 
+              padding: "10px 14px", 
+              borderRadius: 8, 
+              background: "rgba(128,128,128,0.03)", 
+              border: "0.5px solid var(--color-border-secondary)" 
+            }}>
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8, fontWeight: 600 }}>
+                Datos Reales (Rithmic Sync)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Saldo Rithmic</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)", marginTop: 2 }}>
+                    ${activeRules.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Umbral Liquidación</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: C.red, marginTop: 2 }}>
+                    ${activeRules.threshold ? activeRules.threshold.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Días Operados Broker</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)", marginTop: 2 }}>
+                    {activeRules.activeDays ?? "N/A"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Última Actualización</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                    {activeRules.updateDate || "N/A"}
+                  </div>
+                </div>
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Umbral Liq.</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: C.red }}>
-                ${activeRules.threshold ? activeRules.threshold.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Días Operados</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                {activeRules.activeDays ?? "N/A"}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Actualizado</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)" }}>
-                {activeRules.updateDate || "N/A"}
-              </div>
-            </div>
+          )}
+
+          <div style={{ 
+            fontSize: 10, 
+            padding: "8px 12px", 
+            borderRadius: 6, 
+            background: alertColor.bg, 
+            color: alertColor.text, 
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: 6
+          }}>
+            {alertMsg}
           </div>
         </div>
       )}
-      <div style={{ fontSize: 10, padding: "4px 8px", borderRadius: 4, background: alertColor.bg, color: alertColor.text }}>{alertMsg}</div>
     </div>
   );
 }
@@ -1414,6 +1548,7 @@ export default function App() {
   const [visibility, setVisibility] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [acctFilter, setAcctFilter] = useState("all");
+  const [accountsPanelFilter, setAccountsPanelFilter] = useState("all");
   const [editingTrade, setEditingTrade] = useState(null);
   const [addingTrade, setAddingTrade] = useState(false);
   const [page, setPage] = useState(1);
@@ -1951,15 +2086,90 @@ export default function App() {
         </div>
       </Module>
     );
-    if (mod.id === "accounts") return (
-      <Module {...props}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
-          {accountsList.map(a => (
-            <AccountCard key={a.id} account={a.name} rules={a} trades={trades.filter(t => t.account === a.name)} />
-          ))}
-        </div>
-      </Module>
-    );
+    if (mod.id === "accounts") {
+      const activeCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE").length;
+      const burnedCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "BURNED").length;
+      const closedCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "CLOSED").length;
+      const totalCount = accountsList.length;
+
+      const filteredAccounts = accountsList.filter(a => {
+        const status = a.status || "ACTIVE";
+        if (accountsPanelFilter === "all") return true;
+        return status.toUpperCase() === accountsPanelFilter.toUpperCase();
+      });
+
+      return (
+        <Module {...props}>
+          {/* Barra de Filtros */}
+          <div style={{ 
+            display: "flex", 
+            gap: 8, 
+            marginBottom: 14, 
+            flexWrap: "wrap",
+            borderBottom: "0.5px solid var(--color-border-secondary)",
+            paddingBottom: 12
+          }}>
+            {[
+              { id: "all", label: "Todas", count: totalCount },
+              { id: "ACTIVE", label: "Activas", count: activeCount },
+              { id: "BURNED", label: "Quemadas 🔥", count: burnedCount },
+              { id: "CLOSED", label: "Cerradas 🔒", count: closedCount },
+            ].map(f => (
+              <button 
+                key={f.id} 
+                onClick={() => setAccountsPanelFilter(f.id)} 
+                style={{ 
+                  fontSize: 11, 
+                  padding: "6px 12px", 
+                  borderRadius: 16, 
+                  border: accountsPanelFilter === f.id ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", 
+                  background: accountsPanelFilter === f.id ? C.blueBg : "var(--color-background-primary)", 
+                  color: accountsPanelFilter === f.id ? C.blueText : "var(--color-text-secondary)", 
+                  cursor: "pointer", 
+                  fontWeight: accountsPanelFilter === f.id ? 600 : 400,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span>{f.label}</span>
+                <span style={{ 
+                  fontSize: 9, 
+                  padding: "1px 5px", 
+                  borderRadius: 8, 
+                  background: accountsPanelFilter === f.id ? C.blue : "var(--color-background-secondary)",
+                  color: accountsPanelFilter === f.id ? "#fff" : "var(--color-text-secondary)",
+                  fontWeight: 600
+                }}>
+                  {f.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Lista de cuentas en fila vertical */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {filteredAccounts.length === 0 ? (
+              <div style={{ 
+                padding: "24px 16px", 
+                textAlign: "center", 
+                color: "var(--color-text-tertiary)", 
+                fontSize: 12,
+                background: "var(--color-background-secondary)",
+                borderRadius: 8,
+                border: "0.5px dashed var(--color-border-secondary)"
+              }}>
+                No hay cuentas en esta categoría.
+              </div>
+            ) : (
+              filteredAccounts.map(a => (
+                <AccountCard key={a.id} account={a.name} rules={a} trades={trades.filter(t => t.account === a.name)} />
+              ))
+            )}
+          </div>
+        </Module>
+      );
+    }
     if (mod.id === "equity") return (
       <Module {...props}>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
