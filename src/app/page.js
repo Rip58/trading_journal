@@ -446,12 +446,31 @@ function AccountCard({ account, rules, trades }) {
 
 // ── Equity SVG ──────────────────────────────────────────────────────────────
 function EquityChart({ trades, accountFilter }) {
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(620);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setWidth(containerRef.current.getBoundingClientRect().width);
+      }
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const filtered = accountFilter === "all" ? trades : trades.filter(t => t.account === accountFilter);
   const sorted = [...filtered].sort((a, b) => a.id - b.id);
   let cum = 0;
   const pts = sorted.map(t => { cum += t.pnl; return cum; });
   if (pts.length < 2) return <div style={{ padding: 20, color: "var(--color-text-secondary)", fontSize: 13 }}>Sin datos suficientes</div>;
-  const W = 620, H = 160, PAD = 40;
+
+  const W = width || 620;
+  const H = 160;
+  const PAD = 40;
   const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
   const range = max - min || 1;
   const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
@@ -462,26 +481,29 @@ function EquityChart({ trades, accountFilter }) {
   const areaRedPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.max(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
   const tickCount = 4;
   const ticks = Array.from({ length: tickCount + 1 }, (_, i) => min + (i / tickCount) * range);
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H }} role="img" aria-label="Equity curve acumulada">
-      {ticks.map((v, i) => {
-        const y = toY(v);
-        return (
-          <g key={i}>
-            <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={Math.abs(v) < range * 0.01 ? "rgba(128,128,128,0.4)" : "rgba(128,128,128,0.08)"} strokeWidth={Math.abs(v) < range * 0.01 ? 1 : 0.5} />
-            <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={C.gray}>{v >= 0 ? "+" : ""}{Math.round(v / 1000) !== 0 ? Math.round(v / 1000) + "k" : "0"}</text>
-          </g>
-        );
-      })}
-      <polygon points={areaGreenPts} fill="rgba(29,158,117,0.12)" />
-      <polygon points={areaRedPts} fill="rgba(216,90,48,0.12)" />
-      {pts.map((v, i) => {
-        if (i === 0) return null;
-        const avg = (pts[i - 1] + v) / 2;
-        return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? C.green : C.red} strokeWidth={1.8} />;
-      })}
-      <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(128,128,128,0.5)" strokeWidth={1} />
-    </svg>
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H }} role="img" aria-label="Equity curve acumulada">
+        {ticks.map((v, i) => {
+          const y = toY(v);
+          return (
+            <g key={i}>
+              <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={Math.abs(v) < range * 0.01 ? "rgba(128,128,128,0.4)" : "rgba(128,128,128,0.08)"} strokeWidth={Math.abs(v) < range * 0.01 ? 1 : 0.5} />
+              <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={C.gray}>{v >= 0 ? "+" : ""}{Math.round(v / 1000) !== 0 ? Math.round(v / 1000) + "k" : "0"}</text>
+            </g>
+          );
+        })}
+        <polygon points={areaGreenPts} fill="rgba(29,158,117,0.12)" />
+        <polygon points={areaRedPts} fill="rgba(216,90,48,0.12)" />
+        {pts.map((v, i) => {
+          if (i === 0) return null;
+          const avg = (pts[i - 1] + v) / 2;
+          return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? C.green : C.red} strokeWidth={1.8} />;
+        })}
+        <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(128,128,128,0.5)" strokeWidth={1} />
+      </svg>
+    </div>
   );
 }
 
