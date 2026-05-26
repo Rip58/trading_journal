@@ -1029,6 +1029,46 @@ function SettingsPanel({
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
 
+  // Vercel deployment version checking
+  const [vercelStatus, setVercelStatus] = useState("idle"); // 'idle' | 'loading' | 'up-to-date' | 'new-version' | 'error'
+  const [serverVersion, setServerVersion] = useState({ commitSha: "", deploymentId: "" });
+  
+  const clientCommit = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'development';
+  const clientDeployId = process.env.NEXT_PUBLIC_VERCEL_DEPLOYMENT_ID || 'local';
+
+  const checkVercelVersion = async (silent = false) => {
+    if (!silent) setVercelStatus("loading");
+    try {
+      const res = await fetch("/api/version");
+      if (res.ok) {
+        const data = await res.json();
+        setServerVersion({
+          commitSha: data.commitSha,
+          deploymentId: data.deploymentId
+        });
+
+        // Determine if there is a new version
+        const hasNewCommit = data.commitSha !== 'development' && clientCommit !== 'development' && data.commitSha !== clientCommit;
+        const hasNewDeploy = data.deploymentId !== 'local' && clientDeployId !== 'local' && data.deploymentId !== clientDeployId;
+
+        if (hasNewCommit || hasNewDeploy) {
+          setVercelStatus("new-version");
+        } else {
+          setVercelStatus("up-to-date");
+        }
+      } else {
+        if (!silent) setVercelStatus("error");
+      }
+    } catch (e) {
+      console.error(e);
+      if (!silent) setVercelStatus("error");
+    }
+  };
+
+  useEffect(() => {
+    checkVercelVersion(true); // Silent check on mount
+  }, []);
+
   const handleWipeDatabase = async () => {
     if (!confirm("⚠️ ¿ESTÁS COMPLETAMENTE SEGURO?\n\nEsta acción eliminará permanentemente todas las cuentas de trading y todas las operaciones (trades) guardadas en la base de datos. Esta operación es irreversible.")) {
       return;
@@ -1505,6 +1545,136 @@ function SettingsPanel({
             </div>
           </div>
         )}
+      </div>
+
+      {/* 5. Version & Updates Configuration */}
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🚀</span> Versión y Actualizaciones
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Version details table */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Versión de la App</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v2.0</div>
+            </div>
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Despliegue en Vercel</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4, fontFamily: "monospace" }}>
+                {serverVersion.commitSha ? (
+                  serverVersion.commitSha === 'development' ? 'Local' : serverVersion.commitSha.slice(0, 7)
+                ) : 'Desconocido'}
+              </div>
+            </div>
+          </div>
+
+          {/* Details on current client and server shas */}
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span>Build local (Cliente):</span>
+              <strong style={{ fontFamily: "monospace" }}>{clientCommit === 'development' ? 'Local Dev' : clientCommit.slice(0, 7)}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Build Vercel (Servidor):</span>
+              <strong style={{ fontFamily: "monospace" }}>{serverVersion.commitSha === 'development' ? 'Local Dev' : (serverVersion.commitSha ? serverVersion.commitSha.slice(0, 7) : '—')}</strong>
+            </div>
+          </div>
+
+          {/* Warning banner or status badge */}
+          {vercelStatus === "loading" && (
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <style dangerouslySetInnerHTML={{__html: `
+                @keyframes spin {
+                  from { transform: rotate(0deg); }
+                  to { transform: rotate(360deg); }
+                }
+              `}} />
+              <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>🔄</span> Buscando actualizaciones en Vercel...
+            </div>
+          )}
+          
+          {vercelStatus === "up-to-date" && (
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: C.greenBg, color: C.greenText, fontSize: 12, fontWeight: 500 }}>
+              ✓ La aplicación está actualizada y ejecutando la última versión.
+            </div>
+          )}
+
+          {vercelStatus === "new-version" && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: C.redBg, color: C.redText, border: `0.5px solid ${C.red}`, fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>⚠️</span> Nueva versión disponible
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.9 }}>
+                Hay una nueva versión de la aplicación desplegada en Vercel. Por favor, actualiza para asegurarte de tener las últimas características y correcciones de errores.
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "5px 12px",
+                  background: C.red,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                Actualizar ahora
+              </button>
+            </div>
+          )}
+
+          {vercelStatus === "error" && (
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: C.redBg, color: C.redText, fontSize: 12 }}>
+              ⚠️ No se pudo comprobar la versión de Vercel. Verifica tu conexión de red.
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button
+              onClick={() => checkVercelVersion(false)}
+              disabled={vercelStatus === "loading"}
+              style={{
+                flex: 1,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "0.5px solid var(--color-border-secondary)",
+                background: "var(--color-background-secondary)",
+                color: "var(--color-text-secondary)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: vercelStatus === "loading" ? "not-allowed" : "pointer",
+              }}
+            >
+              Buscar actualizaciones
+            </button>
+            <button
+              onClick={() => {
+                if (confirm("¿Estás seguro de que deseas recargar la aplicación para forzar la actualización?")) {
+                  window.location.reload();
+                }
+              }}
+              style={{
+                flex: 1,
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "0.5px solid var(--color-border-secondary)",
+                background: "var(--color-background-secondary)",
+                color: "var(--color-text-secondary)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Actualizar manualmente
+            </button>
+          </div>
+        </div>
       </div>
 
 
@@ -2306,6 +2476,7 @@ export default function App() {
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 500, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
             <span>📈 Trading Journal</span>
+            <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>v2.0</span>
             <button
               onClick={async () => {
                 setLoading(true);
