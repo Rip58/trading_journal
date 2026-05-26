@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
+import { normalizeDateToYYYYMMDD } from '@/lib/dateUtils';
 
 export async function PUT(request, { params }) {
   try {
@@ -24,7 +25,7 @@ export async function PUT(request, { params }) {
     const updatedTrade = await db.trade.update({
       where: { id: tradeId },
       data: {
-        date: body.date,
+        date: normalizeDateToYYYYMMDD(body.date),
         entry_time: body.entry_time,
         exit_time: body.exit_time,
         account: body.account,

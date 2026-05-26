@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
+import { normalizeDateToYYYYMMDD } from '@/lib/dateUtils';
 
 export async function GET() {
   try {
@@ -40,7 +41,7 @@ export async function POST(request) {
     const newTrade = await db.trade.create({
       data: {
         clerkUserId: userId,
-        date: body.date || new Date().toISOString().slice(0, 10),
+        date: normalizeDateToYYYYMMDD(body.date),
         entry_time: body.entry_time || '',
         exit_time: body.exit_time || '',
         account: body.account,

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { UserButton } from "@clerk/nextjs";
+import { normalizeDateToYYYYMMDD } from "@/lib/dateUtils";
 
 // ACCOUNT_RULES is loaded dynamically from database now
 
@@ -514,9 +515,14 @@ function CalendarWidget({ trades }) {
 
   useEffect(() => {
     if (trades && trades.length > 0 && !hasInitialized) {
-      const sorted = [...trades].sort((a, b) => b.date.localeCompare(a.date));
+      const sorted = [...trades].sort((a, b) => {
+        const dateA = normalizeDateToYYYYMMDD(a.date);
+        const dateB = normalizeDateToYYYYMMDD(b.date);
+        return dateB.localeCompare(dateA);
+      });
       if (sorted[0]?.date) {
-        setCurrentMonth(sorted[0].date.slice(0, 7));
+        const normDate = normalizeDateToYYYYMMDD(sorted[0].date);
+        setCurrentMonth(normDate.slice(0, 7));
         setHasInitialized(true);
       }
     }
@@ -559,14 +565,46 @@ function CalendarWidget({ trades }) {
   };
 
   const byDate = {};
-  trades.filter(t => t.date.startsWith(currentMonth)).forEach(t => {
-    if (!byDate[t.date]) byDate[t.date] = { pnl: 0, count: 0 };
-    byDate[t.date].pnl += t.pnl;
-    byDate[t.date].count++;
+  trades.forEach(t => {
+    const normalized = normalizeDateToYYYYMMDD(t.date);
+    if (normalized.startsWith(currentMonth)) {
+      if (!byDate[normalized]) byDate[normalized] = { pnl: 0, count: 0 };
+      byDate[normalized].pnl += t.pnl;
+      byDate[normalized].count++;
+    }
   });
 
   const daysInMonth = new Date(year, mo + 1, 0).getDate();
   const startDow = (new Date(year, mo, 1).getDay() + 6) % 7;
+
+  // Group days into weeks of 7 days (Monday to Sunday)
+  const weeks = [];
+  let currentWeek = [];
+
+  // Empty cells at the start of the month
+  for (let i = 0; i < startDow; i++) {
+    currentWeek.push({ type: "empty" });
+  }
+
+  // Actual days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
+    const dow = (new Date(year, mo, d).getDay() + 6) % 7;
+    currentWeek.push({ type: "day", d, key, dow, info: byDate[key] });
+
+    if (dow === 6) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+  }
+
+  // Empty cells at the end of the month
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) {
+      currentWeek.push({ type: "empty" });
+    }
+    weeks.push(currentWeek);
+  }
 
   const fmtPnl = (v) => {
     const abs = Math.abs(Math.round(v));
@@ -575,16 +613,7 @@ function CalendarWidget({ trades }) {
       : (v < 0 ? "-" : "+") + "$" + abs;
   };
 
-  const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push({ type: "empty" });
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
-    const dow = (new Date(year, mo, d).getDay() + 6) % 7;
-    cells.push({ type: "day", d, key, dow, info: byDate[key] });
-  }
-  while (cells.length % 7 !== 0) cells.push({ type: "empty" });
-
-  const dayLabels = ["L", "M", "X", "J", "V", "S", "D"];
+  const dayLabels = ["L", "M", "X", "J", "V", "S", "D", "SEMANA"];
 
   return (
     <div>
@@ -629,55 +658,62 @@ function CalendarWidget({ trades }) {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2, marginBottom: 4 }}>
         {dayLabels.map((d, i) => (
-          <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: i === 6 ? "#BA7517" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
+          <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? "#BA7517" : d === "SEMANA" ? "#854F0B" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
-        {cells.map((c, i) => {
-          if (c.type === "empty") return <div key={`e${i}`} />;
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2 }}>
+        {weeks.map((week, wIdx) => {
+          let weekPnl = 0;
+          let weekTrades = 0;
+          let weekDays = 0;
 
-          if (c.dow === 6) {
-            const weekStart = i - 5;
-            let weekPnl = 0, weekTrades = 0, weekDays = 0;
-            for (let j = Math.max(0, weekStart); j < i; j++) {
-              const wc = cells[j];
-              if (wc?.type === "day" && wc.info) {
-                weekPnl += wc.info.pnl;
-                weekTrades += wc.info.count;
+          week.forEach(day => {
+            if (day.type === "day" && day.info) {
+              weekPnl += day.info.pnl;
+              weekTrades += day.info.count;
+              if (day.info.count > 0) {
                 weekDays++;
               }
             }
-            const hasData = weekTrades > 0;
-            const bg = hasData ? (weekPnl >= 0 ? "#EAF3DE" : "#FAECE7") : "var(--color-background-secondary)";
-            const border = hasData ? (weekPnl >= 0 ? "#C0DD97" : "#F5C4B3") : "var(--color-border-tertiary)";
-            const col = weekPnl >= 0 ? "#3B6D11" : "#993C1D";
-            return (
-              <div key={`w${i}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+          });
+
+          const hasData = weekTrades > 0;
+          const weekBg = hasData ? (weekPnl >= 0 ? "#EAF3DE" : "#FAECE7") : "var(--color-background-secondary)";
+          const weekBorder = hasData ? (weekPnl >= 0 ? "#C0DD97" : "#F5C4B3") : "var(--color-border-tertiary)";
+          const weekCol = weekPnl >= 0 ? "#3B6D11" : "#993C1D";
+
+          return (
+            <Fragment key={wIdx}>
+              {week.map((c, dIdx) => {
+                if (c.type === "empty") return <div key={`e-${wIdx}-${dIdx}`} style={{ background: "transparent", minHeight: 50 }} />;
+
+                const { info } = c;
+                const bg = info ? (info.pnl > 0 ? C.greenBg : info.pnl < 0 ? C.redBg : "var(--color-background-secondary)") : "var(--color-background-secondary)";
+                const col = info ? (info.pnl > 0 ? C.greenText : info.pnl < 0 ? C.redText : "var(--color-text-secondary)") : "var(--color-text-tertiary)";
+                const border = info ? (info.pnl > 0 ? "#9FE1CB" : info.pnl < 0 ? "#F5C4B3" : "var(--color-border-tertiary)") : "var(--color-border-tertiary)";
+                return (
+                  <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 500 }}>{c.d}</div>
+                    {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
+                    {info && <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{info.count}t</div>}
+                  </div>
+                );
+              })}
+
+              <div key={`w-${wIdx}`} style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
                 <div style={{ fontSize: 9, color: "#854F0B", textTransform: "uppercase", letterSpacing: ".2px", fontWeight: 500 }}>Semana</div>
                 {hasData ? (
                   <>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: col }}>{fmtPnl(weekPnl)}</div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: weekCol }}>{fmtPnl(weekPnl)}</div>
                     <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{weekTrades}t · {weekDays}d</div>
                   </>
                 ) : (
                   <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>—</div>
                 )}
               </div>
-            );
-          }
-
-          const { info } = c;
-          const bg = info ? (info.pnl > 0 ? C.greenBg : info.pnl < 0 ? C.redBg : "var(--color-background-secondary)") : "var(--color-background-secondary)";
-          const col = info ? (info.pnl > 0 ? C.greenText : info.pnl < 0 ? C.redText : "var(--color-text-secondary)") : "var(--color-text-tertiary)";
-          const border = info ? (info.pnl > 0 ? "#9FE1CB" : info.pnl < 0 ? "#F5C4B3" : "var(--color-border-tertiary)") : "var(--color-border-tertiary)";
-          return (
-            <div key={`d${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
-              <div style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 500 }}>{c.d}</div>
-              {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
-              {info && <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{info.count}t</div>}
-            </div>
+            </Fragment>
           );
         })}
       </div>
@@ -2091,7 +2127,7 @@ export default function App() {
           const rawEntryTime = getVal(["entry_time", "hora_entrada", "hora entrada", "entry time", "fecha", "date"], "");
           const rawExitTime = getVal(["exit_time", "hora_salida", "hora salida", "exit time"], "");
 
-          const dateVal = extractDateOnly(rawEntryTime);
+          const dateVal = normalizeDateToYYYYMMDD(extractDateOnly(rawEntryTime));
           const entryTimeVal = extractTimeOnly(rawEntryTime);
           const exitTimeVal = extractTimeOnly(rawExitTime);
 
