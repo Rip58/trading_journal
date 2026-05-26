@@ -449,6 +449,7 @@ function AccountCard({ account, rules, trades }) {
 function EquityChart({ trades, accountFilter }) {
   const containerRef = useRef(null);
   const [width, setWidth] = useState(620);
+  const [hoverIdx, setHoverIdx] = useState(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -463,6 +464,10 @@ function EquityChart({ trades, accountFilter }) {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setHoverIdx(null);
+  }, [trades, accountFilter]);
+
   const filtered = accountFilter === "all" ? trades : trades.filter(t => t.account === accountFilter);
   const sorted = [...filtered].sort((a, b) => a.id - b.id);
   let cum = 0;
@@ -471,7 +476,7 @@ function EquityChart({ trades, accountFilter }) {
 
   const W = width || 620;
   const H = 160;
-  const PAD = 40;
+  const PAD = 45;
   const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
   const range = max - min || 1;
   const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
@@ -483,15 +488,75 @@ function EquityChart({ trades, accountFilter }) {
   const tickCount = 4;
   const ticks = Array.from({ length: tickCount + 1 }, (_, i) => min + (i / tickCount) * range);
 
+  const formatTick = (v) => {
+    const abs = Math.abs(Math.round(v));
+    if (abs === 0) return "$0";
+    const sign = v >= 0 ? "+" : "-";
+    return abs >= 1000
+      ? `${sign}$${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k`
+      : `${sign}$${abs}`;
+  };
+
+  const handleMouseMove = (e) => {
+    if (!containerRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const svgX = (mouseX / rect.width) * W;
+
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const x = toX(i);
+      const diff = Math.abs(x - svgX);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    setHoverIdx(closestIdx);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!containerRef.current || !e.touches[0]) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.touches[0].clientX - rect.left;
+    const svgX = (mouseX / rect.width) * W;
+
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const x = toX(i);
+      const diff = Math.abs(x - svgX);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    setHoverIdx(closestIdx);
+  };
+
+  const handleMouseLeave = () => {
+    setHoverIdx(null);
+  };
+
   return (
     <div ref={containerRef} style={{ width: "100%" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H }} role="img" aria-label="Equity curve acumulada">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height: H, cursor: "crosshair", overflow: "visible" }}
+        role="img"
+        aria-label="Equity curve acumulada"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleMouseLeave}
+      >
         {ticks.map((v, i) => {
           const y = toY(v);
           return (
             <g key={i}>
               <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={Math.abs(v) < range * 0.01 ? "rgba(128,128,128,0.4)" : "rgba(128,128,128,0.08)"} strokeWidth={Math.abs(v) < range * 0.01 ? 1 : 0.5} />
-              <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={C.gray}>{v >= 0 ? "+" : ""}{Math.round(v / 1000) !== 0 ? Math.round(v / 1000) + "k" : "0"}</text>
+              <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={C.gray}>{formatTick(v)}</text>
             </g>
           );
         })}
@@ -503,6 +568,84 @@ function EquityChart({ trades, accountFilter }) {
           return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? C.green : C.red} strokeWidth={1.8} />;
         })}
         <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(128,128,128,0.5)" strokeWidth={1} />
+
+        {hoverIdx !== null && (() => {
+          const x = toX(hoverIdx);
+          const y = toY(pts[hoverIdx]);
+          const val = pts[hoverIdx];
+          const trade = sorted[hoverIdx];
+          const txt = fmt(val);
+          const dateStr = trade?.date ? normalizeDateToYYYYMMDD(trade.date) : "";
+
+          const tooltipW = 82;
+          const tooltipH = 34;
+          let tx = x - tooltipW / 2;
+          if (tx < 5) tx = 5;
+          if (tx + tooltipW > W - 5) tx = W - tooltipW - 5;
+
+          const showBelow = y - tooltipH - 12 < 5;
+          const ty = showBelow ? y + 12 : y - tooltipH - 12;
+          const textCol = val >= 0 ? C.greenText : C.redText;
+
+          return (
+            <g pointerEvents="none">
+              <line
+                x1={x}
+                y1={PAD / 2}
+                x2={x}
+                y2={H - PAD / 2}
+                stroke="var(--color-border-primary)"
+                strokeWidth={1}
+                strokeDasharray="3,3"
+              />
+              <circle
+                cx={x}
+                cy={y}
+                r={6}
+                fill={val >= 0 ? C.green : C.red}
+                opacity={0.3}
+              />
+              <circle
+                cx={x}
+                cy={y}
+                r={3.5}
+                fill={val >= 0 ? C.green : C.red}
+                stroke="#ffffff"
+                strokeWidth={1.5}
+              />
+              <rect
+                x={tx}
+                y={ty}
+                width={tooltipW}
+                height={tooltipH}
+                rx={6}
+                fill="var(--color-background-primary)"
+                stroke="var(--color-border-secondary)"
+                strokeWidth={1}
+                style={{ filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.06))" }}
+              />
+              <text
+                x={tx + tooltipW / 2}
+                y={ty + 14}
+                textAnchor="middle"
+                fontSize={10}
+                fontWeight="600"
+                fill={textCol}
+              >
+                {txt}
+              </text>
+              <text
+                x={tx + tooltipW / 2}
+                y={ty + 26}
+                textAnchor="middle"
+                fontSize={8}
+                fill="var(--color-text-tertiary)"
+              >
+                {dateStr}
+              </text>
+            </g>
+          );
+        })()}
       </svg>
     </div>
   );
@@ -2215,6 +2358,7 @@ export default function App() {
       setWizardError("");
 
       let importedCount = 0;
+      let firstError = null;
       const savedTrades = [];
       const tradesToImport = pendingImport.trades.filter(t => !t.isExcluded);
       const totalTrades = tradesToImport.length;
@@ -2238,17 +2382,29 @@ export default function App() {
           const saved = await res.json();
           savedTrades.push(saved);
           importedCount++;
+        } else {
+          try {
+            const errData = await res.json();
+            firstError = errData.error || `HTTP ${res.status}: ${res.statusText}`;
+          } catch {
+            firstError = `HTTP ${res.status}: ${res.statusText}`;
+          }
+          console.error(`Error al importar trade index ${i}:`, firstError);
         }
       }
 
       if (importedCount > 0) {
         await fetchTrades();
         await fetchAccounts();
-        setImportMsg(`✓ ${importedCount} trades importados`);
+        if (importedCount < totalTrades) {
+          setImportMsg(`✓ ${importedCount} importados, ${totalTrades - importedCount} fallaron (Error: ${firstError})`);
+        } else {
+          setImportMsg(`✓ ${importedCount} trades importados con éxito`);
+        }
       } else {
-        setImportMsg("No se pudieron importar trades");
+        setImportMsg(`No se pudieron importar trades. Error: ${firstError || "Desconocido"}`);
       }
-      setTimeout(() => setImportMsg(""), 3000);
+      setTimeout(() => setImportMsg(""), 6000);
 
       setPendingImport(null);
       setWizardStatus("");
