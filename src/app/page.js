@@ -1970,14 +1970,20 @@ export default function App() {
   useEffect(() => {
     try {
       const savedLayout = localStorage.getItem("tj_layout");
-      if (savedLayout) setLayout(JSON.parse(savedLayout));
+      if (savedLayout) {
+        const parsed = JSON.parse(savedLayout);
+        const validParsed = parsed.filter(id => ALL_MODULES.some(m => m.id === id));
+        const missingIds = ALL_MODULES.map(m => m.id).filter(id => !validParsed.includes(id));
+        setLayout([...validParsed, ...missingIds]);
+      }
     } catch {}
     try {
       const savedVisibility = localStorage.getItem("tj_visibility");
+      const defaultVisibility = Object.fromEntries(ALL_MODULES.map(m => [m.id, true]));
       if (savedVisibility) {
-        setVisibility(JSON.parse(savedVisibility));
+        setVisibility({ ...defaultVisibility, ...JSON.parse(savedVisibility) });
       } else {
-        setVisibility(Object.fromEntries(ALL_MODULES.map(m => [m.id, true])));
+        setVisibility(defaultVisibility);
       }
     } catch {
       setVisibility(Object.fromEntries(ALL_MODULES.map(m => [m.id, true])));
@@ -2006,7 +2012,13 @@ export default function App() {
       if (savedKey) setAiKey(savedKey);
     } catch {}
 
-
+    // Read filters configurations
+    try {
+      const savedAcctFilter = localStorage.getItem("tj_acct_filter");
+      const savedAccountsPanelFilter = localStorage.getItem("tj_accounts_panel_filter");
+      if (savedAcctFilter) setAcctFilter(savedAcctFilter);
+      if (savedAccountsPanelFilter) setAccountsPanelFilter(savedAccountsPanelFilter);
+    } catch {}
 
     fetchAccounts();
     fetchTrades();
@@ -2020,6 +2032,14 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("tj_visibility", JSON.stringify(visibility)); } catch {}
   }, [visibility]);
+
+  useEffect(() => {
+    try { localStorage.setItem("tj_acct_filter", acctFilter); } catch {}
+  }, [acctFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem("tj_accounts_panel_filter", accountsPanelFilter); } catch {}
+  }, [accountsPanelFilter]);
 
   const fetchAccounts = async () => {
     try {
@@ -2132,6 +2152,31 @@ export default function App() {
     setBulkAccount("");
   };
 
+  const selectAllTrades = (exclude) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const updated = prev.trades.map(t => ({ ...t, isExcluded: exclude }));
+      return { ...prev, trades: updated };
+    });
+  };
+
+  const handleFieldChange = (index, field, value) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const updated = [...prev.missingAccounts];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, missingAccounts: updated };
+    });
+  };
+
+  const handleWizardSubmit = () => {
+    if (wizardStep === 1) {
+      handleCreateMissingAccounts();
+    } else if (wizardStep === 2) {
+      handleImportTrades();
+    }
+  };
+
   const handleCreateMissingAccounts = async () => {
     if (!pendingImport) return;
     try {
@@ -2171,14 +2216,23 @@ export default function App() {
 
       let importedCount = 0;
       const savedTrades = [];
-      const totalTrades = pendingImport.trades.length;
+      const tradesToImport = pendingImport.trades.filter(t => !t.isExcluded);
+      const totalTrades = tradesToImport.length;
+
+      if (totalTrades === 0) {
+        setImportMsg("No hay trades seleccionados para importar");
+        setTimeout(() => setImportMsg(""), 3000);
+        setPendingImport(null);
+        setWizardStatus("");
+        return;
+      }
 
       for (let i = 0; i < totalTrades; i++) {
         setWizardStatus(`importando_trades_progress:${i + 1}:${totalTrades}`);
         const res = await fetch('/api/trades', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(pendingImport.trades[i]),
+          body: JSON.stringify(tradesToImport[i]),
         });
         if (res.ok) {
           const saved = await res.json();
@@ -2203,6 +2257,73 @@ export default function App() {
       setWizardError(err.message || "Error durante el proceso de importación");
       setWizardStatus("error");
     }
+  };
+
+  const checkDuplicate = (newTrade, existingTrades) => {
+    let bestMatch = null;
+    let highestPct = 0;
+
+    for (const ext of existingTrades) {
+      let matches = 0;
+
+      // 1. date
+      if (normalizeDateToYYYYMMDD(newTrade.date) === normalizeDateToYYYYMMDD(ext.date)) matches++;
+
+      // 2. entry_time
+      const et1 = (newTrade.entry_time || "").trim();
+      const et2 = (ext.entry_time || "").trim();
+      if (et1 && et2 && et1 === et2) matches++;
+
+      // 3. exit_time
+      const xt1 = (newTrade.exit_time || "").trim();
+      const xt2 = (ext.exit_time || "").trim();
+      if (xt1 && xt2 && xt1 === xt2) matches++;
+
+      // 4. account
+      const ac1 = (newTrade.account || "").trim().toLowerCase();
+      const ac2 = (ext.account || "").trim().toLowerCase();
+      if (ac1 && ac2 && ac1 === ac2) matches++;
+
+      // 5. instrument
+      const inst1 = (newTrade.instrument || "").trim().toLowerCase();
+      const inst2 = (ext.instrument || "").trim().toLowerCase();
+      if (inst1 && inst2 && inst1 === inst2) matches++;
+
+      // 6. direction
+      const dir1 = (newTrade.direction || "").trim().toLowerCase();
+      const dir2 = (ext.direction || "").trim().toLowerCase();
+      if (dir1 && dir2 && dir1 === dir2) matches++;
+
+      // 7. qty
+      if (parseInt(newTrade.qty) === parseInt(ext.qty)) matches++;
+
+      // 8. entry
+      const p1 = parseFloat(newTrade.entry) || 0;
+      const p2 = parseFloat(ext.entry) || 0;
+      if (Math.abs(p1 - p2) < 0.01) matches++;
+
+      // 9. exit_price
+      const ep1 = parseFloat(newTrade.exit_price) || 0;
+      const ep2 = parseFloat(ext.exit_price) || 0;
+      if (Math.abs(ep1 - ep2) < 0.01) matches++;
+
+      // 10. pnl
+      const pnl1 = parseFloat(newTrade.pnl) || 0;
+      const pnl2 = parseFloat(ext.pnl) || 0;
+      if (Math.abs(pnl1 - pnl2) < 0.01) matches++;
+
+      const pct = (matches / 10) * 100;
+      if (pct > highestPct) {
+        highestPct = pct;
+        bestMatch = ext;
+      }
+    }
+
+    return {
+      isDuplicate: highestPct >= 50,
+      duplicatePct: Math.round(highestPct),
+      duplicateOf: bestMatch
+    };
   };
 
   const handleCSVImport = (e) => {
@@ -2299,22 +2420,42 @@ export default function App() {
             resultVal = pnlVal > 0 ? "Win" : pnlVal < 0 ? "Loss" : "Break Even";
           }
 
-          return {
+          const entryPrice = parseLocaleFloat(getVal(["entry pr", "entry_price", "precio_entrada", "precio entrada", "entry price", "entry"], "0"));
+          const exitPrice = parseLocaleFloat(getVal(["exit pric", "exit_price", "precio_salida", "precio salida", "exit price", "exit"], "0"));
+          const directionVal = getVal(["direction", "dirección", "direccion", "dir", "market pos.", "market pos", "market p"], "Long");
+          const qtyVal = Math.round(parseLocaleFloat(getVal(["qty", "cantidad", "contratos"], "1"))) || 1;
+
+          const tradeCandidate = {
             date: dateVal,
             account: accountName,
             instrument: getVal(["instrument", "instrumento", "instr"], "NQ Futures"),
-            direction: getVal(["direction", "dirección", "direccion", "dir", "market pos.", "market pos", "market p"], "Long"),
-            qty: Math.round(parseLocaleFloat(getVal(["qty", "cantidad", "contratos"], "1"))) || 1,
-            mae: parseLocaleFloat(getVal(["mae", "MAE"], "0")),
-            mfe: parseLocaleFloat(getVal(["mfe", "MFE"], "0")),
-            etd: parseLocaleFloat(getVal(["etd", "ETD"], "0")),
-            rr: parseLocaleFloat(getVal(["rr", "r multiple", "ratio", "r", "r_multiple"], "0")),
-            result: getVal(["result", "win/loss", "res", "resultado_op", "win_loss"], "Win"),
+            direction: directionVal,
+            qty: qtyVal,
+            entry: entryPrice,
+            exit_price: exitPrice,
+            gross: grossVal,
+            commission: commissionVal,
+            pnl: pnlVal,
+            mae: maeVal,
+            mfe: mfeVal,
+            etd: etdVal,
+            rr: rrVal,
+            result: resultVal,
             strategy: getVal(["strategy", "estrategia"], ""),
             timeframe: getVal(["timeframe", "temporalidad"], "15s"),
             notes: getVal(["notes", "notas", "comentarios"], ""),
             entry_time: entryTimeVal,
             exit_time: exitTimeVal,
+          };
+
+          const dupResult = checkDuplicate(tradeCandidate, trades);
+
+          return {
+            ...tradeCandidate,
+            isDuplicate: dupResult.isDuplicate,
+            duplicatePct: dupResult.duplicatePct,
+            duplicateOf: dupResult.duplicateOf,
+            isExcluded: dupResult.isDuplicate, // Exclude by default if >= 50% match
           };
         }).filter(t => !isNaN(t.pnl));
 
@@ -2334,34 +2475,14 @@ export default function App() {
               daily_limit: 1100,
             })),
           });
-          return;
-        }
-
-        // If no missing accounts, import directly
-        setImportMsg("Importando...");
-        let importedCount = 0;
-        const savedTrades = [];
-        
-        for (const t of newTradesData) {
-          const res = await fetch('/api/trades', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(t),
-          });
-          if (res.ok) {
-            const saved = await res.json();
-            savedTrades.push(saved);
-            importedCount++;
-          }
-        }
-        
-        if (importedCount > 0) {
-          setTrades(prev => [...prev, ...savedTrades]);
-          setImportMsg(`✓ ${importedCount} trades importados`);
+          setWizardStep(1);
         } else {
-          setImportMsg("No se pudieron importar trades");
+          setPendingImport({
+            trades: newTradesData,
+            missingAccounts: [],
+          });
+          setWizardStep(2);
         }
-        setTimeout(() => setImportMsg(""), 3000);
       } catch (err) {
         console.error(err);
         setImportMsg("Error al importar CSV");
@@ -2905,7 +3026,7 @@ export default function App() {
           `}} />
           <div style={{
             width: "100%",
-            maxWidth: 600,
+            maxWidth: wizardStep === 2 ? 850 : 600,
             maxHeight: "90vh",
             overflowY: "auto",
             background: "var(--color-background-primary)",
@@ -2916,86 +3037,371 @@ export default function App() {
             display: "flex",
             flexDirection: "column",
             gap: 16,
+            transition: "max-width 0.2s ease",
           }}>
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
-                ⚙️ Configurar Cuentas Faltantes
-              </h3>
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0 }}>
-                El archivo CSV contiene trades asociados a cuentas que no existen en tu base de datos.
-                Por favor, define los parámetros para crearlas automáticamente antes de importar.
-              </p>
-            </div>
+            {wizardStep === 1 ? (
+              // STEP 1: Configurar Cuentas Faltantes
+              <>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+                    🏦 Configurar Cuentas Faltantes
+                  </h3>
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0 }}>
+                    El archivo CSV contiene trades asociados a cuentas que no existen en tu base de datos.
+                    Por favor, define los parámetros para crearlas automáticamente antes de importar.
+                  </p>
+                </div>
 
-            {wizardError && (
-              <div style={{ padding: "10px 14px", background: C.redBg, color: C.redText, borderRadius: 8, fontSize: 12, fontWeight: 500 }}>
-                ⚠️ {wizardError}
-              </div>
-            )}
+                {wizardError && (
+                  <div style={{ padding: "10px 14px", background: C.redBg, color: C.redText, borderRadius: 8, fontSize: 12, fontWeight: 500 }}>
+                    ⚠️ {wizardError}
+                  </div>
+                )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", paddingRight: 4 }}>
-              {pendingImport.missingAccounts.map((acct, index) => (
-                <div key={acct.name} style={{
-                  padding: 14,
+                <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", paddingRight: 4 }}>
+                  {pendingImport.missingAccounts.map((acct, index) => (
+                    <div key={acct.name} style={{
+                      padding: 14,
+                      background: "var(--color-background-secondary)",
+                      border: "0.5px solid var(--color-border-secondary)",
+                      borderRadius: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          🏦 Cuenta: <code style={{ background: "rgba(128,128,128,0.1)", padding: "2px 6px", borderRadius: 4, fontStyle: "normal" }}>{acct.name}</code>
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
+                          <input 
+                            type="number" 
+                            value={acct.size} 
+                            onChange={(e) => handleFieldChange(index, "size", parseFloat(e.target.value) || 0)}
+                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>OBJETIVO (TARGET)</label>
+                          <input 
+                            type="number" 
+                            value={acct.target} 
+                            onChange={(e) => handleFieldChange(index, "target", parseFloat(e.target.value) || 0)}
+                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DIARIO (DAILY LIMIT)</label>
+                          <input 
+                            type="number" 
+                            value={acct.daily_limit} 
+                            onChange={(e) => handleFieldChange(index, "daily_limit", parseFloat(e.target.value) || 0)}
+                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DRAWDOWN (DD LIMIT)</label>
+                          <input 
+                            type="number" 
+                            value={acct.dd_limit} 
+                            onChange={(e) => handleFieldChange(index, "dd_limit", parseFloat(e.target.value) || 0)}
+                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              // STEP 2: Validar Trades
+              <>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+                    ⚙️ Validar Trades a Importar
+                  </h3>
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0 }}>
+                    Revisa los trades del archivo CSV. Si se detectó un posible duplicado con un trade existente, estará desmarcado (No Importar) por defecto.
+                  </p>
+                </div>
+
+                {wizardError && (
+                  <div style={{ padding: "10px 14px", background: C.redBg, color: C.redText, borderRadius: 8, fontSize: 12, fontWeight: 500 }}>
+                    ⚠️ {wizardError}
+                  </div>
+                )}
+
+                {/* Acciones Masivas */}
+                <div style={{
+                  padding: 12,
                   background: "var(--color-background-secondary)",
                   border: "0.5px solid var(--color-border-secondary)",
                   borderRadius: 10,
                   display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
+                  flexWrap: "wrap",
+                  gap: 12,
+                  alignItems: "center",
+                  justifyContent: "space-between",
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                      🏦 Cuenta: <code style={{ background: "rgba(128,128,128,0.1)", padding: "2px 6px", borderRadius: 4, fontStyle: "normal" }}>{acct.name}</code>
-                    </span>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Estrategia:</span>
+                      <input
+                        type="text"
+                        placeholder="Ej: ATM 200"
+                        value={bulkStrategy}
+                        onChange={(e) => setBulkStrategy(e.target.value)}
+                        style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", width: 110 }}
+                      />
+                      <button
+                        onClick={applyBulkStrategy}
+                        style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}
+                      >
+                        Aplicar
+                      </button>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>Cuenta:</span>
+                      <select
+                        value={bulkAccount}
+                        onChange={(e) => setBulkAccount(e.target.value)}
+                        style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", width: 110 }}
+                      >
+                        <option value="">Seleccionar...</option>
+                        {allAccountsForForm.map(a => (
+                          <option key={a.value} value={a.value}>{a.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={applyBulkAccount}
+                        style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "none", background: C.blue, color: "#fff", cursor: "pointer" }}
+                      >
+                        Aplicar
+                      </button>
+                    </div>
                   </div>
-                  
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div>
-                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
-                      <input 
-                        type="number" 
-                        value={acct.size} 
-                        onChange={(e) => handleFieldChange(index, "size", parseFloat(e.target.value) || 0)}
-                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>OBJETIVO (TARGET)</label>
-                      <input 
-                        type="number" 
-                        value={acct.target} 
-                        onChange={(e) => handleFieldChange(index, "target", parseFloat(e.target.value) || 0)}
-                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DRAWDOWN (DD LIMIT)</label>
-                      <input 
-                        type="number" 
-                        value={acct.dd_limit} 
-                        onChange={(e) => handleFieldChange(index, "dd_limit", parseFloat(e.target.value) || 0)}
-                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DIARIO (DAILY LIMIT)</label>
-                      <input 
-                        type="number" 
-                        value={acct.daily_limit} 
-                        onChange={(e) => handleFieldChange(index, "daily_limit", parseFloat(e.target.value) || 0)}
-                        disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                        style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => selectAllTrades(false)}
+                      style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer" }}
+                    >
+                      Marcar todos (Importar)
+                    </button>
+                    <button
+                      onClick={() => selectAllTrades(true)}
+                      style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer" }}
+                    >
+                      Desmarcar todos
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
 
+                {/* Lista de Trades */}
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  maxHeight: "50vh",
+                  overflowY: "auto",
+                  paddingRight: 6,
+                }}>
+                  {pendingImport.trades.map((trade, index) => (
+                    <div key={index} style={{
+                      padding: 12,
+                      background: "var(--color-background-secondary)",
+                      border: trade.isDuplicate ? "1px solid #d97706" : "0.5px solid var(--color-border-secondary)",
+                      borderRadius: 10,
+                      opacity: trade.isExcluded ? 0.65 : 1,
+                      transition: "opacity 0.2s ease, border-color 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          Trade #{index + 1} {trade.instrument && `- ${trade.instrument}`} {trade.direction && `(${trade.direction})`}
+                        </span>
+                        
+                        {/* Selector Importar / No importar */}
+                        <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleTradeFieldChange(index, "isExcluded", false)}
+                            style={{
+                              fontSize: 10,
+                              padding: "4px 10px",
+                              border: "none",
+                              cursor: "pointer",
+                              fontWeight: 600,
+                              background: !trade.isExcluded ? C.green : "transparent",
+                              color: !trade.isExcluded ? "#fff" : "var(--color-text-secondary)",
+                            }}
+                          >
+                            Importar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTradeFieldChange(index, "isExcluded", true)}
+                            style={{
+                              fontSize: 10,
+                              padding: "4px 10px",
+                              border: "none",
+                              cursor: "pointer",
+                              fontWeight: 600,
+                              background: trade.isExcluded ? (theme === "dark" ? "rgba(255,255,255,0.1)" : "#e5e7eb") : "transparent",
+                              color: trade.isExcluded ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                            }}
+                          >
+                            No Importar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Advertencia de duplicado */}
+                      {trade.isDuplicate && (
+                        <div style={{
+                          padding: "6px 10px",
+                          borderRadius: 6,
+                          background: theme === "dark" ? "rgba(239, 159, 39, 0.12)" : "#FEF3C7",
+                          color: theme === "dark" ? "#FBBF24" : "#92400E",
+                          border: theme === "dark" ? "1px solid rgba(239, 159, 39, 0.25)" : "1px solid #FDE68A",
+                          fontSize: 11,
+                          fontWeight: 500,
+                        }}>
+                          ⚠️ <strong>Posible duplicado ({trade.duplicatePct}%):</strong> coincide con trade #{trade.duplicateOf?.id} ({trade.duplicateOf?.date} {trade.duplicateOf?.entry_time} | {trade.duplicateOf?.account} | PnL: {trade.duplicateOf?.pnl})
+                        </div>
+                      )}
+
+                      {/* Inputs de edición */}
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                        gap: 10,
+                      }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Fecha</label>
+                          <input
+                            type="date"
+                            value={trade.date}
+                            onChange={(e) => handleTradeFieldChange(index, "date", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Ent.</label>
+                          <input
+                            type="text"
+                            value={trade.entry_time}
+                            onChange={(e) => handleTradeFieldChange(index, "entry_time", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Sal.</label>
+                          <input
+                            type="text"
+                            value={trade.exit_time}
+                            onChange={(e) => handleTradeFieldChange(index, "exit_time", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Cuenta</label>
+                          <select
+                            value={trade.account}
+                            onChange={(e) => handleTradeFieldChange(index, "account", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          >
+                            {allAccountsForForm.map(a => (
+                              <option key={a.value} value={a.value}>{a.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Contratos (Qty)</label>
+                          <input
+                            type="number"
+                            value={trade.qty}
+                            onChange={(e) => handleTradeFieldChange(index, "qty", parseInt(e.target.value) || 1)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Ent.</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={trade.entry}
+                            onChange={(e) => handleTradeFieldChange(index, "entry", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Sal.</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={trade.exit_price}
+                            onChange={(e) => handleTradeFieldChange(index, "exit_price", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Net PnL</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={trade.pnl}
+                            onChange={(e) => handleTradeFieldChange(index, "pnl", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Estrategia</label>
+                          <input
+                            type="text"
+                            value={trade.strategy}
+                            onChange={(e) => handleTradeFieldChange(index, "strategy", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Notas</label>
+                          <input
+                            type="text"
+                            value={trade.notes}
+                            onChange={(e) => handleTradeFieldChange(index, "notes", e.target.value)}
+                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Footer Buttons */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8, alignItems: "center", borderTop: "0.5px solid var(--color-border-secondary)", paddingTop: 16 }}>
               {wizardStatus && (
                 <div style={{ flex: 1, fontSize: 12, color: C.blue, fontWeight: 500, display: "flex", alignItems: "center", gap: 8 }}>
@@ -3003,7 +3409,7 @@ export default function App() {
                   {wizardStatus === "creando_cuentas" && "Creando cuentas..."}
                   {wizardStatus === "cargando_cuentas" && "Actualizando panel..."}
                   {wizardStatus.startsWith("importando_trades_progress") && (
-                    `Importando: ${wizardStatus.split(":")[2] ? `${wizardStatus.split(":")[1]} de ${wizardStatus.split(":")[2]}` : "trades..."}`
+                    `Importando: ${wizardStatus.split(":")[1] || ""} de ${wizardStatus.split(":")[2] || ""} trades...`
                   )}
                   {wizardStatus === "importando_trades" && "Importando trades..."}
                 </div>
@@ -3026,7 +3432,7 @@ export default function App() {
               </button>
               <button 
                 onClick={handleWizardSubmit}
-                disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                disabled={wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0)}
                 style={{
                   fontSize: 12,
                   padding: "8px 18px",
@@ -3034,12 +3440,16 @@ export default function App() {
                   border: "none",
                   background: C.green,
                   color: "#fff",
-                  cursor: (wizardStatus !== "" && wizardStatus !== "error") ? "not-allowed" : "pointer",
+                  cursor: (wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0)) ? "not-allowed" : "pointer",
+                  opacity: (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0) ? 0.6 : 1,
                   fontWeight: 500,
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                 }}
               >
-                Confirmar y Continuar
+                {wizardStep === 1 
+                  ? "Confirmar y Continuar" 
+                  : `Importar ${pendingImport.trades.filter(t => !t.isExcluded).length} Trades`
+                }
               </button>
             </div>
           </div>
