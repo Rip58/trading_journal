@@ -2211,6 +2211,59 @@ export default function App() {
     }
   };
 
+  const saveTrade = async (t) => {
+    try {
+      if (addingTrade) {
+        const res = await fetch('/api/trades', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(t),
+        });
+        if (res.ok) {
+          setAddingTrade(false);
+          await fetchTrades();
+          await fetchAccounts();
+        } else {
+          alert('Error al guardar el trade en la base de datos');
+        }
+      } else {
+        const res = await fetch(`/api/trades/${t.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(t),
+        });
+        if (res.ok) {
+          setEditingTrade(null);
+          await fetchTrades();
+          await fetchAccounts();
+        } else {
+          alert('Error al actualizar el trade en la base de datos');
+        }
+      }
+    } catch (err) {
+      console.error("Error guardando trade:", err);
+      alert('Error de conexión con el servidor');
+    }
+  };
+
+  const deleteTrade = async (id) => {
+    try {
+      const res = await fetch(`/api/trades/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setDeleteConfirm(null);
+        await fetchTrades();
+        await fetchAccounts();
+      } else {
+        alert('Error al eliminar el trade de la base de datos');
+      }
+    } catch (err) {
+      console.error("Error eliminando trade:", err);
+      alert('Error de conexión con el servidor');
+    }
+  };
+
   const onChangeTheme = (newTheme) => {
     setTheme(newTheme);
     try {
@@ -2263,6 +2316,11 @@ export default function App() {
       } else {
         item.rr = 0;
       }
+
+      const dupResult = checkDuplicate(item, trades);
+      item.isDuplicate = dupResult.isDuplicate;
+      item.duplicatePct = dupResult.duplicatePct;
+      item.duplicateOf = dupResult.duplicateOf;
       
       updated[index] = item;
       return { ...prev, trades: updated };
@@ -2289,7 +2347,17 @@ export default function App() {
   const applyBulkAccount = () => {
     if (!bulkAccount || !pendingImport) return;
     setPendingImport(prev => {
-      const updated = prev.trades.map(t => ({ ...t, account: bulkAccount }));
+      const updated = prev.trades.map(t => {
+        const updatedTrade = { ...t, account: bulkAccount };
+        const dupResult = checkDuplicate(updatedTrade, trades);
+        return {
+          ...updatedTrade,
+          isDuplicate: dupResult.isDuplicate,
+          duplicatePct: dupResult.duplicatePct,
+          duplicateOf: dupResult.duplicateOf,
+          isExcluded: dupResult.isDuplicate, // Exclude by default if duplicate
+        };
+      });
       return { ...prev, trades: updated };
     });
     setBulkAccount("");
@@ -2359,10 +2427,19 @@ export default function App() {
       });
 
       const updatedTrades = pendingImport.trades.map(t => {
+        let mappedAccount = t.account;
         if (mapping[t.account]) {
-          return { ...t, account: mapping[t.account] };
+          mappedAccount = mapping[t.account];
         }
-        return t;
+        const updatedTrade = { ...t, account: mappedAccount };
+        const dupResult = checkDuplicate(updatedTrade, trades);
+        return {
+          ...updatedTrade,
+          isDuplicate: dupResult.isDuplicate,
+          duplicatePct: dupResult.duplicatePct,
+          duplicateOf: dupResult.duplicateOf,
+          isExcluded: dupResult.isDuplicate, // Exclude by default if duplicate
+        };
       });
 
       setPendingImport(prev => ({
