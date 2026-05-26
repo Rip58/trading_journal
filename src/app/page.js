@@ -162,7 +162,7 @@ function MiniDonut({ wins, losses, size = 30 }) {
   const winDash = circ * winPct;
   return (
     <svg width={size} height={size} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.redBg} strokeWidth={stroke} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.red} strokeOpacity={0.35} strokeWidth={stroke} />
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.green} strokeWidth={stroke} strokeDasharray={`${winDash} ${circ}`} strokeDashoffset={circ * 0.25} strokeLinecap="round" />
     </svg>
   );
@@ -2418,7 +2418,7 @@ export default function App() {
               {paginatedTrades.map(t => (
                 <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                   <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.id}</td>
-                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.date.slice(5)}</td>
+                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.date}</td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.entry_time || "—"}</td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.timeframe || "—"}</td>
                   <td style={{ padding: "5px 6px", fontSize: 10, whiteSpace: "nowrap" }}>{t.account.split(" ")[0]}</td>
