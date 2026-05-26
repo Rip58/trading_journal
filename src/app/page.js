@@ -862,11 +862,11 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
     }
   };
 
-  const F = ({ label, field, type = "text", opts }) => (
+  const renderField = (label, field, type = "text", opts) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
       {opts ? (
-        <select value={form[field]} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
+        <select value={form[field] || ""} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
           {opts.map(o => {
             const val = typeof o === "object" ? o.value : o;
             const lbl = typeof o === "object" ? o.label : o;
@@ -874,7 +874,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
           })}
         </select>
       ) : (
-        <input type={type} value={form[field]} onChange={e => set(field, type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
+        <input type={type} value={form[field] ?? ""} onChange={e => set(field, type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
           style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
       )}
     </div>
@@ -935,24 +935,24 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
-        <F label="Fecha" field="date" type="date" />
-        <F label="Hora entrada" field="entry_time" />
-        <F label="Hora salida" field="exit_time" />
-        <F label="Cuenta" field="account" opts={accountOpts} />
-        <F label="Instrumento" field="instrument" opts={instrumentOpts} />
-        <F label="Temporalidad" field="timeframe" opts={["15s", "30s", "1m", "3m", "7m"]} />
-        <F label="Dirección" field="direction" opts={["Long", "Short"]} />
-        <F label="Resultado" field="result" opts={["Win", "Loss", "Break Even"]} />
-        <F label="Cantidad" field="qty" type="number" />
-        <F label="Precio entrada" field="entry" type="number" />
-        <F label="Precio salida" field="exit_price" type="number" />
-        <F label="Estrategia" field="strategy" />
-        <F label="Net PnL ($)" field="pnl" type="number" />
-        <F label="Comisión ($)" field="commission" type="number" />
-        <F label="R múltiple" field="rr" type="number" />
-        <F label="MAE" field="mae" type="number" />
-        <F label="MFE" field="mfe" type="number" />
-        <F label="ETD" field="etd" type="number" />
+        {renderField("Fecha", "date", "date")}
+        {renderField("Hora entrada", "entry_time")}
+        {renderField("Hora salida", "exit_time")}
+        {renderField("Cuenta", "account", "text", accountOpts)}
+        {renderField("Instrumento", "instrument", "text", instrumentOpts)}
+        {renderField("Temporalidad", "timeframe", "text", ["15s", "30s", "1m", "3m", "7m"])}
+        {renderField("Dirección", "direction", "text", ["Long", "Short"])}
+        {renderField("Resultado", "result", "text", ["Win", "Loss", "Break Even"])}
+        {renderField("Cantidad", "qty", "number")}
+        {renderField("Precio entrada", "entry", "number")}
+        {renderField("Precio salida", "exit_price", "number")}
+        {renderField("Estrategia", "strategy")}
+        {renderField("Net PnL ($)", "pnl", "number")}
+        {renderField("Comisión ($)", "commission", "number")}
+        {renderField("R múltiple", "rr", "number")}
+        {renderField("MAE", "mae", "number")}
+        {renderField("MFE", "mfe", "number")}
+        {renderField("ETD", "etd", "number")}
       </div>
       <div style={{ marginBottom: 10 }}>
         <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas</label>
