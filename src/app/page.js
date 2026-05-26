@@ -29,6 +29,55 @@ const C = {
 const fmt = (v) => (v >= 0 ? "+$" : "-$") + Math.abs(Math.round(v)).toLocaleString();
 const fmtN = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
 
+function parseTimeToSeconds(timeStr) {
+  if (!timeStr) return null;
+  let clean = timeStr.trim();
+  
+  const isPM = clean.toUpperCase().includes("PM");
+  const isAM = clean.toUpperCase().includes("AM");
+  clean = clean.replace(/(AM|PM)/gi, "").trim();
+  
+  const parts = clean.split(":");
+  if (parts.length < 2) return null;
+  
+  let hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const seconds = parts.length > 2 ? parseInt(parts[2], 10) : 0;
+  
+  if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) return null;
+  
+  if (isPM && hours < 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function getTradeDurationInSeconds(trade) {
+  if (!trade.entry_time || !trade.exit_time) return null;
+  const entrySec = parseTimeToSeconds(trade.entry_time);
+  const exitSec = parseTimeToSeconds(trade.exit_time);
+  if (entrySec === null || exitSec === null) return null;
+  
+  let diff = exitSec - entrySec;
+  if (diff < 0) {
+    diff += 24 * 3600;
+  }
+  return diff;
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || isNaN(seconds)) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins < 60) {
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  }
+  const hrs = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  return remainingMins > 0 ? `${hrs}h ${remainingMins}m` : `${hrs}h`;
+}
+
 function calcStats(trades) {
   const n = trades.length;
   if (!n) return {};
@@ -47,7 +96,17 @@ function calcStats(trades) {
   const maxWin = wins.length ? Math.max(...wins.map(t => t.pnl)) : 0;
   const maxLoss = losses.length ? Math.min(...losses.map(t => t.pnl)) : 0;
   const days = [...new Set(trades.map(t => t.date))].length;
-  return { n, wins: wins.length, losses: losses.length, totalPnl, wr, avgWin, avgLoss, pf, avgRR, commissions, maxWin, maxLoss, days };
+
+  const durations = trades.map(getTradeDurationInSeconds).filter(d => d !== null);
+  const avgDuration = durations.length ? durations.reduce((s, v) => s + v, 0) / durations.length : null;
+
+  const winDurations = wins.map(getTradeDurationInSeconds).filter(d => d !== null);
+  const avgWinDuration = winDurations.length ? winDurations.reduce((s, v) => s + v, 0) / winDurations.length : null;
+
+  const lossDurations = losses.map(getTradeDurationInSeconds).filter(d => d !== null);
+  const avgLossDuration = lossDurations.length ? lossDurations.reduce((s, v) => s + v, 0) / lossDurations.length : null;
+
+  return { n, wins: wins.length, losses: losses.length, totalPnl, wr, avgWin, avgLoss, pf, avgRR, commissions, maxWin, maxLoss, days, avgDuration, avgWinDuration, avgLossDuration };
 }
 
 function calcAccountDD(trades) {
@@ -685,8 +744,11 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
         <F label="Fecha" field="date" type="date" />
+        <F label="Hora entrada" field="entry_time" />
+        <F label="Hora salida" field="exit_time" />
         <F label="Cuenta" field="account" opts={accountOpts} />
         <F label="Instrumento" field="instrument" opts={instrumentOpts} />
+        <F label="Temporalidad" field="timeframe" opts={["15s", "30s", "1m", "3m", "7m"]} />
         <F label="Dirección" field="direction" opts={["Long", "Short"]} />
         <F label="Resultado" field="result" opts={["Win", "Loss", "Break Even"]} />
         <F label="Cantidad" field="qty" type="number" />
@@ -765,7 +827,10 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         )}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => onSave(form)} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
+        <button onClick={() => onSave({
+          ...form,
+          gross: (parseFloat(form.pnl) || 0) - (parseFloat(form.commission) || 0)
+        })} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
         <button onClick={onCancel} style={{ padding: "6px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>Cancelar</button>
       </div>
     </div>
@@ -1879,6 +1944,8 @@ export default function App() {
           <KpiCard label="Avg RR" value={`${fmtN(stats.avgRR || 0, 2)}R`} color={(stats.avgRR || 0) > 0 ? C.green : C.red} />
           <KpiCard label="Mejor trade" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
           <KpiCard label="Peor trade" value={fmt(Math.round(stats.maxLoss || 0))} color={C.red} />
+          <KpiCard label="Media Win / Loss" value={`${fmt(stats.avgWin || 0)} / ${fmt(-(stats.avgLoss || 0))}`} sub={stats.avgLoss > 0 ? `Ratio: ${fmtN((stats.avgWin || 0) / stats.avgLoss, 2)}` : "Ratio: N/A"} color={(stats.avgWin || 0) >= (stats.avgLoss || 0) ? C.green : C.red} />
+          <KpiCard label="Duración media" value={formatDuration(stats.avgDuration)} sub={stats.avgDuration !== null && stats.avgDuration !== undefined ? `W: ${formatDuration(stats.avgWinDuration)} / L: ${formatDuration(stats.avgLossDuration)}` : "Sin datos de tiempo"} color="var(--color-text-primary)" />
           <KpiCard label="Comisiones" value={fmt(Math.round(stats.commissions || 0))} color={C.red} sub={`${stats.days || 0} días`} />
           <KpiCard label="Trades" value={stats.n || 0} color="var(--color-text-primary)" />
         </div>
@@ -1940,10 +2007,10 @@ export default function App() {
         </div>
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 950 }}>
+          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 1050 }}>
             <thead>
               <tr>
-                {["#", "Fecha", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", "Captura", ""].map(h => (
+                {["#", "Fecha", "Hora", "Temp.", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", "Captura", ""].map(h => (
                    <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-tertiary)", textAlign: "left", padding: "5px 6px", borderBottom: "0.5px solid var(--color-border-tertiary)", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -1953,9 +2020,13 @@ export default function App() {
                 <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                   <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.id}</td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.date.slice(5)}</td>
+                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.entry_time || "—"}</td>
+                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.timeframe || "—"}</td>
                   <td style={{ padding: "5px 6px", fontSize: 10, whiteSpace: "nowrap" }}>{t.account.split(" ")[0]}</td>
                   <td style={{ padding: "5px 6px", color: t.direction === "Long" ? C.green : C.red, fontWeight: 500 }}>{t.direction}</td>
-                  <td style={{ padding: "5px 6px", fontSize: 10 }}>{t.instrument === "NQ Futures" ? "NQ" : "ES"}</td>
+                  <td style={{ padding: "5px 6px", fontSize: 10 }}>
+                    {(t.instrument || "").includes("NQ") ? "NQ" : (t.instrument || "").includes("ES") ? "ES" : t.instrument}
+                  </td>
                   <td style={{ padding: "5px 6px" }}>{t.entry}</td>
                   <td style={{ padding: "5px 6px" }}>{t.exit_price}</td>
                   <td style={{ padding: "5px 6px", color: t.pnl > 0 ? C.green : t.pnl < 0 ? C.red : "inherit", fontWeight: 500 }}>{fmt(t.pnl)}</td>
