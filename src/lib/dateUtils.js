@@ -65,10 +65,18 @@ export function parseLocaleFloat(val) {
   if (val === undefined || val === null || val === "") return 0;
   let cleaned = String(val).trim();
   
-  // Replace comma with dot if there are no dots
-  if (cleaned.includes(",") && !cleaned.includes(".")) {
-    cleaned = cleaned.replace(",", ".");
-  } else if (cleaned.includes(",") && cleaned.includes(".")) {
+  // Support for accounting parenthesis for negative numbers: (150.00) -> -150.00
+  if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+    cleaned = "-" + cleaned.slice(1, -1);
+  }
+  
+  // Remove currency symbols (like $) and other non-numeric chars except digits, dot, comma, and minus sign
+  cleaned = cleaned.replace(/[^0-9.,-]/g, "");
+  
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  
+  if (hasComma && hasDot) {
     const commaIndex = cleaned.indexOf(",");
     const dotIndex = cleaned.indexOf(".");
     if (commaIndex < dotIndex) {
@@ -76,6 +84,8 @@ export function parseLocaleFloat(val) {
     } else {
       cleaned = cleaned.replace(/\./g, "").replace(",", ".");
     }
+  } else if (hasComma) {
+    cleaned = cleaned.replace(",", ".");
   }
   
   const parsed = parseFloat(cleaned);

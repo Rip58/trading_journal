@@ -1954,6 +1954,9 @@ export default function App() {
   const [pendingImport, setPendingImport] = useState(null);
   const [wizardStatus, setWizardStatus] = useState("");
   const [wizardError, setWizardError] = useState("");
+  const [wizardStep, setWizardStep] = useState(1);
+  const [bulkStrategy, setBulkStrategy] = useState("");
+  const [bulkAccount, setBulkAccount] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [theme, setTheme] = useState("light");
@@ -2059,75 +2062,82 @@ export default function App() {
     } catch {}
   };
 
-  const saveTrade = async (t) => {
-    try {
-      if (addingTrade) {
-        const res = await fetch('/api/trades', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(t),
-        });
-        if (res.ok) {
-          setAddingTrade(false);
-          await fetchTrades();
-          await fetchAccounts();
-        } else {
-          alert('Error al guardar el trade en la base de datos');
-        }
-      } else {
-        const res = await fetch(`/api/trades/${t.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(t),
-        });
-        if (res.ok) {
-          setEditingTrade(null);
-          await fetchTrades();
-          await fetchAccounts();
-        } else {
-          alert('Error al actualizar el trade en la base de datos');
-        }
-      }
-    } catch (err) {
-      console.error("Error guardando trade:", err);
-      alert('Error de conexión con el servidor');
-    }
-  };
-
-  const deleteTrade = async (id) => {
-    try {
-      const res = await fetch(`/api/trades/${id}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        setDeleteConfirm(null);
-        await fetchTrades();
-        await fetchAccounts();
-      } else {
-        alert('Error al eliminar el trade de la base de datos');
-      }
-    } catch (err) {
-      console.error("Error eliminando trade:", err);
-      alert('Error de conexión con el servidor');
-    }
-  };
-
-  const handleFieldChange = (index, field, value) => {
+  const handleTradeFieldChange = (index, field, value) => {
     setPendingImport(prev => {
       if (!prev) return prev;
-      const updated = [...prev.missingAccounts];
-      updated[index] = { ...updated[index], [field]: value };
-      return { ...prev, missingAccounts: updated };
+      const updated = [...prev.trades];
+      
+      let item = { ...updated[index], [field]: value };
+      
+      if (field === "result") {
+        item.result = value;
+      }
+      
+      if (field === "pnl" || field === "commission") {
+        const pnlVal = parseLocaleFloat(field === "pnl" ? value : item.pnl);
+        const commVal = parseLocaleFloat(field === "commission" ? value : item.commission);
+        item.gross = pnlVal - commVal;
+        
+        if (pnlVal > 0) item.result = "Win";
+        else if (pnlVal < 0) item.result = "Loss";
+        else item.result = "Break Even";
+      }
+
+      if (field === "gross") {
+        const grossVal = parseLocaleFloat(value);
+        const commVal = parseLocaleFloat(item.commission);
+        item.pnl = grossVal + commVal;
+        
+        if (item.pnl > 0) item.result = "Win";
+        else if (item.pnl < 0) item.result = "Loss";
+        else item.result = "Break Even";
+      }
+
+      const grossVal = parseLocaleFloat(item.gross);
+      const maeVal = parseLocaleFloat(item.mae);
+      if (maeVal > 0) {
+        item.rr = parseFloat((grossVal / maeVal).toFixed(2));
+      } else {
+        item.rr = 0;
+      }
+      
+      updated[index] = item;
+      return { ...prev, trades: updated };
     });
   };
 
-  const handleWizardSubmit = async () => {
+  const handleRemoveTradeFromImport = (index) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const updated = prev.trades.filter((_, i) => i !== index);
+      return { ...prev, trades: updated };
+    });
+  };
+
+  const applyBulkStrategy = () => {
+    if (!bulkStrategy || !pendingImport) return;
+    setPendingImport(prev => {
+      const updated = prev.trades.map(t => ({ ...t, strategy: bulkStrategy }));
+      return { ...prev, trades: updated };
+    });
+    setBulkStrategy("");
+  };
+
+  const applyBulkAccount = () => {
+    if (!bulkAccount || !pendingImport) return;
+    setPendingImport(prev => {
+      const updated = prev.trades.map(t => ({ ...t, account: bulkAccount }));
+      return { ...prev, trades: updated };
+    });
+    setBulkAccount("");
+  };
+
+  const handleCreateMissingAccounts = async () => {
     if (!pendingImport) return;
     try {
       setWizardStatus("creando_cuentas");
       setWizardError("");
 
-      // 1. Create missing accounts
       for (const acct of pendingImport.missingAccounts) {
         const res = await fetch("/api/accounts", {
           method: "POST",
@@ -2140,23 +2150,35 @@ export default function App() {
         }
       }
 
-      // 2. Fetch updated accounts
       setWizardStatus("cargando_cuentas");
       await fetchAccounts();
 
-      // 3. Import trades
+      setPendingImport(prev => ({ ...prev, missingAccounts: [] }));
+      setWizardStep(2);
+      setWizardStatus("");
+    } catch (err) {
+      console.error(err);
+      setWizardError(err.message || "Error al crear las cuentas");
+      setWizardStatus("error");
+    }
+  };
+
+  const handleImportTrades = async () => {
+    if (!pendingImport) return;
+    try {
       setWizardStatus("importando_trades");
+      setWizardError("");
+
       let importedCount = 0;
       const savedTrades = [];
       const totalTrades = pendingImport.trades.length;
 
       for (let i = 0; i < totalTrades; i++) {
-        const t = pendingImport.trades[i];
         setWizardStatus(`importando_trades_progress:${i + 1}:${totalTrades}`);
         const res = await fetch('/api/trades', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(t),
+          body: JSON.stringify(pendingImport.trades[i]),
         });
         if (res.ok) {
           const saved = await res.json();
@@ -2166,14 +2188,14 @@ export default function App() {
       }
 
       if (importedCount > 0) {
-        setTrades(prev => [...prev, ...savedTrades]);
+        await fetchTrades();
+        await fetchAccounts();
         setImportMsg(`✓ ${importedCount} trades importados`);
       } else {
         setImportMsg("No se pudieron importar trades");
       }
       setTimeout(() => setImportMsg(""), 3000);
 
-      // Reset wizard
       setPendingImport(null);
       setWizardStatus("");
     } catch (err) {
@@ -2193,10 +2215,8 @@ export default function App() {
         if (lines.length === 0) return;
 
         const firstLine = lines[0];
-        // Automatically detect delimiter: semicolon or comma
         const delimiter = firstLine.includes(";") ? ";" : ",";
 
-        // Split CSV line helper ignoring delimiters inside quotes
         const splitCSVLine = (lineText, delim) => {
           const result = [];
           let current = "";
@@ -2216,67 +2236,23 @@ export default function App() {
           return result;
         };
 
-        // Parse float numbers supporting both dot and comma as decimal separator
-        const parseLocaleFloat = (val) => {
-          if (val === undefined || val === null || val === "") return 0;
-          let cleaned = String(val).trim();
-          
-          // Support for accounting parenthesis for negative numbers: (150.00) -> -150.00
-          if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-            cleaned = "-" + cleaned.slice(1, -1);
-          }
-          
-          // Remove currency symbols (like $) and other non-numeric chars except digits, dot, comma, and minus sign
-          cleaned = cleaned.replace(/[^0-9.,-]/g, "");
-          
-          const hasComma = cleaned.includes(",");
-          const hasDot = cleaned.includes(".");
-          
-          if (hasComma && hasDot) {
-            const commaIndex = cleaned.indexOf(",");
-            const dotIndex = cleaned.indexOf(".");
-            if (commaIndex < dotIndex) {
-              // US Format: 1,234.56 -> Remove commas
-              cleaned = cleaned.replace(/,/g, "");
-            } else {
-              // European Format: 1.234,56 -> Remove dots, replace comma with dot
-              cleaned = cleaned.replace(/\./g, "").replace(",", ".");
-            }
-          } else if (hasComma) {
-            // Just a comma: 1234,56 -> Replace with dot
-            cleaned = cleaned.replace(",", ".");
-          }
-          
-          const parsed = parseFloat(cleaned);
-          return isNaN(parsed) ? 0 : parsed;
-        };
-
         const headers = splitCSVLine(firstLine, delimiter).map(h => h.toLowerCase().trim());
         
         const extractDateOnly = (val) => {
           if (!val) return new Date().toISOString().slice(0, 10);
           const cleaned = String(val).trim();
-          if (cleaned.includes(" ")) {
-            return cleaned.split(" ")[0];
-          }
-          if (cleaned.includes("T")) {
-            return cleaned.split("T")[0];
-          }
+          if (cleaned.includes(" ")) return cleaned.split(" ")[0];
+          if (cleaned.includes("T")) return cleaned.split("T")[0];
           return cleaned;
         };
 
         const extractTimeOnly = (val) => {
           if (!val) return "";
           const cleaned = String(val).trim();
-          if (cleaned.includes(" ")) {
-            return cleaned.split(" ")[1];
-          }
+          if (cleaned.includes(" ")) return cleaned.split(" ")[1];
           if (cleaned.includes("T")) {
             const timePart = cleaned.split("T")[1];
-            if (timePart.includes(".")) {
-              return timePart.split(".")[0];
-            }
-            return timePart;
+            return timePart.includes(".") ? timePart.split(".")[0] : timePart;
           }
           return cleaned;
         };
@@ -2286,7 +2262,6 @@ export default function App() {
           const obj = {};
           headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
 
-          // Helper to fetch value using list of potential keys
           const getVal = (aliases, defaultVal = "") => {
             for (const alias of aliases) {
               const lowerAlias = alias.toLowerCase().trim();
@@ -2304,17 +2279,32 @@ export default function App() {
 
           const accountName = getVal(["account", "cuenta"], "BX101840-05 (50K)");
 
+          const grossVal = parseLocaleFloat(getVal(["gross", "bruto", "profit", "ganancia"], "0"));
+          const rawComm = getVal(["commission", "comisión", "comision", "comisiones"], null);
+          const commissionVal = rawComm !== null ? parseLocaleFloat(rawComm) : -4;
+          const rawPnl = getVal(["pnl", "net profit", "neto", "p&l", "resultado", "net_profit"], null);
+          const pnlVal = rawPnl !== null ? parseLocaleFloat(rawPnl) : (grossVal + commissionVal);
+
+          const maeVal = parseLocaleFloat(getVal(["mae", "MAE"], "0"));
+          const mfeVal = parseLocaleFloat(getVal(["mfe", "MFE"], "0"));
+          const etdVal = parseLocaleFloat(getVal(["etd", "ETD"], "0"));
+
+          let rrVal = parseLocaleFloat(getVal(["rr", "r multiple", "ratio", "r", "r_multiple"], "0"));
+          if (rrVal === 0 && maeVal > 0) {
+            rrVal = parseFloat((grossVal / maeVal).toFixed(2));
+          }
+
+          let resultVal = getVal(["result", "win/loss", "res", "resultado_op", "win_loss"], "");
+          if (!resultVal) {
+            resultVal = pnlVal > 0 ? "Win" : pnlVal < 0 ? "Loss" : "Break Even";
+          }
+
           return {
             date: dateVal,
             account: accountName,
             instrument: getVal(["instrument", "instrumento", "instr"], "NQ Futures"),
-            direction: getVal(["direction", "dirección", "direccion", "dir", "market pos.", "market pos"], "Long"),
+            direction: getVal(["direction", "dirección", "direccion", "dir", "market pos.", "market pos", "market p"], "Long"),
             qty: Math.round(parseLocaleFloat(getVal(["qty", "cantidad", "contratos"], "1"))) || 1,
-            entry: parseLocaleFloat(getVal(["entry", "entrada", "entry price", "entry_price"], "0")),
-            exit_price: parseLocaleFloat(getVal(["exit_price", "salida", "exit price", "exit_price"], "0")),
-            gross: parseLocaleFloat(getVal(["gross", "bruto", "profit", "ganancia"], "0")),
-            commission: parseLocaleFloat(getVal(["commission", "comisión", "comision", "comisiones"], "-4")),
-            pnl: parseLocaleFloat(getVal(["pnl", "net profit", "neto", "p&l", "resultado", "net_profit"], "0")),
             mae: parseLocaleFloat(getVal(["mae", "MAE"], "0")),
             mfe: parseLocaleFloat(getVal(["mfe", "MFE"], "0")),
             etd: parseLocaleFloat(getVal(["etd", "ETD"], "0")),
