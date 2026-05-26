@@ -1039,7 +1039,7 @@ function SettingsPanel({
   const checkVercelVersion = async (silent = false) => {
     if (!silent) setVercelStatus("loading");
     try {
-      const res = await fetch("/api/version");
+      const res = await fetch(`/api/version?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         setServerVersion({
