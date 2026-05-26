@@ -22,7 +22,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
-    const { image, provider, apiKey } = await request.json();
+    const { image, provider, apiKey, multiple } = await request.json();
 
     if (!image) {
       return NextResponse.json({ error: 'No se recibió ninguna imagen' }, { status: 400 });
@@ -33,7 +33,38 @@ export async function POST(request) {
 
     const { mediaType, data } = parseBase64(image);
 
-    const promptText = `Analiza esta captura de pantalla de un trade (de NinjaTrader, TradingView, MetaTrader, Bulenox, Rithmic, etc.) y extrae los detalles para un diario de trading.
+    const promptText = multiple
+      ? `Analiza esta captura de pantalla que contiene una tabla o lista de operaciones de trading (de NinjaTrader, TradingView, MetaTrader, Bulenox, Rithmic, etc.) y extrae los detalles de CADA operación (fila) para un diario de trading.
+Retorna UNICAMENTE un objeto JSON que coincida exactamente con este esquema:
+{
+  "trades": [
+    {
+      "date": "YYYY-MM-DD",
+      "entry_time": "HH:MM:SS",
+      "exit_time": "HH:MM:SS",
+      "account": "nombre o código de la cuenta",
+      "instrument": "instrumento negociado, ej: NQ Futures, ES Futures, NQ JUN26",
+      "direction": "Long" o "Short",
+      "qty": número entero (cantidad de contratos/lotes),
+      "entry": número decimal (precio de entrada),
+      "exit_price": número decimal (precio de salida),
+      "gross": número decimal (PnL bruto),
+      "commission": número decimal (comisión en negativo, ej: -4),
+      "pnl": número decimal (PnL neto = gross + commission),
+      "mae": número decimal (excursión adversa máxima),
+      "mfe": número decimal (excursión favorable máxima),
+      "etd": número decimal,
+      "rr": número decimal (relación riesgo-beneficio),
+      "result": "Win" o "Loss" o "Break Even",
+      "strategy": "nombre de la estrategia",
+      "timeframe": "temporalidad, ej: 15s, 1m, 5m",
+      "notes": "notas adicionales sobre el trade que observes en esta fila"
+    }
+  ]
+}
+Extrae todas las filas que veas en la tabla. Si algún valor no es visible o no se puede deducir, usa un valor por defecto razonable (0 para números, "" para texto, o calcula el pnl neto usando gross y comisión).
+Responde EXCLUSIVAMENTE con el JSON plano, sin bloques de código markdown (\`\`\`json), sin explicaciones adicionales y sin rodeos.`
+      : `Analiza esta captura de pantalla de un trade (de NinjaTrader, TradingView, MetaTrader, Bulenox, Rithmic, etc.) y extrae los detalles para un diario de trading.
 Retorna UNICAMENTE un objeto JSON que coincida exactamente con este esquema:
 {
   "date": "YYYY-MM-DD",
@@ -144,7 +175,7 @@ Responde EXCLUSIVAMENTE con el JSON plano, sin bloques de código markdown (\`\`
 
     } else if (provider === 'gemini') {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {
@@ -179,6 +210,16 @@ Responde EXCLUSIVAMENTE con el JSON plano, sin bloques de código markdown (\`\`
       const resData = await response.json();
       const textContent = resData.candidates[0].content.parts[0].text;
       responseJson = JSON.parse(textContent.trim());
+
+    } else if (provider === 'deepseek') {
+      // DeepSeek's deepseek-chat model does NOT support image/vision input.
+      // Return a friendly error guiding the user to use Gemini (free) instead.
+      return NextResponse.json(
+        {
+          error: 'DeepSeek (deepseek-chat) no soporta análisis de imágenes. Por favor, selecciona Gemini (gratuito) o OpenAI en Ajustes ⚙️ para usar la importación por imagen.'
+        },
+        { status: 400 }
+      );
 
     } else {
       return NextResponse.json({ error: 'Proveedor de IA no soportado' }, { status: 400 });

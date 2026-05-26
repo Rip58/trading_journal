@@ -291,7 +291,7 @@ function AccountCard({ account, rules, trades }) {
         </div>
 
         {/* Lado Central/Derecho: Columnas de información (Obj, DD, Días, PnL) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap", flex: "2 1 auto", justifyContent: "flex-end" }}>
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end">
           
           {/* Valor / Objetivo */}
           <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
@@ -812,64 +812,68 @@ function CalendarWidget({ trades }) {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2, marginBottom: 4 }}>
-        {dayLabels.map((d, i) => (
-          <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? "#BA7517" : d === "SEMANA" ? "#854F0B" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
-        ))}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2 }}>
-        {weeks.map((week, wIdx) => {
-          let weekPnl = 0;
-          let weekTrades = 0;
-          let weekDays = 0;
+      <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+        <div style={{ minWidth: 520 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2, marginBottom: 4 }}>
+            {dayLabels.map((d, i) => (
+              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? "#BA7517" : d === "SEMANA" ? "#854F0B" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2 }}>
+            {weeks.map((week, wIdx) => {
+              let weekPnl = 0;
+              let weekTrades = 0;
+              let weekDays = 0;
 
-          week.forEach(day => {
-            if (day.type === "day" && day.info) {
-              weekPnl += day.info.pnl;
-              weekTrades += day.info.count;
-              if (day.info.count > 0) {
-                weekDays++;
-              }
-            }
-          });
+              week.forEach(day => {
+                if (day.type === "day" && day.info) {
+                  weekPnl += day.info.pnl;
+                  weekTrades += day.info.count;
+                  if (day.info.count > 0) {
+                    weekDays++;
+                  }
+                }
+              });
 
-          const hasData = weekTrades > 0;
-          const weekBg = hasData ? (weekPnl >= 0 ? "#EAF3DE" : "#FAECE7") : "var(--color-background-secondary)";
-          const weekBorder = hasData ? (weekPnl >= 0 ? "#C0DD97" : "#F5C4B3") : "var(--color-border-tertiary)";
-          const weekCol = weekPnl >= 0 ? "#3B6D11" : "#993C1D";
+              const hasData = weekTrades > 0;
+              const weekBg = hasData ? (weekPnl >= 0 ? "#EAF3DE" : "#FAECE7") : "var(--color-background-secondary)";
+              const weekBorder = hasData ? (weekPnl >= 0 ? "#C0DD97" : "#F5C4B3") : "var(--color-border-tertiary)";
+              const weekCol = weekPnl >= 0 ? "#3B6D11" : "#993C1D";
 
-          return (
-            <Fragment key={wIdx}>
-              {week.map((c, dIdx) => {
-                if (c.type === "empty") return <div key={`e-${wIdx}-${dIdx}`} style={{ background: "transparent", minHeight: 50 }} />;
+              return (
+                <Fragment key={wIdx}>
+                  {week.map((c, dIdx) => {
+                    if (c.type === "empty") return <div key={`e-${wIdx}-${dIdx}`} style={{ background: "transparent", minHeight: 50 }} />;
 
-                const { info } = c;
-                const bg = info ? (info.pnl > 0 ? C.greenBg : info.pnl < 0 ? C.redBg : "var(--color-background-secondary)") : "var(--color-background-secondary)";
-                const col = info ? (info.pnl > 0 ? C.greenText : info.pnl < 0 ? C.redText : "var(--color-text-secondary)") : "var(--color-text-tertiary)";
-                const border = info ? (info.pnl > 0 ? "#9FE1CB" : info.pnl < 0 ? "#F5C4B3" : "var(--color-border-tertiary)") : "var(--color-border-tertiary)";
-                return (
-                  <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 500 }}>{c.d}</div>
-                    {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
-                    {info && <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{info.count}t</div>}
+                    const { info } = c;
+                    const bg = info ? (info.pnl > 0 ? C.greenBg : info.pnl < 0 ? C.redBg : "var(--color-background-secondary)") : "var(--color-background-secondary)";
+                    const col = info ? (info.pnl > 0 ? C.greenText : info.pnl < 0 ? C.redText : "var(--color-text-secondary)") : "var(--color-text-tertiary)";
+                    const border = info ? (info.pnl > 0 ? "#9FE1CB" : info.pnl < 0 ? "#F5C4B3" : "var(--color-border-tertiary)") : "var(--color-border-tertiary)";
+                    return (
+                      <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                        <div style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 500 }}>{c.d}</div>
+                        {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
+                        {info && <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{info.count}t</div>}
+                      </div>
+                    );
+                  })}
+
+                  <div key={`w-${wIdx}`} style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                    <div style={{ fontSize: 9, color: "#854F0B", textTransform: "uppercase", letterSpacing: ".2px", fontWeight: 500 }}>Semana</div>
+                    {hasData ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: weekCol }}>{fmtPnl(weekPnl)}</div>
+                        <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{weekTrades}t · {weekDays}d</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>—</div>
+                    )}
                   </div>
-                );
-              })}
-
-              <div key={`w-${wIdx}`} style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
-                <div style={{ fontSize: 9, color: "#854F0B", textTransform: "uppercase", letterSpacing: ".2px", fontWeight: 500 }}>Semana</div>
-                {hasData ? (
-                  <>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: weekCol }}>{fmtPnl(weekPnl)}</div>
-                    <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>{weekTrades}t · {weekDays}d</div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>—</div>
-                )}
-              </div>
-            </Fragment>
-          );
-        })}
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Resumen Mensual */}
@@ -1003,19 +1007,18 @@ function DonutChart({ wins, losses }) {
 function BarChart({ labels, values, height = 120 }) {
   if (!values.length) return null;
   const max = Math.max(...values.map(Math.abs), 1);
-  const barW = Math.floor(560 / labels.length) - 4;
   return (
-    <div style={{ overflowX: "auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height, paddingBottom: 24, minWidth: labels.length * (barW + 4) }}>
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height, paddingBottom: 24 }}>
         {labels.map((l, i) => {
           const v = values[i];
           const h = Math.abs(v) / max * (height - 24);
           const color = v >= 0 ? C.green : C.red;
           return (
-            <div key={l} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              {v >= 0 && <div style={{ width: barW, height: h, background: color, borderRadius: "3px 3px 0 0", opacity: 0.8 }} title={`${l}: ${fmt(v)}`} />}
-              {v < 0 && <div style={{ width: barW, height: Math.abs(v) / max * (height - 24), background: color, borderRadius: "0 0 3px 3px", opacity: 0.8, marginTop: "auto" }} title={`${l}: ${fmt(v)}`} />}
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textAlign: "center", width: barW, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</div>
+            <div key={`${l}-${i}`} style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0 }}>
+              {v >= 0 && <div style={{ width: "100%", maxWidth: 36, height: h, background: color, borderRadius: "3px 3px 0 0", opacity: 0.8 }} title={`${l}: ${fmt(v)}`} />}
+              {v < 0 && <div style={{ width: "100%", maxWidth: 36, height: h, background: color, borderRadius: "0 0 3px 3px", opacity: 0.8, marginTop: "auto" }} title={`${l}: ${fmt(v)}`} />}
+              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l}>{l}</div>
             </div>
           );
         })}
@@ -1205,7 +1208,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 mb-2.5">
         {renderField("Fecha", "date", "date")}
         {renderField("Hora entrada", "entry_time")}
         {renderField("Hora salida", "exit_time")}
@@ -1667,7 +1670,8 @@ function SettingsPanel({
               onChange={(e) => setAiProvider(e.target.value)}
               style={{ fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
             >
-              <option value="gemini">Gemini (1.5 Flash - Recomendado)</option>
+              <option value="gemini">Gemini (2.5 Flash - Recomendado 🆓)</option>
+              <option value="deepseek">DeepSeek (solo texto, sin visión de imágenes)</option>
               <option value="openai">OpenAI (GPT-4o-mini)</option>
               <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
             </select>
@@ -1718,7 +1722,7 @@ function SettingsPanel({
           {accountsList.map((a) => (
             <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", flexWrap: "wrap", gap: 8 }}>
               {editingAcctId === a.id ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, width: "100%" }}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 w-full">
                   <input type="text" value={editAcct.name} onChange={e => setEditAcct({...editAcct, name: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Nombre" />
                   <input type="number" value={editAcct.size} onChange={e => setEditAcct({...editAcct, size: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Balance" />
                   <input type="number" value={editAcct.target} onChange={e => setEditAcct({...editAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Objetivo" />
@@ -1733,7 +1737,7 @@ function SettingsPanel({
                   <input type="number" value={editAcct.threshold !== undefined && editAcct.threshold !== null ? editAcct.threshold : ""} onChange={e => setEditAcct({...editAcct, threshold: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Umbral Liq." />
                   <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha Act. (MM/DD/AA)" />
                   <input type="number" value={editAcct.activeDays !== undefined && editAcct.activeDays !== null ? editAcct.activeDays : ""} onChange={e => setEditAcct({...editAcct, activeDays: e.target.value === "" ? null : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Días Operados" />
-                  <div style={{ display: "flex", gap: 4, gridColumn: "span 2" }}>
+                  <div className="flex gap-1.5 col-span-1 sm:col-span-2">
                     <button onClick={() => handleUpdateAccount(a.id)} style={{ flex: 1, padding: "4px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Guardar</button>
                     <button onClick={() => { setEditingAcctId(null); setEditAcct(null); }} style={{ flex: 1, padding: "4px 8px", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancelar</button>
                   </div>
@@ -1762,7 +1766,7 @@ function SettingsPanel({
 
         <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12, marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
               <input type="text" placeholder="Ej: BX101840-06 (100K)" value={newAcct.name} onChange={e => setNewAcct({...newAcct, name: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
@@ -1779,7 +1783,7 @@ function SettingsPanel({
               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Drawdown ($)</label>
               <input type="number" placeholder="Ej: 2500" value={newAcct.dd_limit} onChange={e => setNewAcct({...newAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, gridColumn: "span 2" }}>
+            <div className="flex flex-col gap-0.5 col-span-1 sm:col-span-2">
                <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Pérdida Diaria ($)</label>
                <input type="number" placeholder="Ej: 1100" value={newAcct.daily_limit} onChange={e => setNewAcct({...newAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
             </div>
@@ -2106,6 +2110,7 @@ export default function App() {
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
   const [selectedTradeImage, setSelectedTradeImage] = useState(null);
+  const [imageImportLoading, setImageImportLoading] = useState(false);
 
   const PER_PAGE = 20;
 
@@ -2587,6 +2592,149 @@ export default function App() {
     };
   };
 
+  const handleImageImportAI = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const provider = localStorage.getItem("tj_ai_provider") || "gemini";
+    const apiKey = localStorage.getItem("tj_ai_key") || "";
+
+    if (!apiKey) {
+      setImportMsg("⚠️ Configura tu API Key en Ajustes ⚙️ antes de importar por imagen");
+      setTimeout(() => setImportMsg(""), 4000);
+      return;
+    }
+
+    setImageImportLoading(true);
+    setImportMsg("🤖 Procesando imagen con IA...");
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const base64 = ev.target.result;
+          const res = await fetch("/api/parse-trade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: base64, provider, apiKey, multiple: true }),
+          });
+
+          const resData = await res.json();
+          if (!res.ok) throw new Error(resData.error || "Error de la IA");
+
+          // The API returns { trades: [...] } when multiple=true
+          const rawTrades = Array.isArray(resData.trades) ? resData.trades : (resData.trades ? [resData.trades] : [resData]);
+
+          if (rawTrades.length === 0) {
+            setImportMsg("⚠️ La IA no encontró operaciones en la imagen");
+            setTimeout(() => setImportMsg(""), 4000);
+            return;
+          }
+
+          const today = new Date().toISOString().slice(0, 10);
+
+          const newTradesData = rawTrades.map((t) => {
+            // Normalize date
+            let dateVal = t.date || today;
+            if (dateVal && !dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              dateVal = normalizeDateToYYYYMMDD(dateVal);
+            }
+
+            const grossVal = parseLocaleFloat(t.gross) || 0;
+            const commissionVal = parseLocaleFloat(t.commission) || 0;
+            const pnlVal = parseLocaleFloat(t.pnl) || (grossVal + commissionVal);
+            const maeVal = parseLocaleFloat(t.mae) || 0;
+            const mfeVal = parseLocaleFloat(t.mfe) || 0;
+            const etdVal = parseLocaleFloat(t.etd) || 0;
+            let rrVal = parseLocaleFloat(t.rr) || 0;
+            if (rrVal === 0 && maeVal > 0) rrVal = parseFloat((grossVal / maeVal).toFixed(2));
+            let resultVal = t.result || (pnlVal > 0 ? "Win" : pnlVal < 0 ? "Loss" : "Break Even");
+
+            const tradeCandidate = {
+              date: dateVal,
+              entry_time: t.entry_time || "",
+              exit_time: t.exit_time || "",
+              account: t.account || (accountsList[0]?.name || ""),
+              instrument: t.instrument || "NQ Futures",
+              direction: t.direction || "Long",
+              qty: Math.round(parseLocaleFloat(t.qty)) || 1,
+              entry: parseLocaleFloat(t.entry) || 0,
+              exit_price: parseLocaleFloat(t.exit_price) || 0,
+              gross: grossVal,
+              commission: commissionVal,
+              pnl: pnlVal,
+              mae: maeVal,
+              mfe: mfeVal,
+              etd: etdVal,
+              rr: rrVal,
+              result: resultVal,
+              strategy: t.strategy || "",
+              timeframe: t.timeframe || "15s",
+              notes: t.notes || "",
+            };
+
+            const dupResult = checkDuplicate(tradeCandidate, trades);
+            return {
+              ...tradeCandidate,
+              isDuplicate: dupResult.isDuplicate,
+              duplicatePct: dupResult.duplicatePct,
+              duplicateOf: dupResult.duplicateOf,
+              isExcluded: dupResult.isDuplicate,
+            };
+          }).filter(t => !isNaN(t.pnl));
+
+          if (newTradesData.length === 0) {
+            setImportMsg("⚠️ No se pudieron procesar las operaciones de la imagen");
+            setTimeout(() => setImportMsg(""), 4000);
+            return;
+          }
+
+          setImportMsg("");
+
+          // Check for missing accounts (same flow as CSV import)
+          const imgAccounts = [...new Set(newTradesData.map(t => t.account))].filter(Boolean);
+          const existingNames = accountsList.map(a => a.name);
+          const missingNames = imgAccounts.filter(name => !existingNames.includes(name));
+
+          if (missingNames.length > 0) {
+            setPendingImport({
+              trades: newTradesData,
+              missingAccounts: missingNames.map(name => ({
+                name,
+                action: "create",
+                linkTo: accountsList[0]?.name || "",
+                size: 50000,
+                target: 3000,
+                dd_limit: 2500,
+                daily_limit: 1100,
+              })),
+            });
+            setWizardStep(1);
+          } else {
+            setPendingImport({
+              trades: newTradesData,
+              missingAccounts: [],
+            });
+            setWizardStep(2);
+          }
+        } catch (err) {
+          console.error(err);
+          setImportMsg(`⚠️ ${err.message || "Error al procesar la imagen"}`);
+          setTimeout(() => setImportMsg(""), 5000);
+        } finally {
+          setImageImportLoading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setImportMsg("⚠️ Error al leer el archivo de imagen");
+      setTimeout(() => setImportMsg(""), 4000);
+      setImageImportLoading(false);
+    }
+  };
+
   const handleCSVImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2835,7 +2983,7 @@ export default function App() {
   const renderModule = (mod, idx) => {
     if (!visibility[mod.id] && !editMode) return null;
     const props = {
-      key: mod.id, id: mod.id, label: mod.label, icon: mod.icon,
+      id: mod.id, label: mod.label, icon: mod.icon,
       visible: visibility[mod.id], onToggle: toggleModule,
       onMoveUp: (id) => moveModule(id, -1), onMoveDown: (id) => moveModule(id, 1),
       canUp: idx > 0, canDown: idx < orderedModules.length - 1, editMode,
@@ -2852,8 +3000,8 @@ export default function App() {
       );
     }
     if (mod.id === "kpis") return (
-      <Module {...props}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10 }}>
+      <Module key={mod.id} {...props}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2.5">
           <KpiCard label="Net P&L" value={fmt(Math.round(stats.totalPnl || 0))} color={stats.totalPnl >= 0 ? C.green : C.red} spark={equitySpark} />
           <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W / ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
           <KpiCard label="Profit factor" value={fmtN(stats.pf || 0, 2)} color={(stats.pf || 0) >= 1 ? C.green : C.red} />
@@ -2891,7 +3039,7 @@ export default function App() {
       });
 
       return (
-        <Module {...props}>
+        <Module key={mod.id} {...props}>
           {/* Barra de Filtros */}
           <div style={{ 
             display: "flex", 
@@ -2963,7 +3111,7 @@ export default function App() {
       );
     }
     if (mod.id === "equity") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 6 }}>
             {accountsButtons.map(([v, l]) => (
@@ -2979,33 +3127,69 @@ export default function App() {
       </Module>
     );
     if (mod.id === "calendar") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <CalendarWidget trades={filtered} />
       </Module>
     );
     if (mod.id === "winloss") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <DonutChart wins={stats.wins || 0} losses={stats.losses || 0} />
       </Module>
     );
     if (mod.id === "dowchart") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <BarChart labels={dowData.labels} values={dowData.values} />
       </Module>
     );
     if (mod.id === "strategies") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <BarChart labels={stratData.labels} values={stratData.values} height={140} />
       </Module>
     );
     if (mod.id === "trades") return (
-      <Module {...props}>
+      <Module key={mod.id} {...props}>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => { setAddingTrade(true); setEditingTrade(null); }} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: `0.5px solid ${C.green}`, background: C.greenBg, color: C.greenText, cursor: "pointer", fontWeight: 500 }}>+ Añadir trade</button>
           <label style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
             Importar CSV <input type="file" accept=".csv" onChange={handleCSVImport} style={{ display: "none" }} />
           </label>
-          {importMsg && <span style={{ fontSize: 12, color: C.green }}>{importMsg}</span>}
+          <label style={{
+            fontSize: 12,
+            padding: "5px 12px",
+            borderRadius: 6,
+            border: `0.5px solid ${C.blue}`,
+            background: C.blueBg,
+            color: imageImportLoading ? "var(--color-text-tertiary)" : C.blueText,
+            cursor: imageImportLoading ? "not-allowed" : "pointer",
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            opacity: imageImportLoading ? 0.7 : 1,
+            transition: "opacity 0.2s",
+          }}>
+            {imageImportLoading ? (
+              <><span style={{ display: "inline-block", animation: "wizard-spin 1s linear infinite" }}>⏳</span> Procesando...</>
+            ) : (
+              <>📸 Importar Imagen (IA)</>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageImportAI}
+              disabled={imageImportLoading}
+              style={{ display: "none" }}
+            />
+          </label>
+          {importMsg && (
+            <span style={{
+              fontSize: 12,
+              color: importMsg.startsWith("⚠️") ? C.red : C.green,
+              fontWeight: 500,
+            }}>
+              {importMsg}
+            </span>
+          )}
         </div>
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         <div style={{ overflowX: "auto" }}>
@@ -3086,7 +3270,7 @@ export default function App() {
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: 8 }}>
+      <div className="flex flex-col md:flex-row justify-between gap-4 md:items-center mb-5">
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 500, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
             <span>📈 Trading Journal</span>
@@ -3113,7 +3297,7 @@ export default function App() {
           </h1>
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
           {currentTab === "dashboard" && (
             <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
               <option value="all">Todas las cuentas</option>
@@ -3375,7 +3559,7 @@ export default function App() {
                         </div>
                         
                         {!isLink ? (
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div>
                               <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
                               <input 
