@@ -1822,6 +1822,14 @@ export default function App() {
           if (val === undefined || val === null || val === "") return 0;
           let cleaned = String(val).trim();
           
+          // Support for accounting parenthesis for negative numbers: (150.00) -> -150.00
+          if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+            cleaned = "-" + cleaned.slice(1, -1);
+          }
+          
+          // Remove currency symbols (like $) and other non-numeric chars except digits, dot, comma, and minus sign
+          cleaned = cleaned.replace(/[^0-9.,-]/g, "");
+          
           const hasComma = cleaned.includes(",");
           const hasDot = cleaned.includes(".");
           
