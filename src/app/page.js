@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { UserButton } from "@clerk/nextjs";
-import { normalizeDateToYYYYMMDD } from "@/lib/dateUtils";
+import { normalizeDateToYYYYMMDD, parseLocaleFloat } from "@/lib/dateUtils";
 
 // ACCOUNT_RULES is loaded dynamically from database now
 
@@ -874,8 +874,21 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
           })}
         </select>
       ) : (
-        <input type={type} value={form[field] ?? ""} onChange={e => set(field, type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
-          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+        <input 
+          type={type === "number" ? "text" : type} 
+          inputMode={type === "number" ? "decimal" : undefined}
+          value={form[field] ?? ""} 
+          onChange={e => {
+            const val = e.target.value;
+            if (type === "number") {
+              const cleaned = val.replace(/[^0-9.,-]/g, "");
+              set(field, cleaned);
+            } else {
+              set(field, val);
+            }
+          }}
+          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} 
+        />
       )}
     </div>
   );
@@ -1048,10 +1061,23 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         )}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => onSave({
-          ...form,
-          gross: (parseFloat(form.pnl) || 0) - (parseFloat(form.commission) || 0)
-        })} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
+        <button onClick={() => {
+          const pnlNum = parseLocaleFloat(form.pnl);
+          const commNum = parseLocaleFloat(form.commission);
+          onSave({
+            ...form,
+            qty: Math.round(parseLocaleFloat(form.qty)) || 1,
+            entry: parseLocaleFloat(form.entry),
+            exit_price: parseLocaleFloat(form.exit_price),
+            commission: commNum,
+            pnl: pnlNum,
+            mae: parseLocaleFloat(form.mae),
+            mfe: parseLocaleFloat(form.mfe),
+            etd: parseLocaleFloat(form.etd),
+            rr: parseLocaleFloat(form.rr),
+            gross: pnlNum - commNum
+          });
+        }} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
         <button onClick={onCancel} style={{ padding: "6px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>Cancelar</button>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
-import { normalizeDateToYYYYMMDD } from '@/lib/dateUtils';
+import { normalizeDateToYYYYMMDD, parseLocaleFloat } from '@/lib/dateUtils';
 
 export async function GET() {
   try {
@@ -47,16 +47,16 @@ export async function POST(request) {
         account: body.account,
         instrument: body.instrument,
         direction: body.direction,
-        qty: parseInt(body.qty) || 1,
-        entry: parseFloat(body.entry) || 0,
-        exit_price: parseFloat(body.exit_price) || 0,
-        gross: parseFloat(body.gross) || 0,
-        commission: parseFloat(body.commission) || 0,
-        pnl: parseFloat(body.pnl) || 0,
-        mae: parseFloat(body.mae) || 0,
-        mfe: parseFloat(body.mfe) || 0,
-        etd: parseFloat(body.etd) || 0,
-        rr: parseFloat(body.rr) || 0,
+        qty: Math.round(parseLocaleFloat(body.qty)) || 1,
+        entry: parseLocaleFloat(body.entry),
+        exit_price: parseLocaleFloat(body.exit_price),
+        gross: parseLocaleFloat(body.gross),
+        commission: parseLocaleFloat(body.commission),
+        pnl: parseLocaleFloat(body.pnl),
+        mae: parseLocaleFloat(body.mae),
+        mfe: parseLocaleFloat(body.mfe),
+        etd: parseLocaleFloat(body.etd),
+        rr: parseLocaleFloat(body.rr),
         result: body.result || 'Win',
         strategy: body.strategy || '',
         timeframe: body.timeframe || '15s',

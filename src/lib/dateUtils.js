@@ -60,3 +60,25 @@ export function normalizeDateToYYYYMMDD(dateStr) {
   
   return cleaned;
 }
+
+export function parseLocaleFloat(val) {
+  if (val === undefined || val === null || val === "") return 0;
+  let cleaned = String(val).trim();
+  
+  // Replace comma with dot if there are no dots
+  if (cleaned.includes(",") && !cleaned.includes(".")) {
+    cleaned = cleaned.replace(",", ".");
+  } else if (cleaned.includes(",") && cleaned.includes(".")) {
+    const commaIndex = cleaned.indexOf(",");
+    const dotIndex = cleaned.indexOf(".");
+    if (commaIndex < dotIndex) {
+      cleaned = cleaned.replace(/,/g, "");
+    } else {
+      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+    }
+  }
+  
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
