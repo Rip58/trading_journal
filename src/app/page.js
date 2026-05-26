@@ -946,7 +946,36 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         {renderField("Cantidad", "qty", "number")}
         {renderField("Precio entrada", "entry", "number")}
         {renderField("Precio salida", "exit_price", "number")}
-        {renderField("Estrategia", "strategy")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Estrategia</label>
+          <select 
+            value={["Estrategia 1", "Estrategia 2", "Estrategia 3"].includes(form.strategy) ? form.strategy : (form.strategy === "" ? "" : "Otra")} 
+            onChange={e => {
+              const val = e.target.value;
+              if (val === "Otra") {
+                set("strategy", "Otra");
+              } else {
+                set("strategy", val);
+              }
+            }} 
+            style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", height: 30 }}
+          >
+            <option value="">Ninguna</option>
+            <option value="Estrategia 1">Estrategia 1</option>
+            <option value="Estrategia 2">Estrategia 2</option>
+            <option value="Estrategia 3">Estrategia 3</option>
+            <option value="Otra">Otra...</option>
+          </select>
+          {(!["Estrategia 1", "Estrategia 2", "Estrategia 3"].includes(form.strategy) && form.strategy !== "") && (
+            <input 
+              type="text" 
+              value={form.strategy === "Otra" ? "" : form.strategy} 
+              placeholder="Escribe la estrategia..."
+              onChange={e => set("strategy", e.target.value)}
+              style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", marginTop: 4 }} 
+            />
+          )}
+        </div>
         {renderField("Net PnL ($)", "pnl", "number")}
         {renderField("Comisión ($)", "commission", "number")}
         {renderField("R múltiple", "rr", "number")}
