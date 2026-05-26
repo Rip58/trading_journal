@@ -564,6 +564,17 @@ function CalendarWidget({ trades }) {
     setCurrentMonth(`${y}-${String(mo + 1).padStart(2, "0")}`);
   };
 
+  const monthStats = useMemo(() => {
+    const monthTrades = trades.filter(t => {
+      const normDate = normalizeDateToYYYYMMDD(t.date);
+      return normDate.startsWith(currentMonth);
+    });
+    const totalGlobal = monthTrades.reduce((acc, t) => acc + (t.pnl || 0), 0);
+    const totalWin = monthTrades.reduce((acc, t) => (t.pnl || 0) > 0 ? acc + t.pnl : acc, 0);
+    const totalLose = monthTrades.reduce((acc, t) => (t.pnl || 0) < 0 ? acc + t.pnl : acc, 0);
+    return { totalGlobal, totalWin, totalLose };
+  }, [trades, currentMonth]);
+
   const byDate = {};
   trades.forEach(t => {
     const normalized = normalizeDateToYYYYMMDD(t.date);
@@ -717,6 +728,101 @@ function CalendarWidget({ trades }) {
           );
         })}
       </div>
+
+      {/* Resumen Mensual */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 12,
+        marginTop: 16,
+      }}>
+        {/* Total Global Card */}
+        <div style={{
+          background: monthStats.totalGlobal >= 0 ? C.greenBg : C.redBg,
+          border: `0.5px solid ${monthStats.totalGlobal >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
+          borderRadius: 8,
+          padding: "10px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          cursor: "default",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "none";
+          e.currentTarget.style.boxShadow = "none";
+        }}
+        >
+          <div style={{ fontSize: 9, color: monthStats.totalGlobal >= 0 ? C.greenText : C.redText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
+            Total Global
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: monthStats.totalGlobal >= 0 ? C.greenText : C.redText }}>
+            {fmt(monthStats.totalGlobal)}
+          </div>
+        </div>
+
+        {/* Total Win Card */}
+        <div style={{
+          background: C.greenBg,
+          border: "0.5px solid #9FE1CB",
+          borderRadius: 8,
+          padding: "10px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          cursor: "default",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "none";
+          e.currentTarget.style.boxShadow = "none";
+        }}
+        >
+          <div style={{ fontSize: 9, color: C.greenText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
+            Total Win
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.greenText }}>
+            {fmt(monthStats.totalWin)}
+          </div>
+        </div>
+
+        {/* Total Lose Card */}
+        <div style={{
+          background: C.redBg,
+          border: "0.5px solid #F5C4B3",
+          borderRadius: 8,
+          padding: "10px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+          cursor: "default",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "none";
+          e.currentTarget.style.boxShadow = "none";
+        }}
+        >
+          <div style={{ fontSize: 9, color: C.redText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
+            Total Lose
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.redText }}>
+            {fmt(monthStats.totalLose)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -796,6 +902,15 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
   const [scanSuccess, setScanSuccess] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const gross = (parseLocaleFloat(form.pnl) || 0) - (parseLocaleFloat(form.commission) || 0);
+    const mae = parseLocaleFloat(form.mae) || 0;
+    const calculatedRR = mae > 0 ? parseFloat((gross / mae).toFixed(2)) : 0;
+    if (form.rr !== calculatedRR) {
+      setForm(f => ({ ...f, rr: calculatedRR }));
+    }
+  }, [form.pnl, form.commission, form.mae, form.rr]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -1953,9 +2068,9 @@ export default function App() {
           body: JSON.stringify(t),
         });
         if (res.ok) {
-          const newTrade = await res.json();
-          setTrades(prev => [...prev, newTrade]);
           setAddingTrade(false);
+          await fetchTrades();
+          await fetchAccounts();
         } else {
           alert('Error al guardar el trade en la base de datos');
         }
@@ -1966,9 +2081,9 @@ export default function App() {
           body: JSON.stringify(t),
         });
         if (res.ok) {
-          const updatedTrade = await res.json();
-          setTrades(prev => prev.map(x => x.id === t.id ? updatedTrade : x));
           setEditingTrade(null);
+          await fetchTrades();
+          await fetchAccounts();
         } else {
           alert('Error al actualizar el trade en la base de datos');
         }
@@ -1985,8 +2100,9 @@ export default function App() {
         method: 'DELETE',
       });
       if (res.ok) {
-        setTrades(prev => prev.filter(t => t.id !== id));
         setDeleteConfirm(null);
+        await fetchTrades();
+        await fetchAccounts();
       } else {
         alert('Error al eliminar el trade de la base de datos');
       }
