@@ -2326,14 +2326,23 @@ export default function App() {
       setWizardStatus("creando_cuentas");
       setWizardError("");
 
+      // 1. Create missing accounts that are marked as "create"
       for (const acct of pendingImport.missingAccounts) {
+        if (acct.action === "link") continue; // Skip database creation!
+
         const res = await fetch("/api/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(acct),
+          body: JSON.stringify({
+            name: acct.name,
+            size: acct.size,
+            target: acct.target,
+            dd_limit: acct.dd_limit,
+            daily_limit: acct.daily_limit,
+          }),
         });
         if (!res.ok) {
-          const errData = await res.json();
+          const errData = await res.json().catch(() => ({}));
           throw new Error(`Error creando la cuenta "${acct.name}": ${errData.error || "Error de red"}`);
         }
       }
@@ -2341,7 +2350,26 @@ export default function App() {
       setWizardStatus("cargando_cuentas");
       await fetchAccounts();
 
-      setPendingImport(prev => ({ ...prev, missingAccounts: [] }));
+      // 2. Map trade accounts for those marked as "link"
+      const mapping = {};
+      pendingImport.missingAccounts.forEach(acct => {
+        if (acct.action === "link" && acct.linkTo) {
+          mapping[acct.name] = acct.linkTo;
+        }
+      });
+
+      const updatedTrades = pendingImport.trades.map(t => {
+        if (mapping[t.account]) {
+          return { ...t, account: mapping[t.account] };
+        }
+        return t;
+      });
+
+      setPendingImport(prev => ({
+        ...prev,
+        trades: updatedTrades,
+        missingAccounts: [],
+      }));
       setWizardStep(2);
       setWizardStatus("");
     } catch (err) {
@@ -2625,6 +2653,8 @@ export default function App() {
             trades: newTradesData,
             missingAccounts: missingNames.map(name => ({
               name,
+              action: "create",
+              linkTo: accountsList[0]?.name || "",
               size: 50000,
               target: 3000,
               dd_limit: 2500,
@@ -3215,66 +3245,120 @@ export default function App() {
                 )}
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", paddingRight: 4 }}>
-                  {pendingImport.missingAccounts.map((acct, index) => (
-                    <div key={acct.name} style={{
-                      padding: 14,
-                      background: "var(--color-background-secondary)",
-                      border: "0.5px solid var(--color-border-secondary)",
-                      borderRadius: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                          🏦 Cuenta: <code style={{ background: "rgba(128,128,128,0.1)", padding: "2px 6px", borderRadius: 4, fontStyle: "normal" }}>{acct.name}</code>
-                        </span>
+                  {pendingImport.missingAccounts.map((acct, index) => {
+                    const isLink = acct.action === "link";
+                    return (
+                      <div key={acct.name} style={{
+                        padding: 14,
+                        background: "var(--color-background-secondary)",
+                        border: "0.5px solid var(--color-border-secondary)",
+                        borderRadius: 10,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                            🏦 Cuenta en CSV: <code style={{ background: "rgba(128,128,128,0.1)", padding: "2px 6px", borderRadius: 4, fontStyle: "normal" }}>{acct.name}</code>
+                          </span>
+                          
+                          {/* Segment control */}
+                          <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleFieldChange(index, "action", "create")}
+                              style={{
+                                fontSize: 10,
+                                padding: "4px 10px",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                background: acct.action === "create" ? C.blue : "transparent",
+                                color: acct.action === "create" ? "#fff" : "var(--color-text-secondary)",
+                              }}
+                            >
+                              Crear Nueva
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleFieldChange(index, "action", "link")}
+                              style={{
+                                fontSize: 10,
+                                padding: "4px 10px",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                background: acct.action === "link" ? C.blue : "transparent",
+                                color: acct.action === "link" ? "#fff" : "var(--color-text-secondary)",
+                              }}
+                            >
+                              Vincular Existente
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {!isLink ? (
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                            <div>
+                              <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
+                              <input 
+                                type="number" 
+                                value={acct.size} 
+                                onChange={(e) => handleFieldChange(index, "size", parseFloat(e.target.value) || 0)}
+                                disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                                style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>OBJETIVO (TARGET)</label>
+                              <input 
+                                type="number" 
+                                value={acct.target} 
+                                onChange={(e) => handleFieldChange(index, "target", parseFloat(e.target.value) || 0)}
+                                disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                                style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DIARIO (DAILY LIMIT)</label>
+                              <input 
+                                type="number" 
+                                value={acct.daily_limit} 
+                                onChange={(e) => handleFieldChange(index, "daily_limit", parseFloat(e.target.value) || 0)}
+                                disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                                style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DRAWDOWN (DD LIMIT)</label>
+                              <input 
+                                type="number" 
+                                value={acct.dd_limit} 
+                                onChange={(e) => handleFieldChange(index, "dd_limit", parseFloat(e.target.value) || 0)}
+                                disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                                style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 6, fontWeight: 500 }}>SELECCIONAR CUENTA EXISTENTE A VINCULAR</label>
+                            <select
+                              value={acct.linkTo || ""}
+                              onChange={(e) => handleFieldChange(index, "linkTo", e.target.value)}
+                              disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
+                              style={{ width: "100%", fontSize: 12, padding: "8px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                            >
+                              <option value="">Seleccionar cuenta...</option>
+                              {accountsList.map(a => (
+                                <option key={a.id} value={a.name}>{a.name} ({a.status})</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                      
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div>
-                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>IMPORTE (SIZE)</label>
-                          <input 
-                            type="number" 
-                            value={acct.size} 
-                            onChange={(e) => handleFieldChange(index, "size", parseFloat(e.target.value) || 0)}
-                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>OBJETIVO (TARGET)</label>
-                          <input 
-                            type="number" 
-                            value={acct.target} 
-                            onChange={(e) => handleFieldChange(index, "target", parseFloat(e.target.value) || 0)}
-                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DIARIO (DAILY LIMIT)</label>
-                          <input 
-                            type="number" 
-                            value={acct.daily_limit} 
-                            onChange={(e) => handleFieldChange(index, "daily_limit", parseFloat(e.target.value) || 0)}
-                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 4, fontWeight: 500 }}>LÍMITE DRAWDOWN (DD LIMIT)</label>
-                          <input 
-                            type="number" 
-                            value={acct.dd_limit} 
-                            onChange={(e) => handleFieldChange(index, "dd_limit", parseFloat(e.target.value) || 0)}
-                            disabled={wizardStatus.startsWith("creando") || wizardStatus.startsWith("importando") || wizardStatus === "cargando_cuentas"}
-                            style={{ width: "100%", fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : (
@@ -3588,7 +3672,7 @@ export default function App() {
               </button>
               <button 
                 onClick={handleWizardSubmit}
-                disabled={wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0)}
+                disabled={wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0) || (wizardStep === 1 && pendingImport.missingAccounts.some(acct => acct.action === "link" && !acct.linkTo))}
                 style={{
                   fontSize: 12,
                   padding: "8px 18px",
@@ -3596,8 +3680,8 @@ export default function App() {
                   border: "none",
                   background: C.green,
                   color: "#fff",
-                  cursor: (wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0)) ? "not-allowed" : "pointer",
-                  opacity: (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0) ? 0.6 : 1,
+                  cursor: (wizardStatus !== "" && wizardStatus !== "error" || (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0) || (wizardStep === 1 && pendingImport.missingAccounts.some(acct => acct.action === "link" && !acct.linkTo))) ? "not-allowed" : "pointer",
+                  opacity: (wizardStep === 2 && pendingImport.trades.filter(t => !t.isExcluded).length === 0) || (wizardStep === 1 && pendingImport.missingAccounts.some(acct => acct.action === "link" && !acct.linkTo)) ? 0.6 : 1,
                   fontWeight: 500,
                   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                 }}
