@@ -2257,7 +2257,18 @@ export default function App() {
           <KpiCard label="Avg RR" value={`${fmtN(stats.avgRR || 0, 2)}R`} color={(stats.avgRR || 0) > 0 ? C.green : C.red} />
           <KpiCard label="Mejor trade" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
           <KpiCard label="Peor trade" value={fmt(Math.round(stats.maxLoss || 0))} color={C.red} />
-          <KpiCard label="Media Win / Loss" value={`${fmt(stats.avgWin || 0)} / ${fmt(-(stats.avgLoss || 0))}`} sub={stats.avgLoss > 0 ? `Ratio: ${fmtN((stats.avgWin || 0) / stats.avgLoss, 2)}` : "Ratio: N/A"} color={(stats.avgWin || 0) >= (stats.avgLoss || 0) ? C.green : C.red} />
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 2 }}>Media Win</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: C.green, marginBottom: 8 }}>{fmt(stats.avgWin || 0)}</div>
+              
+              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 2 }}>Media Lose</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: C.red, marginBottom: 6 }}>{fmt(-(stats.avgLoss || 0))}</div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-secondary)", paddingTop: 4, marginTop: 4 }}>
+              Ratio: {stats.avgLoss > 0 ? fmtN((stats.avgWin || 0) / stats.avgLoss, 2) : "N/A"}
+            </div>
+          </div>
           <KpiCard label="Duración media" value={formatDuration(stats.avgDuration)} sub={stats.avgDuration !== null && stats.avgDuration !== undefined ? `W: ${formatDuration(stats.avgWinDuration)} / L: ${formatDuration(stats.avgLossDuration)}` : "Sin datos de tiempo"} color="var(--color-text-primary)" />
           <KpiCard label="Comisiones" value={fmt(Math.round(stats.commissions || 0))} color={C.red} sub={`${stats.days || 0} días`} />
           <KpiCard label="Trades" value={stats.n || 0} color="var(--color-text-primary)" />
