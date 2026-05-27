@@ -136,13 +136,23 @@ function calcAccountDD(trades, rules) {
     }
   }
   
-  if (hasBroker && updateDate) {
+  // Calcular el balance calculado normal (size + suma de pnl)
+  let normalBalance = startSize;
+  for (let i = 0; i < n; i++) {
+    normalBalance += sorted[i].pnl;
+  }
+  
+  // Solo aplicar lógica de división de broker si hay broker, fecha y hay discrepancia
+  const useBrokerSplit = hasBroker && updateDate && Math.abs(brokerBalance - normalBalance) > 0.01;
+  
+  if (useBrokerSplit) {
     const anchorDate = normalizeDateToYYYYMMDD(updateDate);
     const beforeTrades = [];
     const afterTrades = [];
     
     sorted.forEach(t => {
-      if (normalizeDateToYYYYMMDD(t.date) <= anchorDate) {
+      // Usar < en vez de <= para permitir que trades del mismo día se sumen en tiempo real
+      if (normalizeDateToYYYYMMDD(t.date) < anchorDate) {
         beforeTrades.push(t);
       } else {
         afterTrades.push(t);
@@ -170,7 +180,7 @@ function calcAccountDD(trades, rules) {
     }
   }
   
-  const initialBal = hasBroker && updateDate
+  const initialBal = useBrokerSplit
     ? (sorted.length > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
     : startSize;
     
@@ -231,13 +241,23 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
       }
     }
     
-    if (hasBroker && updateDate) {
+    // Calcular el balance calculado normal (size + suma de pnl)
+    let normalBalance = startSize;
+    for (let i = 0; i < n; i++) {
+      normalBalance += sorted[i].pnl;
+    }
+    
+    // Solo aplicar lógica de división de broker si hay broker, fecha y hay discrepancia
+    const useBrokerSplit = hasBroker && updateDate && Math.abs(brokerBalance - normalBalance) > 0.01;
+    
+    if (useBrokerSplit) {
       const anchorDate = normalizeDateToYYYYMMDD(updateDate);
       const beforeTrades = [];
       const afterTrades = [];
       
       sorted.forEach(t => {
-        if (normalizeDateToYYYYMMDD(t.date) <= anchorDate) {
+        // Usar < en vez de <= para permitir que trades del mismo día se sumen en tiempo real
+        if (normalizeDateToYYYYMMDD(t.date) < anchorDate) {
           beforeTrades.push(t);
         } else {
           afterTrades.push(t);
@@ -263,7 +283,7 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
       }
     }
 
-    const initialBal = hasBroker && updateDate
+    const initialBal = useBrokerSplit
       ? (n > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
       : startSize;
 
@@ -1629,6 +1649,7 @@ function SettingsPanel({
   setAiProvider,
   aiKey,
   setAiKey,
+  trades = [],
 }) {
   const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
   const [editingAcctId, setEditingAcctId] = useState(null);
@@ -1636,6 +1657,73 @@ function SettingsPanel({
   const [acctError, setAcctError] = useState("");
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
+  const [brokerDiffModal, setBrokerDiffModal] = useState(null);
+
+  const handleCreateAdjustmentTradeAndSave = async () => {
+    if (!brokerDiffModal) return;
+    const { id, editAcct: targetEditAcct, diff, brokerBalance } = brokerDiffModal;
+    
+    try {
+      setAcctError("Creando trade de ajuste...");
+      
+      const adjustmentTrade = {
+        date: targetEditAcct.updateDate || new Date().toISOString().slice(0, 10),
+        entry_time: "09:00:00 AM",
+        exit_time: "09:00:01 AM",
+        account: targetEditAcct.name,
+        instrument: "Ajuste de Broker",
+        direction: diff >= 0 ? "Long" : "Short",
+        qty: 1,
+        entry: 0,
+        exit_price: 0,
+        gross: diff,
+        commission: 0,
+        pnl: diff,
+        mae: 0,
+        mfe: 0,
+        etd: 0,
+        rr: 0,
+        result: diff >= 0 ? "Win" : "Loss",
+        strategy: "Ajuste",
+        timeframe: "1d",
+        notes: `Ajuste de saldo automático por discrepancia con broker. Saldo ingresado: $${brokerBalance.toLocaleString()}`,
+        image: ""
+      };
+      
+      const tradeRes = await fetch('/api/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adjustmentTrade),
+      });
+      
+      if (!tradeRes.ok) {
+        throw new Error("No se pudo crear el trade de ajuste");
+      }
+      
+      const acctToSave = { ...targetEditAcct, _bypassDiffCheck: true };
+      
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(acctToSave),
+      });
+      
+      if (res.ok) {
+        setEditingAcctId(null);
+        setEditAcct(null);
+        setAcctError("");
+        setBrokerDiffModal(null);
+        await fetchAccounts();
+        await fetchTrades();
+      } else {
+        const data = await res.json();
+        setAcctError(data.error || "Error al actualizar la cuenta tras el ajuste");
+      }
+    } catch (err) {
+      console.error(err);
+      setAcctError(err.message || "Error al procesar el ajuste");
+    }
+  };
 
   // Vercel deployment version checking
   const [vercelStatus, setVercelStatus] = useState("idle"); // 'idle' | 'loading' | 'up-to-date' | 'new-version' | 'error'
@@ -1822,16 +1910,38 @@ function SettingsPanel({
       setAcctError("El nombre de la cuenta es requerido");
       return;
     }
+
+    // Comprobar si hay discrepancia de saldo con el broker Rithmic
+    const oldAcct = accountsList.find(a => a.id === id);
+    const acctTrades = trades.filter(t => t.account === oldAcct.name);
+    const totalPnl = acctTrades.reduce((sum, t) => sum + t.pnl, 0);
+    const calculatedBalance = parseFloat(editAcct.size) + totalPnl;
+    const newBrokerBalance = editAcct.balance !== "" && editAcct.balance !== null && editAcct.balance !== undefined ? parseFloat(editAcct.balance) : null;
+
+    if (newBrokerBalance !== null && Math.abs(newBrokerBalance - calculatedBalance) > 0.01 && !editAcct._bypassDiffCheck) {
+      setBrokerDiffModal({
+        id,
+        editAcct: { ...editAcct },
+        calculatedBalance,
+        brokerBalance: newBrokerBalance,
+        diff: newBrokerBalance - calculatedBalance,
+      });
+      return;
+    }
+
     try {
+      // Eliminar el bypass de verificación antes de guardar en la base de datos
+      const { _bypassDiffCheck, ...acctToSave } = editAcct;
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editAcct),
+        body: JSON.stringify(acctToSave),
       });
       if (res.ok) {
         setEditingAcctId(null);
         setEditAcct(null);
         setAcctError("");
+        setBrokerDiffModal(null);
         fetchAccounts();
         fetchTrades();
       } else {
@@ -2323,6 +2433,113 @@ function SettingsPanel({
           {wipeLoading ? "Eliminando datos..." : "Vaciar Base de Datos (Cuentas y Trades)"}
         </button>
       </div>
+
+      {brokerDiffModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.65)",
+          backdropFilter: "blur(10px)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 2000,
+          padding: 20,
+        }}>
+          <div style={{
+            width: "100%",
+            maxWidth: 500,
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 16,
+            padding: 24,
+            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.05)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                ⚖️ Diferencia de Saldo Detectada
+              </h3>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 8, marginBottom: 0, lineHeight: "1.4" }}>
+                El saldo ingresado del broker difiere del saldo total calculado en base a tus operaciones cargadas.
+              </p>
+            </div>
+
+            <div style={{
+              background: "var(--color-background-secondary)",
+              border: "0.5px solid var(--color-border-tertiary)",
+              borderRadius: 10,
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              fontSize: 12,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--color-text-secondary)" }}>Saldo Calculado (App):</span>
+                <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+                  ${brokerDiffModal.calculatedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--color-text-secondary)" }}>Saldo Broker (Rithmic):</span>
+                <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+                  ${brokerDiffModal.brokerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                <span style={{ color: "var(--color-text-secondary)" }}>Diferencia a Ajustar:</span>
+                <span style={{ color: brokerDiffModal.diff >= 0 ? C.green : C.red }}>
+                  {brokerDiffModal.diff >= 0 ? "+" : ""}${brokerDiffModal.diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: "1.4" }}>
+              💡 <strong>¿Qué hace esta acción?</strong> Se registrará un trade de tipo <strong>"Ajuste de Broker"</strong> con fecha <strong>{brokerDiffModal.editAcct.updateDate || "hoy"}</strong> para cuadrar el balance de la cuenta de forma exacta. Esto habilitará la actualización automática del dashboard en tiempo real con futuros trades.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+              <button
+                onClick={() => setBrokerDiffModal(null)}
+                style={{
+                  fontSize: 11,
+                  padding: "8px 14px",
+                  borderRadius: 6,
+                  border: "0.5px solid var(--color-border-secondary)",
+                  background: "transparent",
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                  fontWeight: 500,
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateAdjustmentTradeAndSave}
+                style={{
+                  fontSize: 11,
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: C.green,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                Crear Ajuste y Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3709,6 +3926,7 @@ export default function App() {
               setAiProvider={setAiProvider}
               aiKey={aiKey}
               setAiKey={setAiKey}
+              trades={trades}
             />
           ) : (
             <>
