@@ -36,19 +36,20 @@ model Trade {
 }
 
 model Account {
-  id          Int      @id @default(autoincrement())
-  clerkUserId String
-  name        String
-  size        Float
-  target      Float
-  dd_limit    Float
-  daily_limit Float
-  status      String   @default("ACTIVE")
-  balance     Float?
-  threshold   Float?
-  updateDate  String?
-  activeDays  Int?
-  createdAt   DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  clerkUserId      String
+  name             String
+  size             Float
+  target           Float
+  dd_limit         Float
+  daily_limit      Float
+  status           String   @default("ACTIVE")
+  balance          Float?
+  threshold        Float?
+  updateDate       String?
+  activeDays       Int?
+  brokerUpdateTime String?
+  createdAt        DateTime @default(now())
 
   @@unique([clerkUserId, name])
 }

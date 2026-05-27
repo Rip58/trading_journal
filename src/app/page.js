@@ -127,12 +127,14 @@ function calcAccountDD(trades, rules) {
   let hasBroker = false;
   let brokerBalance = null;
   let updateDate = null;
+  let brokerUpdateTime = null;
   
   if (rules && rules.balance !== undefined && rules.balance !== null && rules.balance !== "") {
     brokerBalance = parseFloat(rules.balance);
     if (!isNaN(brokerBalance)) {
       hasBroker = true;
       updateDate = rules.updateDate;
+      brokerUpdateTime = rules.brokerUpdateTime;
     }
   }
   
@@ -151,11 +153,21 @@ function calcAccountDD(trades, rules) {
     const afterTrades = [];
     
     sorted.forEach(t => {
-      // Usar < en vez de <= para permitir que trades del mismo día se sumen en tiempo real
-      if (normalizeDateToYYYYMMDD(t.date) < anchorDate) {
-        beforeTrades.push(t);
-      } else {
+      let isAfterSync = false;
+      if (normalizeDateToYYYYMMDD(t.date) > anchorDate) {
+        isAfterSync = true;
+      } else if (normalizeDateToYYYYMMDD(t.date) === anchorDate) {
+        if (brokerUpdateTime && t.createdAt) {
+          isAfterSync = new Date(t.createdAt) > new Date(brokerUpdateTime);
+        } else {
+          isAfterSync = true; // Por defecto, si no hay timestamp, tratar same-day como posterior para tiempo real
+        }
+      }
+      
+      if (isAfterSync) {
         afterTrades.push(t);
+      } else {
+        beforeTrades.push(t);
       }
     });
     
@@ -232,12 +244,14 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
     let hasBroker = false;
     let brokerBalance = null;
     let updateDate = null;
+    let brokerUpdateTime = null;
     
     if (acc.balance !== undefined && acc.balance !== null && acc.balance !== "") {
       brokerBalance = parseFloat(acc.balance);
       if (!isNaN(brokerBalance)) {
         hasBroker = true;
         updateDate = acc.updateDate;
+        brokerUpdateTime = acc.brokerUpdateTime;
       }
     }
     
@@ -256,11 +270,21 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
       const afterTrades = [];
       
       sorted.forEach(t => {
-        // Usar < en vez de <= para permitir que trades del mismo día se sumen en tiempo real
-        if (normalizeDateToYYYYMMDD(t.date) < anchorDate) {
-          beforeTrades.push(t);
-        } else {
+        let isAfterSync = false;
+        if (normalizeDateToYYYYMMDD(t.date) > anchorDate) {
+          isAfterSync = true;
+        } else if (normalizeDateToYYYYMMDD(t.date) === anchorDate) {
+          if (brokerUpdateTime && t.createdAt) {
+            isAfterSync = new Date(t.createdAt) > new Date(brokerUpdateTime);
+          } else {
+            isAfterSync = true; // Por defecto, si no hay timestamp, tratar same-day como posterior para tiempo real
+          }
+        }
+        
+        if (isAfterSync) {
           afterTrades.push(t);
+        } else {
+          beforeTrades.push(t);
         }
       });
       
@@ -1700,7 +1724,7 @@ function SettingsPanel({
         throw new Error("No se pudo crear el trade de ajuste");
       }
       
-      const acctToSave = { ...targetEditAcct, _bypassDiffCheck: true };
+      const acctToSave = { ...targetEditAcct, _bypassDiffCheck: true, brokerUpdateTime: new Date().toISOString() };
       
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
@@ -1932,6 +1956,11 @@ function SettingsPanel({
     try {
       // Eliminar el bypass de verificación antes de guardar en la base de datos
       const { _bypassDiffCheck, ...acctToSave } = editAcct;
+      
+      if (acctToSave.balance !== oldAcct.balance || acctToSave.updateDate !== oldAcct.updateDate) {
+        acctToSave.brokerUpdateTime = new Date().toISOString();
+      }
+
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

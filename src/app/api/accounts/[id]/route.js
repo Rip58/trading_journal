@@ -42,6 +42,7 @@ export async function PUT(request, { params }) {
         threshold: body.threshold !== undefined ? (body.threshold === null || body.threshold === '' ? null : parseFloat(body.threshold)) : undefined,
         updateDate: body.updateDate !== undefined ? (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) : undefined,
         activeDays: body.activeDays !== undefined ? (body.activeDays === null || body.activeDays === '' ? null : parseInt(body.activeDays)) : undefined,
+        brokerUpdateTime: body.brokerUpdateTime !== undefined ? (body.brokerUpdateTime === '' || body.brokerUpdateTime === null ? null : body.brokerUpdateTime) : undefined,
       },
     });
 

@@ -56,6 +56,7 @@ export async function POST(request) {
         threshold: body.threshold !== undefined && body.threshold !== null && body.threshold !== '' ? parseFloat(body.threshold) : null,
         updateDate: body.updateDate !== undefined && body.updateDate !== null && body.updateDate !== '' ? body.updateDate : null,
         activeDays: body.activeDays !== undefined && body.activeDays !== null && body.activeDays !== '' ? parseInt(body.activeDays) : null,
+        brokerUpdateTime: body.brokerUpdateTime !== undefined ? body.brokerUpdateTime : (body.balance !== undefined && body.balance !== null && body.balance !== '' ? new Date().toISOString() : null),
       },
     });
     
