@@ -119,84 +119,18 @@ function calcAccountDD(trades, rules) {
     if (timeA !== timeB) return timeA - timeB;
     return a.id - b.id;
   });
-  
+
   const n = sorted.length;
-  const balances = new Array(n);
   const startSize = rules ? parseFloat(rules.size) || 50000 : 50000;
-  
-  let hasBroker = false;
-  let brokerBalance = null;
-  let updateDate = null;
-  let brokerUpdateTime = null;
-  
-  if (rules && rules.balance !== undefined && rules.balance !== null && rules.balance !== "") {
-    brokerBalance = parseFloat(rules.balance);
-    if (!isNaN(brokerBalance)) {
-      hasBroker = true;
-      updateDate = rules.updateDate;
-      brokerUpdateTime = rules.brokerUpdateTime;
-    }
-  }
-  
-  // Calcular el balance calculado normal (size + suma de pnl)
-  let normalBalance = startSize;
+
+  let currentBal = startSize;
+  const balances = new Array(n);
   for (let i = 0; i < n; i++) {
-    normalBalance += sorted[i].pnl;
+    currentBal += sorted[i].pnl;
+    balances[i] = currentBal;
   }
-  
-  // Solo aplicar lógica de división de broker si hay broker, fecha y hay discrepancia
-  const useBrokerSplit = hasBroker && updateDate && Math.abs(brokerBalance - normalBalance) > 0.01;
-  
-  if (useBrokerSplit) {
-    const anchorDate = normalizeDateToYYYYMMDD(updateDate);
-    const beforeTrades = [];
-    const afterTrades = [];
-    
-    sorted.forEach(t => {
-      let isAfterSync = false;
-      if (normalizeDateToYYYYMMDD(t.date) > anchorDate) {
-        isAfterSync = true;
-      } else if (normalizeDateToYYYYMMDD(t.date) === anchorDate) {
-        if (brokerUpdateTime && t.createdAt) {
-          isAfterSync = new Date(t.createdAt) > new Date(brokerUpdateTime);
-        } else {
-          isAfterSync = true; // Por defecto, si no hay timestamp, tratar same-day como posterior para tiempo real
-        }
-      }
-      
-      if (isAfterSync) {
-        afterTrades.push(t);
-      } else {
-        beforeTrades.push(t);
-      }
-    });
-    
-    // Going backward for beforeTrades
-    let currentBal = brokerBalance;
-    for (let i = beforeTrades.length - 1; i >= 0; i--) {
-      balances[i] = currentBal;
-      currentBal -= beforeTrades[i].pnl;
-    }
-    
-    // Going forward for afterTrades
-    currentBal = brokerBalance;
-    for (let i = 0; i < afterTrades.length; i++) {
-      currentBal += afterTrades[i].pnl;
-      balances[beforeTrades.length + i] = currentBal;
-    }
-  } else {
-    let currentBal = startSize;
-    for (let i = 0; i < n; i++) {
-      currentBal += sorted[i].pnl;
-      balances[i] = currentBal;
-    }
-  }
-  
-  const initialBal = useBrokerSplit
-    ? (sorted.length > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
-    : startSize;
-    
-  let peak = initialBal;
+
+  let peak = startSize;
   let maxDD = 0;
   for (let i = 0; i < n; i++) {
     const bal = balances[i];
@@ -204,11 +138,11 @@ function calcAccountDD(trades, rules) {
     const dd = peak - bal;
     if (dd > maxDD) maxDD = dd;
   }
-  
-  const finalBalance = n > 0 ? balances[n - 1] : initialBal;
+
+  const finalBalance = n > 0 ? balances[n - 1] : startSize;
   const netPnl = finalBalance - startSize;
   const relativePeak = peak - startSize;
-  
+
   return { netPnl, peak: relativePeak, maxDD: -maxDD, ddRemaining: 0 };
 }
 
@@ -225,7 +159,7 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
   });
 
   const accountHistories = {};
-  
+
   accountsList.forEach(acc => {
     const acctTrades = tradesByAccount[acc.name] || [];
     const sorted = [...acctTrades].sort((a, b) => {
@@ -238,83 +172,19 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
     });
 
     const n = sorted.length;
-    const balances = new Array(n);
     const startSize = parseFloat(acc.size) || 50000;
-    
-    let hasBroker = false;
-    let brokerBalance = null;
-    let updateDate = null;
-    let brokerUpdateTime = null;
-    
-    if (acc.balance !== undefined && acc.balance !== null && acc.balance !== "") {
-      brokerBalance = parseFloat(acc.balance);
-      if (!isNaN(brokerBalance)) {
-        hasBroker = true;
-        updateDate = acc.updateDate;
-        brokerUpdateTime = acc.brokerUpdateTime;
-      }
-    }
-    
-    // Calcular el balance calculado normal (size + suma de pnl)
-    let normalBalance = startSize;
-    for (let i = 0; i < n; i++) {
-      normalBalance += sorted[i].pnl;
-    }
-    
-    // Solo aplicar lógica de división de broker si hay broker, fecha y hay discrepancia
-    const useBrokerSplit = hasBroker && updateDate && Math.abs(brokerBalance - normalBalance) > 0.01;
-    
-    if (useBrokerSplit) {
-      const anchorDate = normalizeDateToYYYYMMDD(updateDate);
-      const beforeTrades = [];
-      const afterTrades = [];
-      
-      sorted.forEach(t => {
-        let isAfterSync = false;
-        if (normalizeDateToYYYYMMDD(t.date) > anchorDate) {
-          isAfterSync = true;
-        } else if (normalizeDateToYYYYMMDD(t.date) === anchorDate) {
-          if (brokerUpdateTime && t.createdAt) {
-            isAfterSync = new Date(t.createdAt) > new Date(brokerUpdateTime);
-          } else {
-            isAfterSync = true; // Por defecto, si no hay timestamp, tratar same-day como posterior para tiempo real
-          }
-        }
-        
-        if (isAfterSync) {
-          afterTrades.push(t);
-        } else {
-          beforeTrades.push(t);
-        }
-      });
-      
-      let currentBal = brokerBalance;
-      for (let i = beforeTrades.length - 1; i >= 0; i--) {
-        balances[i] = currentBal;
-        currentBal -= beforeTrades[i].pnl;
-      }
-      
-      currentBal = brokerBalance;
-      for (let i = 0; i < afterTrades.length; i++) {
-        currentBal += afterTrades[i].pnl;
-        balances[beforeTrades.length + i] = currentBal;
-      }
-    } else {
-      let currentBal = startSize;
-      for (let i = 0; i < n; i++) {
-        currentBal += sorted[i].pnl;
-        balances[i] = currentBal;
-      }
-    }
 
-    const initialBal = useBrokerSplit
-      ? (n > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
-      : startSize;
+    let currentBal = startSize;
+    const balances = new Array(n);
+    for (let i = 0; i < n; i++) {
+      currentBal += sorted[i].pnl;
+      balances[i] = currentBal;
+    }
 
     accountHistories[acc.name] = {
       sortedTrades: sorted,
-      balances: balances,
-      initialPnl: initialBal - startSize
+      balances,
+      initialPnl: 0,
     };
   });
 
@@ -335,14 +205,10 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
   });
 
   const currentAcctPnl = {};
-  accountsList.forEach(acc => {
-    currentAcctPnl[acc.name] = accountHistories[acc.name]?.initialPnl || 0;
-  });
+  accountsList.forEach(acc => { currentAcctPnl[acc.name] = 0; });
 
   const tradeIndexCounters = {};
-  accountsList.forEach(acc => {
-    tradeIndexCounters[acc.name] = 0;
-  });
+  accountsList.forEach(acc => { tradeIndexCounters[acc.name] = 0; });
 
   const portfolioHistory = [];
   sortedAllTrades.forEach(t => {
@@ -357,9 +223,7 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
       }
     }
     let totalPnl = 0;
-    Object.keys(currentAcctPnl).forEach(name => {
-      totalPnl += currentAcctPnl[name];
-    });
+    Object.keys(currentAcctPnl).forEach(name => { totalPnl += currentAcctPnl[name]; });
     portfolioHistory.push(totalPnl);
   });
 
@@ -1681,71 +1545,33 @@ function SettingsPanel({
   const [acctError, setAcctError] = useState("");
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
-  const [brokerDiffModal, setBrokerDiffModal] = useState(null);
+  const [brokerSyncModal, setBrokerSyncModal] = useState(null); // { id, balance, acctName }
 
-  const handleCreateAdjustmentTradeAndSave = async () => {
-    if (!brokerDiffModal) return;
-    const { id, editAcct: targetEditAcct, diff, brokerBalance } = brokerDiffModal;
-    
+  const handleSyncBase = async () => {
+    if (!brokerSyncModal) return;
+    const { id, balance } = brokerSyncModal;
+    const acct = accountsList.find(a => a.id === id);
+    if (!acct) return;
     try {
-      setAcctError("Creando trade de ajuste...");
-      
-      const adjustmentTrade = {
-        date: targetEditAcct.updateDate || new Date().toISOString().slice(0, 10),
-        entry_time: "09:00:00 AM",
-        exit_time: "09:00:01 AM",
-        account: targetEditAcct.name,
-        instrument: "Ajuste de Broker",
-        direction: diff >= 0 ? "Long" : "Short",
-        qty: 1,
-        entry: 0,
-        exit_price: 0,
-        gross: diff,
-        commission: 0,
-        pnl: diff,
-        mae: 0,
-        mfe: 0,
-        etd: 0,
-        rr: 0,
-        result: diff >= 0 ? "Win" : "Loss",
-        strategy: "Ajuste",
-        timeframe: "1d",
-        notes: `Ajuste de saldo automático por discrepancia con broker. Saldo ingresado: $${brokerBalance.toLocaleString()}`,
-        image: ""
-      };
-      
-      const tradeRes = await fetch('/api/trades', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(adjustmentTrade),
-      });
-      
-      if (!tradeRes.ok) {
-        throw new Error("No se pudo crear el trade de ajuste");
-      }
-      
-      const acctToSave = { ...targetEditAcct, _bypassDiffCheck: true, brokerUpdateTime: new Date().toISOString() };
-      
+      const { _bypassDiffCheck, ...acctData } = acct;
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(acctToSave),
+        body: JSON.stringify({ ...acctData, size: parseFloat(balance), balance: null, updateDate: null }),
       });
-      
       if (res.ok) {
+        setBrokerSyncModal(null);
         setEditingAcctId(null);
         setEditAcct(null);
-        setAcctError("");
-        setBrokerDiffModal(null);
         await fetchAccounts();
-        await fetchTrades();
+        setAcctError("✓ Saldo base actualizado a $" + parseFloat(balance).toLocaleString());
+        setTimeout(() => setAcctError(""), 4000);
       } else {
         const data = await res.json();
-        setAcctError(data.error || "Error al actualizar la cuenta tras el ajuste");
+        setAcctError(data.error || "Error al sincronizar el saldo base");
       }
     } catch (err) {
-      console.error(err);
-      setAcctError(err.message || "Error al procesar el ajuste");
+      setAcctError("Error de red al sincronizar");
     }
   };
 
@@ -1935,26 +1761,7 @@ function SettingsPanel({
       return;
     }
 
-    // Comprobar si hay discrepancia de saldo con el broker Rithmic
-    const oldAcct = accountsList.find(a => a.id === id);
-    const acctTrades = trades.filter(t => t.account === oldAcct.name);
-    const totalPnl = acctTrades.reduce((sum, t) => sum + t.pnl, 0);
-    const calculatedBalance = parseFloat(editAcct.size) + totalPnl;
-    const newBrokerBalance = editAcct.balance !== "" && editAcct.balance !== null && editAcct.balance !== undefined ? parseFloat(editAcct.balance) : null;
-
-    if (newBrokerBalance !== null && Math.abs(newBrokerBalance - calculatedBalance) > 0.01 && !editAcct._bypassDiffCheck) {
-      setBrokerDiffModal({
-        id,
-        editAcct: { ...editAcct },
-        calculatedBalance,
-        brokerBalance: newBrokerBalance,
-        diff: newBrokerBalance - calculatedBalance,
-      });
-      return;
-    }
-
     try {
-      // Eliminar el bypass de verificación antes de guardar en la base de datos
       const { _bypassDiffCheck, ...acctToSave } = editAcct;
 
       const res = await fetch(`/api/accounts/${id}`, {
@@ -2111,10 +1918,19 @@ function SettingsPanel({
                     <option value="CLOSED">Cerrada</option>
                     <option value="BURNED">Quemada 🔥</option>
                   </select>
-                  <input type="number" value={editAcct.balance !== undefined && editAcct.balance !== null ? editAcct.balance : ""} onChange={e => setEditAcct({...editAcct, balance: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Saldo Broker" />
+                  <input type="number" value={editAcct.balance !== undefined && editAcct.balance !== null ? editAcct.balance : ""} onChange={e => setEditAcct({...editAcct, balance: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="📋 Saldo Broker (referencia)" />
                   <input type="number" value={editAcct.threshold !== undefined && editAcct.threshold !== null ? editAcct.threshold : ""} onChange={e => setEditAcct({...editAcct, threshold: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Umbral Liq." />
-                  <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha Act. (MM/DD/AA)" />
+                  <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha ref. broker" />
                   <input type="number" value={editAcct.activeDays !== undefined && editAcct.activeDays !== null ? editAcct.activeDays : ""} onChange={e => setEditAcct({...editAcct, activeDays: e.target.value === "" ? null : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Días Operados" />
+                  {editAcct.balance !== null && editAcct.balance !== undefined && editAcct.balance !== "" && !isNaN(parseFloat(editAcct.balance)) && (
+                    <button
+                      onClick={() => setBrokerSyncModal({ id: a.id, balance: parseFloat(editAcct.balance), acctName: editAcct.name })}
+                      style={{ padding: "4px 8px", background: C.blueBg, color: C.blueText, border: `0.5px solid ${C.blue}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+                      title="Usar el saldo del broker como nuevo punto de partida para los cálculos"
+                    >
+                      🔄 Sincronizar Base (${ parseFloat(editAcct.balance).toLocaleString() })
+                    </button>
+                  )}
                   <div className="flex gap-1.5 col-span-1 sm:col-span-2">
                     <button onClick={() => handleUpdateAccount(a.id)} style={{ flex: 1, padding: "4px 8px", background: C.green, color: "#fff", border: "none", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Guardar</button>
                     <button onClick={() => { setEditingAcctId(null); setEditAcct(null); }} style={{ flex: 1, padding: "4px 8px", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>Cancelar</button>
@@ -2459,108 +2275,45 @@ function SettingsPanel({
         </button>
       </div>
 
-      {brokerDiffModal && (
+      {brokerSyncModal && (
         <div style={{
           position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0, 0, 0, 0.65)",
-          backdropFilter: "blur(10px)",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          zIndex: 2000,
-          padding: 20,
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(8px)",
+          display: "flex", justifyContent: "center", alignItems: "center",
+          zIndex: 2000, padding: 20,
         }}>
           <div style={{
-            width: "100%",
-            maxWidth: 500,
+            width: "100%", maxWidth: 420,
             background: "var(--color-background-primary)",
             border: "0.5px solid var(--color-border-secondary)",
-            borderRadius: 16,
-            padding: 24,
-            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.05)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
+            borderRadius: 16, padding: 24,
+            boxShadow: "0 20px 40px -5px rgba(0,0,0,0.2)",
+            display: "flex", flexDirection: "column", gap: 16,
           }}>
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                ⚖️ Diferencia de Saldo Detectada
+              <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                🔄 Sincronizar Saldo Base
               </h3>
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 8, marginBottom: 0, lineHeight: "1.4" }}>
-                El saldo ingresado del broker difiere del saldo total calculado en base a tus operaciones cargadas.
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0 }}>
+                Cuenta: <strong>{brokerSyncModal.acctName}</strong>
               </p>
             </div>
-
-            <div style={{
-              background: "var(--color-background-secondary)",
-              border: "0.5px solid var(--color-border-tertiary)",
-              borderRadius: 10,
-              padding: "12px 14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              fontSize: 12,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--color-text-secondary)" }}>Saldo Calculado (App):</span>
-                <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
-                  ${brokerDiffModal.calculatedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--color-text-secondary)" }}>Saldo Broker (Rithmic):</span>
-                <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
-                  ${brokerDiffModal.brokerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
-                <span style={{ color: "var(--color-text-secondary)" }}>Diferencia a Ajustar:</span>
-                <span style={{ color: brokerDiffModal.diff >= 0 ? C.green : C.red }}>
-                  {brokerDiffModal.diff >= 0 ? "+" : ""}${brokerDiffModal.diff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Nuevo saldo base:</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: C.green }}>
+                  ${brokerSyncModal.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
-
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: "1.4" }}>
-              💡 <strong>¿Qué hace esta acción?</strong> Se registrará un trade de tipo <strong>"Ajuste de Broker"</strong> con fecha <strong>{brokerDiffModal.editAcct.updateDate || "hoy"}</strong> para cuadrar el balance de la cuenta de forma exacta. Esto habilitará la actualización automática del dashboard en tiempo real con futuros trades.
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-              <button
-                onClick={() => setBrokerDiffModal(null)}
-                style={{
-                  fontSize: 11,
-                  padding: "8px 14px",
-                  borderRadius: 6,
-                  border: "0.5px solid var(--color-border-secondary)",
-                  background: "transparent",
-                  color: "var(--color-text-secondary)",
-                  cursor: "pointer",
-                  fontWeight: 500,
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleCreateAdjustmentTradeAndSave}
-                style={{
-                  fontSize: 11,
-                  padding: "8px 16px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: C.green,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                }}
-              >
-                Crear Ajuste y Guardar
-              </button>
+            <p style={{ fontSize: 11, color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.5 }}>
+              📅 Los cálculos del dashboard (Net P&L, equity, drawdown) partirán de este saldo. El campo "Saldo Broker" quedará limpio para la próxima semana.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setBrokerSyncModal(null)} style={{ fontSize: 11, padding: "8px 14px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer", fontWeight: 500 }}>Cancelar</button>
+              <button onClick={handleSyncBase} style={{ fontSize: 11, padding: "8px 18px", borderRadius: 6, border: "none", background: C.blue, color: "#fff", cursor: "pointer", fontWeight: 600 }}>✓ Confirmar Sync</button>
             </div>
           </div>
         </div>
@@ -3464,7 +3217,10 @@ export default function App() {
     e.target.value = "";
   };
 
-  const filtered = useMemo(() => acctFilter === "all" ? trades : trades.filter(t => t.account === acctFilter), [trades, acctFilter]);
+  const filtered = useMemo(() => {
+    const base = acctFilter === "all" ? trades : trades.filter(t => t.account === acctFilter);
+    return base.filter(t => t.instrument !== "Ajuste de Broker");
+  }, [trades, acctFilter]);
   const stats = useMemo(() => calcStats(filtered), [filtered]);
   
   const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
