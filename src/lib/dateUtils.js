@@ -32,20 +32,21 @@ export function normalizeDateToYYYYMMDD(dateStr) {
       return `${p0}-${p1.padStart(2, "0")}-${p2.padStart(2, "0")}`;
     }
     
-    // DD/MM/YYYY o MM/DD/YYYY
-    if (p2.length === 4) {
+    // DD/MM/YYYY(YY) o MM/DD/YYYY(YY)
+    if (p2.length === 4 || p2.length === 2) {
+      const yearVal = p2.length === 2 ? (parseInt(p2, 10) < 50 ? 2000 + parseInt(p2, 10) : 1900 + parseInt(p2, 10)) : parseInt(p2, 10);
       const val0 = parseInt(p0, 10);
       const val1 = parseInt(p1, 10);
       
       if (val0 > 12) {
-        // Formato DD/MM/YYYY
-        return `${p2}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
+        // Formato DD/MM/YY(YY)
+        return `${yearVal}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
       } else if (val1 > 12) {
-        // Formato MM/DD/YYYY
-        return `${p2}-${p0.padStart(2, "0")}-${p1.padStart(2, "0")}`;
+        // Formato MM/DD/YY(YY)
+        return `${yearVal}-${p0.padStart(2, "0")}-${p1.padStart(2, "0")}`;
       } else {
-        // Ambiguo (ej: 05/06/2026), por defecto asumimos DD/MM/YYYY (español)
-        return `${p2}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
+        // Ambiguo (ej: 05/06/26), por defecto asumimos DD/MM/YY(YY) (español)
+        return `${yearVal}-${p1.padStart(2, "0")}-${p0.padStart(2, "0")}`;
       }
     }
   }

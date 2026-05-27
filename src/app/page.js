@@ -122,15 +122,44 @@ function calcAccountDD(trades, rules) {
 
   const n = sorted.length;
   const startSize = rules ? parseFloat(rules.size) || 50000 : 50000;
+  const syncTime = rules?.brokerUpdateTime ? new Date(rules.brokerUpdateTime).getTime() : null;
 
-  let currentBal = startSize;
   const balances = new Array(n);
-  for (let i = 0; i < n; i++) {
-    currentBal += sorted[i].pnl;
-    balances[i] = currentBal;
+  let originalStartSize = startSize;
+
+  if (syncTime && n > 0) {
+    let firstAfterIdx = n;
+    for (let i = 0; i < n; i++) {
+      const tradeTime = sorted[i].createdAt ? new Date(sorted[i].createdAt).getTime() : null;
+      if (tradeTime && tradeTime > syncTime) {
+        firstAfterIdx = i;
+        break;
+      }
+    }
+
+    // 1. Backwards for trades before sync
+    let currentBal = startSize;
+    for (let i = firstAfterIdx - 1; i >= 0; i--) {
+      balances[i] = currentBal;
+      currentBal -= sorted[i].pnl;
+    }
+    originalStartSize = currentBal;
+
+    // 2. Forwards for trades after sync
+    currentBal = startSize;
+    for (let i = firstAfterIdx; i < n; i++) {
+      currentBal += sorted[i].pnl;
+      balances[i] = currentBal;
+    }
+  } else {
+    let currentBal = startSize;
+    for (let i = 0; i < n; i++) {
+      currentBal += sorted[i].pnl;
+      balances[i] = currentBal;
+    }
   }
 
-  let peak = startSize;
+  let peak = originalStartSize;
   let maxDD = 0;
   for (let i = 0; i < n; i++) {
     const bal = balances[i];
@@ -140,10 +169,10 @@ function calcAccountDD(trades, rules) {
   }
 
   const finalBalance = n > 0 ? balances[n - 1] : startSize;
-  const netPnl = finalBalance - startSize;
-  const relativePeak = peak - startSize;
+  const netPnl = sorted.reduce((sum, t) => sum + t.pnl, 0);
+  const relativePeak = peak - originalStartSize;
 
-  return { netPnl, peak: relativePeak, maxDD: -maxDD, ddRemaining: 0 };
+  return { netPnl, peak: relativePeak, maxDD: -maxDD, ddRemaining: 0, finalBalance };
 }
 
 function calcReconstructedPnlHistory(trades, filter, accountsList) {
@@ -173,26 +202,54 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
 
     const n = sorted.length;
     const startSize = parseFloat(acc.size) || 50000;
+    const syncTime = acc.brokerUpdateTime ? new Date(acc.brokerUpdateTime).getTime() : null;
 
-    let currentBal = startSize;
     const balances = new Array(n);
-    for (let i = 0; i < n; i++) {
-      currentBal += sorted[i].pnl;
-      balances[i] = currentBal;
+    let originalStartSize = startSize;
+
+    if (syncTime && n > 0) {
+      let firstAfterIdx = n;
+      for (let i = 0; i < n; i++) {
+        const tradeTime = sorted[i].createdAt ? new Date(sorted[i].createdAt).getTime() : null;
+        if (tradeTime && tradeTime > syncTime) {
+          firstAfterIdx = i;
+          break;
+        }
+      }
+
+      // 1. Backwards for trades before sync
+      let currentBal = startSize;
+      for (let i = firstAfterIdx - 1; i >= 0; i--) {
+        balances[i] = currentBal;
+        currentBal -= sorted[i].pnl;
+      }
+      originalStartSize = currentBal;
+
+      // 2. Forwards for trades after sync
+      currentBal = startSize;
+      for (let i = firstAfterIdx; i < n; i++) {
+        currentBal += sorted[i].pnl;
+        balances[i] = currentBal;
+      }
+    } else {
+      let currentBal = startSize;
+      for (let i = 0; i < n; i++) {
+        currentBal += sorted[i].pnl;
+        balances[i] = currentBal;
+      }
     }
 
     accountHistories[acc.name] = {
       sortedTrades: sorted,
       balances,
-      initialPnl: 0,
+      originalStartSize,
     };
   });
 
   if (filter !== "all") {
     const hist = accountHistories[filter];
     if (!hist) return [];
-    const startSize = parseFloat(accountsList.find(a => a.name === filter)?.size) || 50000;
-    return hist.balances.map(b => b - startSize);
+    return hist.balances.map(b => b - hist.originalStartSize);
   }
 
   const sortedAllTrades = [...trades].sort((a, b) => {
@@ -217,8 +274,7 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
     if (hist && hist.sortedTrades.length > 0) {
       const idx = tradeIndexCounters[accName];
       if (idx < hist.balances.length) {
-        const startSize = parseFloat(accountsList.find(a => a.name === accName)?.size) || 50000;
-        currentAcctPnl[accName] = hist.balances[idx] - startSize;
+        currentAcctPnl[accName] = hist.balances[idx] - hist.originalStartSize;
         tradeIndexCounters[accName] = idx + 1;
       }
     }
@@ -795,11 +851,14 @@ function EquityChart({ trades, accountFilter, accountsList }) {
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
 function CalendarWidget({ trades }) {
-  const [currentMonth, setCurrentMonth] = useState("2026-05");
-  const [hasInitialized, setHasInitialized] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    return new Date().toISOString().slice(0, 7);
+  });
+  const lastTradesRef = useRef(null);
 
   useEffect(() => {
-    if (trades && trades.length > 0 && !hasInitialized) {
+    if (trades && trades.length > 0 && trades !== lastTradesRef.current) {
+      lastTradesRef.current = trades;
       const sorted = [...trades].sort((a, b) => {
         const dateA = normalizeDateToYYYYMMDD(a.date);
         const dateB = normalizeDateToYYYYMMDD(b.date);
@@ -808,10 +867,9 @@ function CalendarWidget({ trades }) {
       if (sorted[0]?.date) {
         const normDate = normalizeDateToYYYYMMDD(sorted[0].date);
         setCurrentMonth(normDate.slice(0, 7));
-        setHasInitialized(true);
       }
     }
-  }, [trades, hasInitialized]);
+  }, [trades]);
 
   const year = parseInt(currentMonth.split("-")[0]);
   const mo = parseInt(currentMonth.split("-")[1]) - 1;
@@ -3255,7 +3313,7 @@ export default function App() {
   const trueNetPnl = useMemo(() => {
     if (acctFilter === "all") {
       return accountsList.reduce((acc, a) => {
-        const acctTrades = trades.filter(t => t.account === a.name);
+        const acctTrades = filtered.filter(t => t.account === a.name);
         const { netPnl } = calcAccountDD(acctTrades, a);
         return acc + netPnl;
       }, 0);
@@ -3263,7 +3321,7 @@ export default function App() {
       const selectedAcct = accountsList.find(a => a.name === acctFilter);
       return calcAccountDD(filtered, selectedAcct).netPnl;
     }
-  }, [trades, filtered, acctFilter, accountsList]);
+  }, [filtered, acctFilter, accountsList]);
 
   const equitySpark = useMemo(() => {
     return calcReconstructedPnlHistory(filtered, acctFilter, accountsList);
@@ -3431,7 +3489,7 @@ export default function App() {
               </div>
             ) : (
               filteredAccounts.map(a => (
-                <AccountCard key={a.id} account={a.name} rules={a} trades={trades.filter(t => t.account === a.name)} />
+                <AccountCard key={a.id} account={a.name} rules={a} trades={trades.filter(t => t.account === a.name && t.instrument !== "Ajuste de Broker")} />
               ))
             )}
           </div>
@@ -3447,7 +3505,7 @@ export default function App() {
             ))}
           </div>
         </div>
-        <EquityChart trades={trades} accountFilter={acctFilter} accountsList={accountsList} />
+        <EquityChart trades={filtered} accountFilter={acctFilter} accountsList={accountsList} />
         <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green, display: "inline-block" }} />Zona positiva</span>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red, display: "inline-block" }} />Zona negativa</span>
