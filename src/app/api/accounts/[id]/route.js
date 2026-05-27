@@ -29,6 +29,18 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 });
     }
 
+    const isBalanceChanged = body.balance !== undefined && (body.balance === null || body.balance === '' ? null : parseFloat(body.balance)) !== oldAccount.balance;
+    const isDateChanged = body.updateDate !== undefined && (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) !== oldAccount.updateDate;
+    
+    let brokerUpdateTime = undefined;
+    if (body.brokerUpdateTime !== undefined) {
+      brokerUpdateTime = body.brokerUpdateTime === '' || body.brokerUpdateTime === null ? null : body.brokerUpdateTime;
+    } else if (isBalanceChanged || isDateChanged) {
+      brokerUpdateTime = (body.balance === null || body.balance === '' || body.updateDate === null || body.updateDate === '') 
+        ? null 
+        : new Date().toISOString();
+    }
+
     const updatedAccount = await db.account.update({
       where: { id: accountId },
       data: {
@@ -42,7 +54,7 @@ export async function PUT(request, { params }) {
         threshold: body.threshold !== undefined ? (body.threshold === null || body.threshold === '' ? null : parseFloat(body.threshold)) : undefined,
         updateDate: body.updateDate !== undefined ? (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) : undefined,
         activeDays: body.activeDays !== undefined ? (body.activeDays === null || body.activeDays === '' ? null : parseInt(body.activeDays)) : undefined,
-        brokerUpdateTime: body.brokerUpdateTime !== undefined ? (body.brokerUpdateTime === '' || body.brokerUpdateTime === null ? null : body.brokerUpdateTime) : undefined,
+        brokerUpdateTime: brokerUpdateTime,
       },
     });
 

@@ -1956,10 +1956,6 @@ function SettingsPanel({
     try {
       // Eliminar el bypass de verificación antes de guardar en la base de datos
       const { _bypassDiffCheck, ...acctToSave } = editAcct;
-      
-      if (acctToSave.balance !== oldAcct.balance || acctToSave.updateDate !== oldAcct.updateDate) {
-        acctToSave.brokerUpdateTime = new Date().toISOString();
-      }
 
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
