@@ -110,17 +110,218 @@ function calcStats(trades) {
   return { n, wins: wins.length, losses: losses.length, totalPnl, wr, avgWin, avgLoss, pf, avgRR, commissions, maxWin, maxLoss, days, avgDuration, avgWinDuration, avgLossDuration };
 }
 
-function calcAccountDD(trades) {
-  const sorted = [...trades].sort((a, b) => a.id - b.id);
-  let cum = 0, peak = 0, maxDD = 0;
-  sorted.forEach(t => {
-    cum += t.pnl;
-    if (cum > peak) peak = cum;
-    const dd = peak - cum;
-    if (dd > maxDD) maxDD = dd;
+function calcAccountDD(trades, rules) {
+  const sorted = [...trades].sort((a, b) => {
+    const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+    if (dateDiff !== 0) return dateDiff;
+    const timeA = parseTimeToSeconds(a.entry_time) || 0;
+    const timeB = parseTimeToSeconds(b.entry_time) || 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return a.id - b.id;
   });
-  return { netPnl: cum, peak, maxDD: -maxDD, ddRemaining: 0 };
+  
+  const n = sorted.length;
+  const balances = new Array(n);
+  const startSize = rules ? parseFloat(rules.size) || 50000 : 50000;
+  
+  let hasBroker = false;
+  let brokerBalance = null;
+  let updateDate = null;
+  
+  if (rules && rules.balance !== undefined && rules.balance !== null && rules.balance !== "") {
+    brokerBalance = parseFloat(rules.balance);
+    if (!isNaN(brokerBalance)) {
+      hasBroker = true;
+      updateDate = rules.updateDate;
+    }
+  }
+  
+  if (hasBroker && updateDate) {
+    const anchorDate = normalizeDateToYYYYMMDD(updateDate);
+    const beforeTrades = [];
+    const afterTrades = [];
+    
+    sorted.forEach(t => {
+      if (normalizeDateToYYYYMMDD(t.date) <= anchorDate) {
+        beforeTrades.push(t);
+      } else {
+        afterTrades.push(t);
+      }
+    });
+    
+    // Going backward for beforeTrades
+    let currentBal = brokerBalance;
+    for (let i = beforeTrades.length - 1; i >= 0; i--) {
+      balances[i] = currentBal;
+      currentBal -= beforeTrades[i].pnl;
+    }
+    
+    // Going forward for afterTrades
+    currentBal = brokerBalance;
+    for (let i = 0; i < afterTrades.length; i++) {
+      currentBal += afterTrades[i].pnl;
+      balances[beforeTrades.length + i] = currentBal;
+    }
+  } else {
+    let currentBal = startSize;
+    for (let i = 0; i < n; i++) {
+      currentBal += sorted[i].pnl;
+      balances[i] = currentBal;
+    }
+  }
+  
+  const initialBal = hasBroker && updateDate
+    ? (sorted.length > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
+    : startSize;
+    
+  let peak = initialBal;
+  let maxDD = 0;
+  for (let i = 0; i < n; i++) {
+    const bal = balances[i];
+    if (bal > peak) peak = bal;
+    const dd = peak - bal;
+    if (dd > maxDD) maxDD = dd;
+  }
+  
+  const finalBalance = n > 0 ? balances[n - 1] : initialBal;
+  const netPnl = finalBalance - startSize;
+  const relativePeak = peak - startSize;
+  
+  return { netPnl, peak: relativePeak, maxDD: -maxDD, ddRemaining: 0 };
 }
+
+function calcReconstructedPnlHistory(trades, filter, accountsList) {
+  if (!trades || trades.length === 0) return [];
+
+  // Group trades by account
+  const tradesByAccount = {};
+  trades.forEach(t => {
+    if (!tradesByAccount[t.account]) {
+      tradesByAccount[t.account] = [];
+    }
+    tradesByAccount[t.account].push(t);
+  });
+
+  const accountHistories = {};
+  
+  accountsList.forEach(acc => {
+    const acctTrades = tradesByAccount[acc.name] || [];
+    const sorted = [...acctTrades].sort((a, b) => {
+      const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+      if (dateDiff !== 0) return dateDiff;
+      const timeA = parseTimeToSeconds(a.entry_time) || 0;
+      const timeB = parseTimeToSeconds(b.entry_time) || 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+
+    const n = sorted.length;
+    const balances = new Array(n);
+    const startSize = parseFloat(acc.size) || 50000;
+    
+    let hasBroker = false;
+    let brokerBalance = null;
+    let updateDate = null;
+    
+    if (acc.balance !== undefined && acc.balance !== null && acc.balance !== "") {
+      brokerBalance = parseFloat(acc.balance);
+      if (!isNaN(brokerBalance)) {
+        hasBroker = true;
+        updateDate = acc.updateDate;
+      }
+    }
+    
+    if (hasBroker && updateDate) {
+      const anchorDate = normalizeDateToYYYYMMDD(updateDate);
+      const beforeTrades = [];
+      const afterTrades = [];
+      
+      sorted.forEach(t => {
+        if (normalizeDateToYYYYMMDD(t.date) <= anchorDate) {
+          beforeTrades.push(t);
+        } else {
+          afterTrades.push(t);
+        }
+      });
+      
+      let currentBal = brokerBalance;
+      for (let i = beforeTrades.length - 1; i >= 0; i--) {
+        balances[i] = currentBal;
+        currentBal -= beforeTrades[i].pnl;
+      }
+      
+      currentBal = brokerBalance;
+      for (let i = 0; i < afterTrades.length; i++) {
+        currentBal += afterTrades[i].pnl;
+        balances[beforeTrades.length + i] = currentBal;
+      }
+    } else {
+      let currentBal = startSize;
+      for (let i = 0; i < n; i++) {
+        currentBal += sorted[i].pnl;
+        balances[i] = currentBal;
+      }
+    }
+
+    const initialBal = hasBroker && updateDate
+      ? (n > 0 ? (balances[0] - sorted[0].pnl) : brokerBalance)
+      : startSize;
+
+    accountHistories[acc.name] = {
+      sortedTrades: sorted,
+      balances: balances,
+      initialPnl: initialBal - startSize
+    };
+  });
+
+  if (filter !== "all") {
+    const hist = accountHistories[filter];
+    if (!hist) return [];
+    const startSize = parseFloat(accountsList.find(a => a.name === filter)?.size) || 50000;
+    return hist.balances.map(b => b - startSize);
+  }
+
+  const sortedAllTrades = [...trades].sort((a, b) => {
+    const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+    if (dateDiff !== 0) return dateDiff;
+    const timeA = parseTimeToSeconds(a.entry_time) || 0;
+    const timeB = parseTimeToSeconds(b.entry_time) || 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return a.id - b.id;
+  });
+
+  const currentAcctPnl = {};
+  accountsList.forEach(acc => {
+    currentAcctPnl[acc.name] = accountHistories[acc.name]?.initialPnl || 0;
+  });
+
+  const tradeIndexCounters = {};
+  accountsList.forEach(acc => {
+    tradeIndexCounters[acc.name] = 0;
+  });
+
+  const portfolioHistory = [];
+  sortedAllTrades.forEach(t => {
+    const accName = t.account;
+    const hist = accountHistories[accName];
+    if (hist && hist.sortedTrades.length > 0) {
+      const idx = tradeIndexCounters[accName];
+      if (idx < hist.balances.length) {
+        const startSize = parseFloat(accountsList.find(a => a.name === accName)?.size) || 50000;
+        currentAcctPnl[accName] = hist.balances[idx] - startSize;
+        tradeIndexCounters[accName] = idx + 1;
+      }
+    }
+    let totalPnl = 0;
+    Object.keys(currentAcctPnl).forEach(name => {
+      totalPnl += currentAcctPnl[name];
+    });
+    portfolioHistory.push(totalPnl);
+  });
+
+  return portfolioHistory;
+}
+
 
 const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "BX101840-05 (50K)", instrument: "NQ Futures", direction: "Long", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: -4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "", timeframe: "15s", notes: "", image: "" };
 
@@ -203,7 +404,7 @@ function AccountCard({ account, rules, trades }) {
   const isClosed = activeRules.status === "CLOSED";
   const isBurned = activeRules.status === "BURNED";
 
-  const { netPnl, maxDD, peak } = calcAccountDD(trades);
+  const { netPnl, maxDD, peak } = calcAccountDD(trades, activeRules);
   const uniqueDays = [...new Set(trades.map(t => t.date))].length;
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
@@ -239,17 +440,10 @@ function AccountCard({ account, rules, trades }) {
       {/* CABECERA (Resumen de la cuenta) */}
       <div 
         onClick={() => setExpanded(!expanded)}
+        className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:py-3 sm:px-4 cursor-pointer select-none gap-2.5 sm:gap-4"
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "12px 16px",
-          cursor: "pointer",
-          userSelect: "none",
           background: expanded ? "var(--color-background-secondary)" : "transparent",
           transition: "background-color 0.2s ease",
-          flexWrap: "wrap",
-          gap: 12,
         }}
         onMouseEnter={(e) => {
           if (!expanded) e.currentTarget.style.background = "var(--color-background-secondary)";
@@ -258,20 +452,22 @@ function AccountCard({ account, rules, trades }) {
           if (!expanded) e.currentTarget.style.background = "transparent";
         }}
       >
-        {/* Lado Izquierdo: Chevron, Nombre, Tamaño, Badge de Estado */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 200px", minWidth: 0 }}>
-          <span style={{ 
-            fontSize: 9, 
-            color: "var(--color-text-secondary)",
-            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease",
-            display: "inline-block",
-          }}>
-            ▶
-          </span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, color: "var(--color-text-primary)" }}>
-              {account.split(" ")[0]}
+        {/* Fila 1: Chevron, Nombre, Tamaño, Estado, y en mobile el PnL Badge */}
+        <div className="flex items-center justify-between w-full sm:w-auto gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span style={{ 
+              fontSize: 9, 
+              color: "var(--color-text-secondary)",
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+              display: "inline-block",
+            }}>
+              ▶
+            </span>
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              <span className="font-semibold text-[13px] text-[var(--color-text-primary)] truncate">
+                {account.split(" ")[0]}
+              </span>
               <span style={{
                 fontSize: 9,
                 fontWeight: 500,
@@ -288,15 +484,34 @@ function AccountCard({ account, rules, trades }) {
               {!isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 500 }}>Activa</span>}
             </div>
           </div>
+          
+          {/* Badge de P&L en Mobile (visible solo en móviles) */}
+          <div className="sm:hidden">
+            <span style={{ 
+              fontSize: 11, 
+              padding: "4px 10px", 
+              borderRadius: 8, 
+              background: netPnl >= 0 ? C.greenBg : C.redBg, 
+              color: netPnl >= 0 ? C.greenText : C.redText, 
+              fontWeight: 600,
+              display: "inline-block",
+            }}>
+              {fmt(netPnl)}
+            </span>
+          </div>
         </div>
 
-        {/* Lado Central/Derecho: Columnas de información (Obj, DD, Días, PnL) */}
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-4 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end">
+        {/* Fila 2: Columnas de información (Obj, DD, Días, PnL) */}
+        {/* En móvil se muestra debajo, en desktop se muestra al lado en una sola fila */}
+        <div className="grid grid-cols-3 sm:flex sm:items-center gap-2 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end">
           
           {/* Valor / Objetivo */}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Valor / Objetivo</div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+          <div className="flex flex-col min-w-0 sm:min-w-[100px]">
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
+              <span className="hidden sm:inline">Valor / Objetivo</span>
+              <span className="sm:hidden">Obj.</span>
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px] truncate">
               <span style={{ color: netPnl >= 0 ? C.green : C.red }}>{fmt(netPnl)}</span>
               <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.target.toLocaleString()}</span>
             </div>
@@ -307,9 +522,12 @@ function AccountCard({ account, rules, trades }) {
           </div>
 
           {/* Drawdown */}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 100 }}>
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Drawdown (DD)</div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
+          <div className="flex flex-col min-w-0 sm:min-w-[100px]">
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
+              <span className="hidden sm:inline">Drawdown (DD)</span>
+              <span className="sm:hidden">DD</span>
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px] truncate">
               <span style={{ color: ddColor }}>-${Math.round(ddUsed).toLocaleString()}</span>
               <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.dd_limit.toLocaleString()}</span>
             </div>
@@ -320,15 +538,18 @@ function AccountCard({ account, rules, trades }) {
           </div>
 
           {/* Días de Trade */}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 60 }}>
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Días Trade</div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>
-              {activeRules.activeDays ?? uniqueDays} <span style={{ fontSize: 10, color: "var(--color-text-secondary)", fontWeight: 400 }}>días</span>
+          <div className="flex flex-col min-w-0 sm:min-w-[60px]">
+            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
+              <span className="hidden sm:inline">Días Trade</span>
+              <span className="sm:hidden">Días</span>
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px]">
+              {activeRules.activeDays ?? uniqueDays} <span style={{ fontSize: 9, color: "var(--color-text-secondary)", fontWeight: 400 }} className="sm:text-[10px]">días</span>
             </div>
           </div>
 
-          {/* Badge de P&L */}
-          <div style={{ minWidth: 80, textAlign: "right" }}>
+          {/* Badge de P&L en Desktop (oculto en móviles) */}
+          <div className="hidden sm:block sm:min-w-[80px] sm:text-right">
             <span style={{ 
               fontSize: 11, 
               padding: "4px 10px", 
@@ -446,7 +667,7 @@ function AccountCard({ account, rules, trades }) {
 
 
 // ── Equity SVG ──────────────────────────────────────────────────────────────
-function EquityChart({ trades, accountFilter }) {
+function EquityChart({ trades, accountFilter, accountsList }) {
   const containerRef = useRef(null);
   const [width, setWidth] = useState(620);
   const [hoverIdx, setHoverIdx] = useState(null);
@@ -469,9 +690,22 @@ function EquityChart({ trades, accountFilter }) {
   }, [trades, accountFilter]);
 
   const filtered = accountFilter === "all" ? trades : trades.filter(t => t.account === accountFilter);
-  const sorted = [...filtered].sort((a, b) => a.id - b.id);
-  let cum = 0;
-  const pts = sorted.map(t => { cum += t.pnl; return cum; });
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+      if (dateDiff !== 0) return dateDiff;
+      const timeA = parseTimeToSeconds(a.entry_time) || 0;
+      const timeB = parseTimeToSeconds(b.entry_time) || 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+  }, [filtered]);
+
+  const pts = useMemo(() => {
+    return calcReconstructedPnlHistory(filtered, accountFilter, accountsList || []);
+  }, [filtered, accountFilter, accountsList]);
+
   if (pts.length < 2) return <div style={{ padding: 20, color: "var(--color-text-secondary)", fontSize: 13 }}>Sin datos suficientes</div>;
 
   const W = width || 620;
@@ -1688,9 +1922,18 @@ function SettingsPanel({
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             <button
-              onClick={() => {
+              onClick={async () => {
                 localStorage.setItem("tj_ai_provider", aiProvider);
                 localStorage.setItem("tj_ai_key", aiKey);
+                try {
+                  await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ aiProvider, aiKey })
+                  });
+                } catch (err) {
+                  console.error("Error al guardar credenciales en BD:", err);
+                }
                 setSaveKeySuccess(true);
                 setTimeout(() => setSaveKeySuccess(false), 3000);
               }}
@@ -1698,10 +1941,10 @@ function SettingsPanel({
             >
               Guardar Credenciales
             </button>
-            {saveKeySuccess && <span style={{ fontSize: 11, color: C.green }}>✓ Credenciales guardadas en local</span>}
+            {saveKeySuccess && <span style={{ fontSize: 11, color: C.green }}>✓ Credenciales guardadas</span>}
           </div>
           <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>
-            Las claves se guardan solo en tu navegador (localStorage) y nunca viajan a bases de datos de terceros.
+            Las claves se guardan de forma segura en tu base de datos y localmente en tu navegador.
           </div>
         </div>
       </div>
@@ -2113,9 +2356,11 @@ export default function App() {
   const [imageImportLoading, setImageImportLoading] = useState(false);
 
   const PER_PAGE = 20;
+  const isSettingsLoaded = useRef(false);
 
   // Load clientside options on mount
   useEffect(() => {
+    // 1. Initial local cache/fallback values from LocalStorage
     try {
       const savedLayout = localStorage.getItem("tj_layout");
       if (savedLayout) {
@@ -2136,8 +2381,6 @@ export default function App() {
     } catch {
       setVisibility(Object.fromEntries(ALL_MODULES.map(m => [m.id, true])));
     }
-    
-    // Read and initialize Theme
     try {
       const savedTheme = localStorage.getItem("tj_theme");
       if (savedTheme) {
@@ -2151,16 +2394,12 @@ export default function App() {
         }
       }
     } catch {}
-
-    // Read AI configurations
     try {
       const savedProvider = localStorage.getItem("tj_ai_provider");
       const savedKey = localStorage.getItem("tj_ai_key");
       if (savedProvider) setAiProvider(savedProvider);
       if (savedKey) setAiKey(savedKey);
     } catch {}
-
-    // Read filters configurations
     try {
       const savedAcctFilter = localStorage.getItem("tj_acct_filter");
       const savedAccountsPanelFilter = localStorage.getItem("tj_accounts_panel_filter");
@@ -2168,26 +2407,105 @@ export default function App() {
       if (savedAccountsPanelFilter) setAccountsPanelFilter(savedAccountsPanelFilter);
     } catch {}
 
+    // 2. Fetch authoritative preferences from Database and override
+    const loadDbSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+          const dbSettings = await res.json();
+          if (dbSettings && dbSettings.clerkUserId) {
+            if (dbSettings.layout) {
+              try {
+                const parsed = JSON.parse(dbSettings.layout);
+                const validParsed = parsed.filter(id => ALL_MODULES.some(m => m.id === id));
+                const missingIds = ALL_MODULES.map(m => m.id).filter(id => !validParsed.includes(id));
+                setLayout([...validParsed, ...missingIds]);
+              } catch {}
+            }
+            if (dbSettings.visibility) {
+              try {
+                const parsed = JSON.parse(dbSettings.visibility);
+                const defaultVisibility = Object.fromEntries(ALL_MODULES.map(m => [m.id, true]));
+                setVisibility({ ...defaultVisibility, ...parsed });
+              } catch {}
+            }
+            if (dbSettings.theme) {
+              setTheme(dbSettings.theme);
+              if (dbSettings.theme === "dark") {
+                document.documentElement.classList.add("dark");
+                document.documentElement.classList.remove("light");
+              } else {
+                document.documentElement.classList.add("light");
+                document.documentElement.classList.remove("dark");
+              }
+            }
+            if (dbSettings.acctFilter) {
+              setAcctFilter(dbSettings.acctFilter);
+            }
+            if (dbSettings.accountsPanelFilter) {
+              setAccountsPanelFilter(dbSettings.accountsPanelFilter);
+            }
+            if (dbSettings.aiProvider) {
+              setAiProvider(dbSettings.aiProvider);
+            }
+            if (dbSettings.aiKey) {
+              setAiKey(dbSettings.aiKey);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading DB settings:", err);
+      } finally {
+        isSettingsLoaded.current = true;
+      }
+    };
+
+    loadDbSettings();
     fetchAccounts();
     fetchTrades();
   }, []);
 
-  // Sync layout and visibility changes to localStorage
+  // Sync state changes to LocalStorage and Database
   useEffect(() => {
-    try { localStorage.setItem("tj_layout", JSON.stringify(layout)); } catch {}
-  }, [layout]);
+    // Sync to LocalStorage (instant cache)
+    try {
+      localStorage.setItem("tj_layout", JSON.stringify(layout));
+      localStorage.setItem("tj_visibility", JSON.stringify(visibility));
+      localStorage.setItem("tj_acct_filter", acctFilter);
+      localStorage.setItem("tj_accounts_panel_filter", accountsPanelFilter);
+      localStorage.setItem("tj_theme", theme);
+      localStorage.setItem("tj_ai_provider", aiProvider);
+      localStorage.setItem("tj_ai_key", aiKey);
+    } catch {}
 
-  useEffect(() => {
-    try { localStorage.setItem("tj_visibility", JSON.stringify(visibility)); } catch {}
-  }, [visibility]);
+    // Only save to DB if loading has finished (prevents initial state from overwriting DB settings)
+    if (!isSettingsLoaded.current) return;
 
-  useEffect(() => {
-    try { localStorage.setItem("tj_acct_filter", acctFilter); } catch {}
-  }, [acctFilter]);
+    const syncToDb = async () => {
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            layout: JSON.stringify(layout),
+            visibility: JSON.stringify(visibility),
+            theme,
+            acctFilter,
+            accountsPanelFilter,
+            aiProvider,
+            aiKey,
+          }),
+        });
+      } catch (err) {
+        console.error("Error syncing settings to DB:", err);
+      }
+    };
 
-  useEffect(() => {
-    try { localStorage.setItem("tj_accounts_panel_filter", accountsPanelFilter); } catch {}
-  }, [accountsPanelFilter]);
+    const timer = setTimeout(syncToDb, 1000);
+    return () => clearTimeout(timer);
+  }, [layout, visibility, theme, acctFilter, accountsPanelFilter, aiProvider, aiKey]);
 
   const fetchAccounts = async () => {
     try {
@@ -2936,10 +3254,22 @@ export default function App() {
     ];
   }, [accountsList]);
 
+  const trueNetPnl = useMemo(() => {
+    if (acctFilter === "all") {
+      return accountsList.reduce((acc, a) => {
+        const acctTrades = trades.filter(t => t.account === a.name);
+        const { netPnl } = calcAccountDD(acctTrades, a);
+        return acc + netPnl;
+      }, 0);
+    } else {
+      const selectedAcct = accountsList.find(a => a.name === acctFilter);
+      return calcAccountDD(filtered, selectedAcct).netPnl;
+    }
+  }, [trades, filtered, acctFilter, accountsList]);
+
   const equitySpark = useMemo(() => {
-    let cum = 0;
-    return [...filtered].sort((a, b) => a.id - b.id).map(t => { cum += t.pnl; return cum; });
-  }, [filtered]);
+    return calcReconstructedPnlHistory(filtered, acctFilter, accountsList);
+  }, [filtered, acctFilter, accountsList]);
 
   const dowData = useMemo(() => {
     const map = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -3002,7 +3332,7 @@ export default function App() {
     if (mod.id === "kpis") return (
       <Module key={mod.id} {...props}>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2.5">
-          <KpiCard label="Net P&L" value={fmt(Math.round(stats.totalPnl || 0))} color={stats.totalPnl >= 0 ? C.green : C.red} spark={equitySpark} />
+          <KpiCard label="Net P&L" value={fmt(Math.round(trueNetPnl))} color={trueNetPnl >= 0 ? C.green : C.red} spark={equitySpark} />
           <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W / ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
           <KpiCard label="Profit factor" value={fmtN(stats.pf || 0, 2)} color={(stats.pf || 0) >= 1 ? C.green : C.red} />
           <KpiCard label="Avg RR" value={`${fmtN(stats.avgRR || 0, 2)}R`} color={(stats.avgRR || 0) > 0 ? C.green : C.red} />
@@ -3119,7 +3449,7 @@ export default function App() {
             ))}
           </div>
         </div>
-        <EquityChart trades={trades} accountFilter={acctFilter} />
+        <EquityChart trades={trades} accountFilter={acctFilter} accountsList={accountsList} />
         <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green, display: "inline-block" }} />Zona positiva</span>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red, display: "inline-block" }} />Zona negativa</span>
@@ -3297,56 +3627,68 @@ export default function App() {
           </h1>
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
-          {currentTab === "dashboard" && (
-            <select value={acctFilter} onChange={e => setAcctFilter(e.target.value)} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-              <option value="all">Todas las cuentas</option>
-              {accountsList.map(a => {
-                let label = a.name;
-                if (a.status === "CLOSED") label += " (Cerrada)";
-                else if (a.status === "BURNED") label += " (Quemada 🔥)";
-                return <option key={a.name} value={a.name}>{label}</option>;
-              })}
-            </select>
-          )}
-          <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 3, border: "0.5px solid var(--color-border-secondary)" }}>
-            <button
-              onClick={() => setCurrentTab("dashboard")}
-              style={{
-                fontSize: 12,
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "none",
-                background: currentTab === "dashboard" ? "var(--color-background-primary)" : "transparent",
-                color: "var(--color-text-primary)",
-                cursor: "pointer",
-                fontWeight: currentTab === "dashboard" ? 500 : 400,
-              }}
-            >
-              📊 Dashboard
-            </button>
-            <button
-              onClick={() => setCurrentTab("settings")}
-              style={{
-                fontSize: 12,
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "none",
-                background: currentTab === "settings" ? "var(--color-background-primary)" : "transparent",
-                color: "var(--color-text-primary)",
-                cursor: "pointer",
-                fontWeight: currentTab === "settings" ? 500 : 400,
-              }}
-            >
-              ⚙️ Ajustes
-            </button>
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 w-full md:w-auto">
+          {/* Botones de control (Dashboard, Ajustes, Editar layout, Login) encima en móvil, a la derecha en desktop */}
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end order-1 md:order-2">
+            <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 3, border: "0.5px solid var(--color-border-secondary)" }}>
+              <button
+                onClick={() => setCurrentTab("dashboard")}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: currentTab === "dashboard" ? "var(--color-background-primary)" : "transparent",
+                  color: "var(--color-text-primary)",
+                  cursor: "pointer",
+                  fontWeight: currentTab === "dashboard" ? 500 : 400,
+                }}
+              >
+                📊 Dashboard
+              </button>
+              <button
+                onClick={() => setCurrentTab("settings")}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: currentTab === "settings" ? "var(--color-background-primary)" : "transparent",
+                  color: "var(--color-text-primary)",
+                  cursor: "pointer",
+                  fontWeight: currentTab === "settings" ? 500 : 400,
+                }}
+              >
+                ⚙️ Ajustes
+              </button>
+            </div>
+            {currentTab === "dashboard" && (
+              <button onClick={() => setEditMode(e => !e)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: editMode ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: editMode ? C.blueBg : "var(--color-background-primary)", color: editMode ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: editMode ? 500 : 400 }}>
+                {editMode ? "✓ Guardar layout" : "⚙️ Editar layout"}
+              </button>
+            )}
+            <UserButton />
           </div>
+
+          {/* Selector de cuentas debajo de los botones en móvil, a la izquierda en desktop */}
           {currentTab === "dashboard" && (
-            <button onClick={() => setEditMode(e => !e)} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: editMode ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: editMode ? C.blueBg : "var(--color-background-primary)", color: editMode ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: editMode ? 500 : 400 }}>
-              {editMode ? "✓ Guardar layout" : "⚙️ Editar layout"}
-            </button>
+            <div className="w-full md:w-auto order-2 md:order-1">
+              <select 
+                value={acctFilter} 
+                onChange={e => setAcctFilter(e.target.value)} 
+                className="w-full md:w-auto"
+                style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+              >
+                <option value="all">Todas las cuentas</option>
+                {accountsList.map(a => {
+                  let label = a.name;
+                  if (a.status === "CLOSED") label += " (Cerrada)";
+                  else if (a.status === "BURNED") label += " (Quemada 🔥)";
+                  return <option key={a.name} value={a.name}>{label}</option>;
+                })}
+              </select>
+            </div>
           )}
-          <UserButton />
         </div>
       </div>
       

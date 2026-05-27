@@ -53,3 +53,16 @@ model Account {
   @@unique([clerkUserId, name])
 }
 
+model UserSettings {
+  clerkUserId         String   @id
+  layout              String?  // Array of module IDs
+  visibility          String?  // Map of module visibility states
+  theme               String?  // "light" or "dark"
+  acctFilter          String?  // e.g., "all" or specific account name
+  accountsPanelFilter String?  // e.g., "all", "ACTIVE", etc.
+  aiProvider          String?  // "gemini", "openai", etc.
+  aiKey               String?  // Encryption is optional/local
+  updatedAt           DateTime @updatedAt
+}
+
+
