@@ -3656,9 +3656,9 @@ export default function App() {
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
-      <div className="flex flex-col md:flex-row justify-between gap-4 md:items-center mb-5">
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 500, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="flex flex-col md:flex-row justify-between gap-4 items-center md:items-center mb-5">
+        <div className="flex flex-col items-center md:items-start text-center md:text-left">
+          <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
             <span>📈 Trading Journal</span>
             <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>v2.0</span>
             <button
@@ -3683,9 +3683,9 @@ export default function App() {
           </h1>
           <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-col md:flex-row items-center gap-2.5 w-full md:w-auto">
           {/* Botones de control (Dashboard, Ajustes, Editar layout, Login) encima en móvil, a la derecha en desktop */}
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end order-1 md:order-2">
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-center md:justify-end order-1 md:order-2">
             <div style={{ display: "flex", background: "var(--color-background-secondary)", borderRadius: 8, padding: 3, border: "0.5px solid var(--color-border-secondary)" }}>
               <button
                 onClick={() => setCurrentTab("dashboard")}
@@ -3728,11 +3728,11 @@ export default function App() {
 
           {/* Selector de cuentas debajo de los botones en móvil, a la izquierda en desktop */}
           {currentTab === "dashboard" && (
-            <div className="w-full md:w-auto order-2 md:order-1">
+            <div className="w-full md:w-auto order-2 md:order-1 flex justify-center">
               <select 
                 value={acctFilter} 
                 onChange={e => setAcctFilter(e.target.value)} 
-                className="w-full md:w-auto"
+                className="w-full md:w-auto max-w-xs"
                 style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
               >
                 <option value="all">Todas las cuentas</option>
