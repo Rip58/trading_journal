@@ -433,6 +433,17 @@ function AccountCard({ account, rules, trades }) {
                 {account.split(" ")[0]}
               </span>
               <span style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "2.5px 7px",
+                borderRadius: 5,
+                background: netPnl >= 0 ? C.greenBg : C.redBg,
+                border: `0.5px solid ${netPnl >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
+                color: netPnl >= 0 ? C.greenText : C.redText,
+              }}>
+                ${Math.round(finalBalance).toLocaleString()}
+              </span>
+              <span style={{
                 fontSize: 9,
                 fontWeight: 500,
                 padding: "2px 6px",
@@ -441,7 +452,7 @@ function AccountCard({ account, rules, trades }) {
                 border: "0.5px solid var(--color-border-secondary)",
                 color: "var(--color-text-secondary)",
               }}>
-                ${(activeRules.size / 1000).toFixed(0)}K
+                Base: ${(activeRules.size / 1000).toFixed(0)}K
               </span>
               {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
               {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
