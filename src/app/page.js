@@ -368,7 +368,7 @@ function AccountCard({ account, rules, trades }) {
   const isClosed = activeRules.status === "CLOSED";
   const isBurned = activeRules.status === "BURNED";
 
-  const { netPnl, maxDD, peak } = calcAccountDD(trades, activeRules);
+  const { netPnl, maxDD, peak, finalBalance } = calcAccountDD(trades, activeRules);
   const uniqueDays = [...new Set(trades.map(t => t.date))].length;
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
