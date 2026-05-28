@@ -29,16 +29,9 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Cuenta no encontrada' }, { status: 404 });
     }
 
-    const isBalanceChanged = body.balance !== undefined && (body.balance === null || body.balance === '' ? null : parseFloat(body.balance)) !== oldAccount.balance;
-    const isDateChanged = body.updateDate !== undefined && (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) !== oldAccount.updateDate;
-    
     let brokerUpdateTime = undefined;
     if (body.brokerUpdateTime !== undefined) {
       brokerUpdateTime = body.brokerUpdateTime === '' || body.brokerUpdateTime === null ? null : body.brokerUpdateTime;
-    } else if (isBalanceChanged || isDateChanged) {
-      brokerUpdateTime = (body.balance === null || body.balance === '' || body.updateDate === null || body.updateDate === '') 
-        ? null 
-        : new Date().toISOString();
     }
 
     const updatedAccount = await db.account.update({

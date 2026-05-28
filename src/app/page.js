@@ -441,7 +441,7 @@ function AccountCard({ account, rules, trades }) {
                 border: `0.5px solid ${netPnl >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
                 color: netPnl >= 0 ? C.greenText : C.redText,
               }}>
-                ${Math.round(finalBalance).toLocaleString()}
+                ${finalBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
               </span>
               <span style={{
                 fontSize: 9,
@@ -550,7 +550,7 @@ function AccountCard({ account, rules, trades }) {
         }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
             {[
-              ["Saldo Estimado", `$${(activeRules.size + netPnl).toLocaleString()}`, "var(--color-text-primary)"],
+              ["Saldo Estimado", `$${finalBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, "var(--color-text-primary)"],
               ["Pico de Cuenta", `+$${Math.round(peak).toLocaleString()}`, C.green],
               ["Max Drawdown", `-$${Math.round(ddUsed).toLocaleString()}`, C.red],
               ["Días de Operativa", `${trades.length} trades (${uniqueDays} d)`, "var(--color-text-primary)"],
@@ -1637,7 +1637,13 @@ function SettingsPanel({
       const res = await fetch(`/api/accounts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...acctData, size: parseFloat(balance), balance: null, updateDate: null }),
+        body: JSON.stringify({ 
+          ...acctData, 
+          size: parseFloat(balance), 
+          balance: null, 
+          updateDate: null,
+          brokerUpdateTime: new Date().toISOString()
+        }),
       });
       if (res.ok) {
         setBrokerSyncModal(null);
