@@ -2206,7 +2206,7 @@ function SettingsPanel({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Versión de la App</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v2.0</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v3.0</div>
             </div>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Despliegue en Vercel</div>
@@ -2429,6 +2429,7 @@ export default function App() {
   const [aiKey, setAiKey] = useState("");
   const [selectedTradeImage, setSelectedTradeImage] = useState(null);
   const [imageImportLoading, setImageImportLoading] = useState(false);
+  const [deployId, setDeployId] = useState("");
 
   const PER_PAGE = 20;
   const isSettingsLoaded = useRef(false);
@@ -2538,6 +2539,18 @@ export default function App() {
     loadDbSettings();
     fetchAccounts();
     fetchTrades();
+
+    const fetchVersion = async () => {
+      try {
+        const res = await fetch(`/api/version?t=${Date.now()}`);
+        if (res.ok) {
+          const data = await res.json();
+          const sha = data.commitSha === 'development' ? 'Local' : (data.commitSha ? data.commitSha.slice(0, 7) : 'Local');
+          setDeployId(sha);
+        }
+      } catch {}
+    };
+    fetchVersion();
   }, []);
 
   // Sync state changes to LocalStorage and Database
@@ -3682,7 +3695,9 @@ export default function App() {
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
             <span>📈 Trading Journal</span>
-            <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>v2.0</span>
+            <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>
+              v3.0 {deployId && `(${deployId})`}
+            </span>
             <button
               onClick={async () => {
                 setLoading(true);
