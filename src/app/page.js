@@ -1023,7 +1023,7 @@ function CalendarWidget({ trades }) {
         </button>
       </div>
 
-      <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+      <div className="scroll-fade-container" style={{ overflowX: "auto", paddingBottom: 4 }}>
         <div style={{ minWidth: 520 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2, marginBottom: 4 }}>
             {dayLabels.map((d, i) => (
@@ -1560,9 +1560,20 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
 function Module({ id, label, icon, visible, onToggle, onMoveUp, onMoveDown, canUp, canDown, children, editMode }) {
   const [collapsed, setCollapsed] = useState(false);
   return (
-    <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 12, marginBottom: 12, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: collapsed ? "none" : "0.5px solid var(--color-border-tertiary)", cursor: "pointer", userSelect: "none" }}
-        onClick={() => !editMode && setCollapsed(c => !c)}>
+    <div className="premium-module" style={{ marginBottom: 12 }}>
+      <div 
+        className="premium-module-header"
+        style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          gap: 8, 
+          padding: "10px 14px", 
+          borderBottom: collapsed ? "none" : "1px solid var(--glass-border)", 
+          cursor: "pointer", 
+          userSelect: "none" 
+        }}
+        onClick={() => !editMode && setCollapsed(c => !c)}
+      >
         <span style={{ fontSize: 14 }}>{icon}</span>
         <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{label}</span>
         {editMode && (
@@ -3589,7 +3600,7 @@ export default function App() {
           )}
         </div>
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
-        <div style={{ overflowX: "auto" }}>
+        <div className="scroll-fade-container" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 1050 }}>
             <thead>
               <tr>
