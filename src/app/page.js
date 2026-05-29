@@ -91,9 +91,7 @@ function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
           borderRadius: 12, padding: "12px 14px",
           boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>
-            Opción A — Chips por categoría
-          </div>
+
           {groups.map(g => (
             <div key={g.status} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -142,152 +140,6 @@ function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
   );
 }
 
-// ── Option B: Popover Checkboxes ──────────────────────────────────────────────
-function AccountFilterB({ accountsList, selectedAccounts, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [open]);
-
-  const groups = useMemo(() => [
-    { label: "Activas", status: "ACTIVE", accounts: accountsList.filter(a => a.status === "ACTIVE" || !a.status) },
-    { label: "Quemadas 🔥", status: "BURNED", accounts: accountsList.filter(a => a.status === "BURNED") },
-    { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => a.status === "CLOSED") },
-  ].filter(g => g.accounts.length > 0), [accountsList]);
-
-  const allSelected = selectedAccounts.size === 0;
-
-  const toggle = (name) => {
-    const next = new Set(selectedAccounts);
-    if (next.has(name)) next.delete(name); else next.add(name);
-    onChange(next);
-  };
-
-  const toggleGroup = (accounts) => {
-    const names = accounts.map(a => a.name);
-    const allIn = names.every(n => selectedAccounts.has(n));
-    const next = new Set(selectedAccounts);
-    if (allIn) { names.forEach(n => next.delete(n)); } else { names.forEach(n => next.add(n)); }
-    onChange(next);
-  };
-
-  const activeCount = selectedAccounts.size;
-  const label = activeCount === 0 ? "Todas las cuentas" : `${activeCount} seleccionada${activeCount > 1 ? "s" : ""}`;
-
-  return (
-    <div ref={ref} style={{ position: "relative", zIndex: 49 }}>
-      {/* Trigger */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6,
-          fontSize: 12, padding: "5px 10px", borderRadius: 8,
-          border: activeCount > 0 ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)",
-          background: activeCount > 0 ? C.blueBg : "var(--color-background-primary)",
-          color: activeCount > 0 ? C.blueText : "var(--color-text-secondary)",
-          cursor: "pointer", fontWeight: activeCount > 0 ? 500 : 400,
-          whiteSpace: "nowrap",
-        }}
-      >
-        <span>☰ {label}</span>
-        <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? "▲" : "▼"}</span>
-      </button>
-
-      {/* Popover / bottom-sheet */}
-      {open && (
-        <>
-          {/* Mobile overlay */}
-          <div
-            className="sm:hidden"
-            onClick={() => setOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100 }}
-          />
-          <div style={{
-            position: "fixed", bottom: 0, left: 0, right: 0,
-            background: "var(--color-background-primary)",
-            border: "0.5px solid var(--color-border-secondary)",
-            borderRadius: "16px 16px 0 0",
-            padding: "16px 16px 32px",
-            boxShadow: "0 -8px 32px rgba(0,0,0,0.15)",
-            zIndex: 101,
-            maxHeight: "70vh",
-            overflowY: "auto",
-          }} className="sm:!fixed-none sm:hidden">
-            <FilterBContent groups={groups} selectedAccounts={selectedAccounts} allSelected={allSelected} toggle={toggle} toggleGroup={toggleGroup} onChange={onChange} setOpen={setOpen} />
-          </div>
-          {/* Desktop popover */}
-          <div style={{
-            position: "absolute", top: "calc(100% + 8px)", right: 0,
-            minWidth: 240, maxWidth: 300,
-            background: "var(--color-background-primary)",
-            border: "0.5px solid var(--color-border-secondary)",
-            borderRadius: 12, padding: "12px 14px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-            zIndex: 101,
-          }} className="hidden sm:block">
-            <FilterBContent groups={groups} selectedAccounts={selectedAccounts} allSelected={allSelected} toggle={toggle} toggleGroup={toggleGroup} onChange={onChange} setOpen={setOpen} />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function FilterBContent({ groups, selectedAccounts, allSelected, toggle, toggleGroup, onChange, setOpen }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>
-        Opción B — Checkboxes
-      </div>
-      {/* All toggle */}
-      <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-secondary)", marginBottom: 8, paddingBottom: 8 }}>
-        <input type="checkbox" checked={allSelected} onChange={() => onChange(new Set())} style={{ accentColor: C.blue, width: 14, height: 14 }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>Todas las cuentas</span>
-      </label>
-      {groups.map(g => {
-        const groupAllIn = g.accounts.every(a => selectedAccounts.has(a.name));
-        const groupSomeIn = g.accounts.some(a => selectedAccounts.has(a.name));
-        return (
-          <div key={g.status} style={{ marginBottom: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={groupAllIn}
-                ref={el => { if (el) el.indeterminate = groupSomeIn && !groupAllIn; }}
-                onChange={() => toggleGroup(g.accounts)}
-                style={{ accentColor: C.blue, width: 14, height: 14 }}
-              />
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".4px" }}>{g.label}</span>
-            </label>
-            {g.accounts.map(a => (
-              <label key={a.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 22px", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={selectedAccounts.has(a.name)}
-                  onChange={() => toggle(a.name)}
-                  style={{ accentColor: C.blue, width: 14, height: 14 }}
-                />
-                <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{a.name.split(" ")[0]}</span>
-              </label>
-            ))}
-          </div>
-        );
-      })}
-      <button
-        onClick={() => setOpen(false)}
-        style={{ width: "100%", marginTop: 8, fontSize: 11, padding: "6px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
-      >
-        Cerrar
-      </button>
-    </div>
-  );
-}
 
 // ACCOUNT_RULES is loaded dynamically from database now
 
@@ -4045,21 +3897,17 @@ export default function App() {
             <UserButton />
           </div>
 
-          {/* Filtros avanzados de cuentas: Opción A (chips) encima, Opción B (checkboxes) debajo */}
+          {/* Filtro avanzado de cuentas */}
           {currentTab === "dashboard" && (
-            <div className="w-full md:w-auto order-2 md:order-1 flex flex-col items-center md:items-end gap-2">
+            <div className="w-full md:w-auto order-2 md:order-1 flex justify-center md:justify-end">
               <AccountFilterA
-                accountsList={accountsList}
-                selectedAccounts={selectedAccounts}
-                onChange={setSelectedAccounts}
-              />
-              <AccountFilterB
                 accountsList={accountsList}
                 selectedAccounts={selectedAccounts}
                 onChange={setSelectedAccounts}
               />
             </div>
           )}
+
         </div>
       </div>
       
