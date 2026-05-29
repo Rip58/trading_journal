@@ -4,6 +4,291 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "rea
 import { UserButton } from "@clerk/nextjs";
 import { normalizeDateToYYYYMMDD, parseLocaleFloat } from "@/lib/dateUtils";
 
+// ── Helper: serialize/deserialize account filter Set ──────────────────────────
+function serializeAcctFilter(set) {
+  return set.size === 0 ? "all" : JSON.stringify([...set]);
+}
+function deserializeAcctFilter(raw) {
+  if (!raw || raw === "all") return new Set();
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return new Set(parsed);
+  } catch {}
+  // Legacy: single account name string
+  if (typeof raw === "string" && raw !== "all") return new Set([raw]);
+  return new Set();
+}
+
+// ── Option A: Multi-Chip Drawer ───────────────────────────────────────────────
+function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(new Set(selectedAccounts));
+  const ref = useRef(null);
+
+  // Sync draft when external selection changes
+  useEffect(() => { setDraft(new Set(selectedAccounts)); }, [selectedAccounts]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const groups = useMemo(() => [
+    { label: "Activas 🟢", status: "ACTIVE", accounts: accountsList.filter(a => a.status === "ACTIVE" || !a.status) },
+    { label: "Quemadas 🔥", status: "BURNED", accounts: accountsList.filter(a => a.status === "BURNED") },
+    { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => a.status === "CLOSED") },
+  ].filter(g => g.accounts.length > 0), [accountsList]);
+
+  const toggleDraft = (name) => {
+    const next = new Set(draft);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    setDraft(next);
+  };
+
+  const toggleGroup = (accounts) => {
+    const names = accounts.map(a => a.name);
+    const allIn = names.every(n => draft.has(n));
+    const next = new Set(draft);
+    if (allIn) { names.forEach(n => next.delete(n)); } else { names.forEach(n => next.add(n)); }
+    setDraft(next);
+  };
+
+  const apply = () => { onChange(draft); setOpen(false); };
+  const reset = () => { const empty = new Set(); setDraft(empty); onChange(empty); setOpen(false); };
+
+  const activeCount = selectedAccounts.size;
+  const label = activeCount === 0 ? "Todas las cuentas" : `${activeCount} cuenta${activeCount > 1 ? "s" : ""} seleccionada${activeCount > 1 ? "s" : ""}`;
+
+  return (
+    <div ref={ref} style={{ position: "relative", zIndex: 50 }}>
+      {/* Trigger button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          fontSize: 12, padding: "5px 10px", borderRadius: 8,
+          border: activeCount > 0 ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)",
+          background: activeCount > 0 ? C.blueBg : "var(--color-background-primary)",
+          color: activeCount > 0 ? C.blueText : "var(--color-text-secondary)",
+          cursor: "pointer", fontWeight: activeCount > 0 ? 500 : 400,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span>🏷️ {label}</span>
+        <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {/* Drawer panel */}
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)", right: 0,
+          minWidth: 260, maxWidth: 320,
+          background: "var(--color-background-primary)",
+          border: "0.5px solid var(--color-border-secondary)",
+          borderRadius: 12, padding: "12px 14px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>
+            Opción A — Chips por categoría
+          </div>
+          {groups.map(g => (
+            <div key={g.status} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".4px" }}>{g.label}</span>
+                <button
+                  onClick={() => toggleGroup(g.accounts)}
+                  style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                >
+                  {g.accounts.every(a => draft.has(a.name)) ? "Quitar todas" : "Todas"}
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {g.accounts.map(a => {
+                  const sel = draft.has(a.name);
+                  return (
+                    <button
+                      key={a.name}
+                      onClick={() => toggleDraft(a.name)}
+                      style={{
+                        fontSize: 11, padding: "3px 8px", borderRadius: 6,
+                        border: sel ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)",
+                        background: sel ? C.blueBg : "var(--color-background-secondary)",
+                        color: sel ? C.blueText : "var(--color-text-secondary)",
+                        cursor: "pointer", fontWeight: sel ? 600 : 400,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {a.name.split(" ")[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 10, borderTop: "0.5px solid var(--color-border-secondary)", paddingTop: 10 }}>
+            <button onClick={reset} style={{ flex: 1, fontSize: 11, padding: "5px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+              Restablecer
+            </button>
+            <button onClick={apply} style={{ flex: 1, fontSize: 11, padding: "5px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: C.blue, color: "#fff", cursor: "pointer", fontWeight: 600 }}>
+              ✓ Aplicar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Option B: Popover Checkboxes ──────────────────────────────────────────────
+function AccountFilterB({ accountsList, selectedAccounts, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const groups = useMemo(() => [
+    { label: "Activas", status: "ACTIVE", accounts: accountsList.filter(a => a.status === "ACTIVE" || !a.status) },
+    { label: "Quemadas 🔥", status: "BURNED", accounts: accountsList.filter(a => a.status === "BURNED") },
+    { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => a.status === "CLOSED") },
+  ].filter(g => g.accounts.length > 0), [accountsList]);
+
+  const allSelected = selectedAccounts.size === 0;
+
+  const toggle = (name) => {
+    const next = new Set(selectedAccounts);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    onChange(next);
+  };
+
+  const toggleGroup = (accounts) => {
+    const names = accounts.map(a => a.name);
+    const allIn = names.every(n => selectedAccounts.has(n));
+    const next = new Set(selectedAccounts);
+    if (allIn) { names.forEach(n => next.delete(n)); } else { names.forEach(n => next.add(n)); }
+    onChange(next);
+  };
+
+  const activeCount = selectedAccounts.size;
+  const label = activeCount === 0 ? "Todas las cuentas" : `${activeCount} seleccionada${activeCount > 1 ? "s" : ""}`;
+
+  return (
+    <div ref={ref} style={{ position: "relative", zIndex: 49 }}>
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          fontSize: 12, padding: "5px 10px", borderRadius: 8,
+          border: activeCount > 0 ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)",
+          background: activeCount > 0 ? C.blueBg : "var(--color-background-primary)",
+          color: activeCount > 0 ? C.blueText : "var(--color-text-secondary)",
+          cursor: "pointer", fontWeight: activeCount > 0 ? 500 : 400,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span>☰ {label}</span>
+        <span style={{ fontSize: 9, opacity: 0.7 }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {/* Popover / bottom-sheet */}
+      {open && (
+        <>
+          {/* Mobile overlay */}
+          <div
+            className="sm:hidden"
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100 }}
+          />
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0,
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: "16px 16px 0 0",
+            padding: "16px 16px 32px",
+            boxShadow: "0 -8px 32px rgba(0,0,0,0.15)",
+            zIndex: 101,
+            maxHeight: "70vh",
+            overflowY: "auto",
+          }} className="sm:!fixed-none sm:hidden">
+            <FilterBContent groups={groups} selectedAccounts={selectedAccounts} allSelected={allSelected} toggle={toggle} toggleGroup={toggleGroup} onChange={onChange} setOpen={setOpen} />
+          </div>
+          {/* Desktop popover */}
+          <div style={{
+            position: "absolute", top: "calc(100% + 8px)", right: 0,
+            minWidth: 240, maxWidth: 300,
+            background: "var(--color-background-primary)",
+            border: "0.5px solid var(--color-border-secondary)",
+            borderRadius: 12, padding: "12px 14px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+            zIndex: 101,
+          }} className="hidden sm:block">
+            <FilterBContent groups={groups} selectedAccounts={selectedAccounts} allSelected={allSelected} toggle={toggle} toggleGroup={toggleGroup} onChange={onChange} setOpen={setOpen} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FilterBContent({ groups, selectedAccounts, allSelected, toggle, toggleGroup, onChange, setOpen }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>
+        Opción B — Checkboxes
+      </div>
+      {/* All toggle */}
+      <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", cursor: "pointer", borderBottom: "0.5px solid var(--color-border-secondary)", marginBottom: 8, paddingBottom: 8 }}>
+        <input type="checkbox" checked={allSelected} onChange={() => onChange(new Set())} style={{ accentColor: C.blue, width: 14, height: 14 }} />
+        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>Todas las cuentas</span>
+      </label>
+      {groups.map(g => {
+        const groupAllIn = g.accounts.every(a => selectedAccounts.has(a.name));
+        const groupSomeIn = g.accounts.some(a => selectedAccounts.has(a.name));
+        return (
+          <div key={g.status} style={{ marginBottom: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={groupAllIn}
+                ref={el => { if (el) el.indeterminate = groupSomeIn && !groupAllIn; }}
+                onChange={() => toggleGroup(g.accounts)}
+                style={{ accentColor: C.blue, width: 14, height: 14 }}
+              />
+              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".4px" }}>{g.label}</span>
+            </label>
+            {g.accounts.map(a => (
+              <label key={a.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 22px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedAccounts.has(a.name)}
+                  onChange={() => toggle(a.name)}
+                  style={{ accentColor: C.blue, width: 14, height: 14 }}
+                />
+                <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{a.name.split(" ")[0]}</span>
+              </label>
+            ))}
+          </div>
+        );
+      })}
+      <button
+        onClick={() => setOpen(false)}
+        style={{ width: "100%", marginTop: 8, fontSize: 11, padding: "6px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+      >
+        Cerrar
+      </button>
+    </div>
+  );
+}
+
 // ACCOUNT_RULES is loaded dynamically from database now
 
 
@@ -2416,7 +2701,7 @@ export default function App() {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [visibility, setVisibility] = useState({});
   const [editMode, setEditMode] = useState(false);
-  const [acctFilter, setAcctFilter] = useState("all");
+  const [selectedAccounts, setSelectedAccounts] = useState(new Set()); // empty Set = all accounts
   const [accountsPanelFilter, setAccountsPanelFilter] = useState("all");
   const [editingTrade, setEditingTrade] = useState(null);
   const [addingTrade, setAddingTrade] = useState(false);
@@ -2485,7 +2770,7 @@ export default function App() {
     try {
       const savedAcctFilter = localStorage.getItem("tj_acct_filter");
       const savedAccountsPanelFilter = localStorage.getItem("tj_accounts_panel_filter");
-      if (savedAcctFilter) setAcctFilter(savedAcctFilter);
+      if (savedAcctFilter) setSelectedAccounts(deserializeAcctFilter(savedAcctFilter));
       if (savedAccountsPanelFilter) setAccountsPanelFilter(savedAccountsPanelFilter);
     } catch {}
 
@@ -2522,7 +2807,7 @@ export default function App() {
               }
             }
             if (dbSettings.acctFilter) {
-              setAcctFilter(dbSettings.acctFilter);
+              setSelectedAccounts(deserializeAcctFilter(dbSettings.acctFilter));
             }
             if (dbSettings.accountsPanelFilter) {
               setAccountsPanelFilter(dbSettings.accountsPanelFilter);
@@ -2565,7 +2850,7 @@ export default function App() {
     try {
       localStorage.setItem("tj_layout", JSON.stringify(layout));
       localStorage.setItem("tj_visibility", JSON.stringify(visibility));
-      localStorage.setItem("tj_acct_filter", acctFilter);
+      localStorage.setItem("tj_acct_filter", serializeAcctFilter(selectedAccounts));
       localStorage.setItem("tj_accounts_panel_filter", accountsPanelFilter);
       localStorage.setItem("tj_theme", theme);
       localStorage.setItem("tj_ai_provider", aiProvider);
@@ -2586,7 +2871,7 @@ export default function App() {
             layout: JSON.stringify(layout),
             visibility: JSON.stringify(visibility),
             theme,
-            acctFilter,
+            acctFilter: serializeAcctFilter(selectedAccounts),
             accountsPanelFilter,
             aiProvider,
             aiKey,
@@ -2599,7 +2884,7 @@ export default function App() {
 
     const timer = setTimeout(syncToDb, 1000);
     return () => clearTimeout(timer);
-  }, [layout, visibility, theme, acctFilter, accountsPanelFilter, aiProvider, aiKey]);
+  }, [layout, visibility, theme, selectedAccounts, accountsPanelFilter, aiProvider, aiKey]);
 
   const fetchAccounts = async () => {
     try {
@@ -3317,9 +3602,11 @@ export default function App() {
   };
 
   const filtered = useMemo(() => {
-    const base = acctFilter === "all" ? trades : trades.filter(t => t.account === acctFilter);
+    const base = selectedAccounts.size === 0
+      ? trades
+      : trades.filter(t => selectedAccounts.has(t.account));
     return base.filter(t => t.instrument !== "Ajuste de Broker");
-  }, [trades, acctFilter]);
+  }, [trades, selectedAccounts]);
   const stats = useMemo(() => calcStats(filtered), [filtered]);
   
   const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
@@ -3339,34 +3626,30 @@ export default function App() {
     });
   }, [accountsList]);
 
-  const accountsButtons = useMemo(() => {
-    return [
-      ["all", "Todas"],
-      ...accountsList.map(a => {
-        let label = a.name.split(" ")[0];
-        if (a.status === "CLOSED") label += " 🔒";
-        else if (a.status === "BURNED") label += " 🔥";
-        return [a.name, label];
-      })
-    ];
-  }, [accountsList]);
+  // accountsButtons kept for backward compat if needed elsewhere but not used in equity module anymore
 
   const trueNetPnl = useMemo(() => {
-    if (acctFilter === "all") {
-      return accountsList.reduce((acc, a) => {
-        const acctTrades = filtered.filter(t => t.account === a.name);
-        const { netPnl } = calcAccountDD(acctTrades, a);
-        return acc + netPnl;
-      }, 0);
-    } else {
-      const selectedAcct = accountsList.find(a => a.name === acctFilter);
-      return calcAccountDD(filtered, selectedAcct).netPnl;
+    // Get the accounts that are active in the filter (all if none selected)
+    const activeAccounts = selectedAccounts.size === 0
+      ? accountsList
+      : accountsList.filter(a => selectedAccounts.has(a.name));
+    if (activeAccounts.length === 1) {
+      // Single account: use reconstructed balance
+      return calcAccountDD(filtered, activeAccounts[0]).netPnl;
     }
-  }, [filtered, acctFilter, accountsList]);
+    // Multiple or all: sum each account's reconstructed PnL
+    return activeAccounts.reduce((acc, a) => {
+      const acctTrades = filtered.filter(t => t.account === a.name);
+      const { netPnl } = calcAccountDD(acctTrades, a);
+      return acc + netPnl;
+    }, 0);
+  }, [filtered, selectedAccounts, accountsList]);
 
   const equitySpark = useMemo(() => {
-    return calcReconstructedPnlHistory(filtered, acctFilter, accountsList);
-  }, [filtered, acctFilter, accountsList]);
+    // Pass 'all' when multiple accounts are selected (portfolio view)
+    const filterArg = selectedAccounts.size === 1 ? [...selectedAccounts][0] : "all";
+    return calcReconstructedPnlHistory(filtered, filterArg, accountsList);
+  }, [filtered, selectedAccounts, accountsList]);
 
   const dowData = useMemo(() => {
     const map = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -3539,14 +3822,7 @@ export default function App() {
     }
     if (mod.id === "equity") return (
       <Module key={mod.id} {...props}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 6 }}>
-            {accountsButtons.map(([v, l]) => (
-              <button key={v} onClick={() => setAcctFilter(v)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 16, border: acctFilter === v ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: acctFilter === v ? C.blueBg : "var(--color-background-primary)", color: acctFilter === v ? C.blueText : "var(--color-text-secondary)", cursor: "pointer", fontWeight: acctFilter === v ? 500 : 400 }}>{l}</button>
-            ))}
-          </div>
-        </div>
-        <EquityChart trades={filtered} accountFilter={acctFilter} accountsList={accountsList} />
+        <EquityChart trades={filtered} accountFilter={selectedAccounts.size === 1 ? [...selectedAccounts][0] : "all"} accountsList={accountsList} />
         <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 11, color: "var(--color-text-secondary)" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green, display: "inline-block" }} />Zona positiva</span>
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red, display: "inline-block" }} />Zona negativa</span>
@@ -3769,23 +4045,19 @@ export default function App() {
             <UserButton />
           </div>
 
-          {/* Selector de cuentas debajo de los botones en móvil, a la izquierda en desktop */}
+          {/* Filtros avanzados de cuentas: Opción A (chips) encima, Opción B (checkboxes) debajo */}
           {currentTab === "dashboard" && (
-            <div className="w-full md:w-auto order-2 md:order-1 flex justify-center">
-              <select 
-                value={acctFilter} 
-                onChange={e => setAcctFilter(e.target.value)} 
-                className="w-full md:w-auto max-w-xs"
-                style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
-              >
-                <option value="all">Todas las cuentas</option>
-                {accountsList.map(a => {
-                  let label = a.name;
-                  if (a.status === "CLOSED") label += " (Cerrada)";
-                  else if (a.status === "BURNED") label += " (Quemada 🔥)";
-                  return <option key={a.name} value={a.name}>{label}</option>;
-                })}
-              </select>
+            <div className="w-full md:w-auto order-2 md:order-1 flex flex-col items-center md:items-end gap-2">
+              <AccountFilterA
+                accountsList={accountsList}
+                selectedAccounts={selectedAccounts}
+                onChange={setSelectedAccounts}
+              />
+              <AccountFilterB
+                accountsList={accountsList}
+                selectedAccounts={selectedAccounts}
+                onChange={setSelectedAccounts}
+              />
             </div>
           )}
         </div>
