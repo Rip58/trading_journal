@@ -37,7 +37,8 @@ function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
   }, [open]);
 
   const groups = useMemo(() => [
-    { label: "Activas 🟢", status: "ACTIVE", accounts: accountsList.filter(a => a.status === "ACTIVE" || !a.status) },
+    { label: "Activas Examen 📝", status: "ACTIVE_EXAMEN", accounts: accountsList.filter(a => (a.status === "ACTIVE" || !a.status) && a.type === "EXAMEN") },
+    { label: "Activas Reales 💼", status: "ACTIVE_REAL", accounts: accountsList.filter(a => (a.status === "ACTIVE" || !a.status) && a.type === "REAL") },
     { label: "Quemadas 🔥", status: "BURNED", accounts: accountsList.filter(a => a.status === "BURNED") },
     { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => a.status === "CLOSED") },
   ].filter(g => g.accounts.length > 0), [accountsList]);
@@ -141,7 +142,80 @@ function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
 }
 
 
+
 // ACCOUNT_RULES is loaded dynamically from database now
+
+// ── Sunday Reminder Popup ─────────────────────────────────────────────────────
+function SundayReminder() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const today = new Date();
+    if (today.getDay() !== 0) return; // 0 = Sunday
+    const key = `tj_sunday_dismissed_${today.toISOString().slice(0, 10)}`;
+    if (!localStorage.getItem(key)) setVisible(true);
+  }, []);
+
+  if (!visible) return null;
+
+  const dismiss = () => {
+    const key = `tj_sunday_dismissed_${new Date().toISOString().slice(0, 10)}`;
+    localStorage.setItem(key, "1");
+    setVisible(false);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 20,
+    }}>
+      <div style={{
+        background: "var(--color-background-primary)",
+        border: "0.5px solid var(--color-border-secondary)",
+        borderRadius: 16,
+        padding: "28px 28px 24px",
+        maxWidth: 380, width: "100%",
+        boxShadow: "0 16px 48px rgba(0,0,0,0.18)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 8 }}>
+          Recordatorio de Domingo
+        </div>
+        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 20 }}>
+          Es domingo — recuerda actualizar los <strong>importes de cada cuenta</strong> con los saldos reales del broker antes de empezar la semana. Una vez actualizados, usa <strong>"Sincronizar Base"</strong> en cada cuenta para que el seguimiento empiece desde cero el lunes.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={dismiss}
+            style={{
+              flex: 1, padding: "9px 16px", borderRadius: 8, fontSize: 13,
+              border: "0.5px solid var(--color-border-secondary)",
+              background: "var(--color-background-secondary)",
+              color: "var(--color-text-secondary)", cursor: "pointer",
+            }}
+          >
+            Ya lo hice
+          </button>
+          <button
+            onClick={dismiss}
+            style={{
+              flex: 1, padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              border: `0.5px solid ${C.blue}`,
+              background: C.blue, color: "#fff", cursor: "pointer",
+            }}
+          >
+            ✓ Entendido
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 
 const ALL_MODULES = [
@@ -506,10 +580,15 @@ function AccountCard({ account, rules, trades }) {
   const isBurned = activeRules.status === "BURNED";
 
   const { netPnl, maxDD, peak, finalBalance } = calcAccountDD(trades, activeRules);
+  // sessionPnl = total gain since account creation = finalBalance - original starting balance.
+  // Uses startSize (never changes) as baseline. Falls back to size if not set.
+  // After weekend sync: shows e.g. +$682 (50682 - 50000). Grows with each trade.
+  const originBase = activeRules.startSize ?? activeRules.size;
+  const sessionPnl = Math.round(finalBalance) - originBase;
   const uniqueDays = [...new Set(trades.map(t => t.date))].length;
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
-  const targetPct = Math.max(0, Math.min((netPnl / activeRules.target) * 100, 100));
+  const targetPct = Math.max(0, Math.min((sessionPnl / activeRules.target) * 100, 100));
   const ddRemaining = activeRules.dd_limit - ddUsed;
   const ddColor = ddPct >= 80 ? C.red : ddPct >= 50 ? C.amber : C.green;
   
@@ -574,9 +653,9 @@ function AccountCard({ account, rules, trades }) {
                 fontWeight: 600,
                 padding: "2.5px 7px",
                 borderRadius: 5,
-                background: netPnl >= 0 ? C.greenBg : C.redBg,
-                border: `0.5px solid ${netPnl >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
-                color: netPnl >= 0 ? C.greenText : C.redText,
+                background: sessionPnl >= 0 ? C.greenBg : C.redBg,
+                border: `0.5px solid ${sessionPnl >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
+                color: sessionPnl >= 0 ? C.greenText : C.redText,
               }}>
                 ${finalBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
               </span>
@@ -591,9 +670,10 @@ function AccountCard({ account, rules, trades }) {
               }}>
                 Base: ${(activeRules.size / 1000).toFixed(0)}K
               </span>
-              {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
+              {activeRules.type === "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 600 }}>Real 💼</span>}
+              {activeRules.type !== "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 600 }}>Examen 📝</span>}
+              {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada 🔒</span>}
               {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
-              {!isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 500 }}>Activa</span>}
             </div>
           </div>
           
@@ -603,12 +683,12 @@ function AccountCard({ account, rules, trades }) {
               fontSize: 11, 
               padding: "4px 10px", 
               borderRadius: 8, 
-              background: netPnl >= 0 ? C.greenBg : C.redBg, 
-              color: netPnl >= 0 ? C.greenText : C.redText, 
+              background: sessionPnl >= 0 ? C.greenBg : C.redBg, 
+              color: sessionPnl >= 0 ? C.greenText : C.redText, 
               fontWeight: 600,
               display: "inline-block",
             }}>
-              {fmt(netPnl)}
+              {fmt(sessionPnl)}
             </span>
           </div>
         </div>
@@ -624,7 +704,7 @@ function AccountCard({ account, rules, trades }) {
               <span className="sm:hidden">Obj.</span>
             </div>
             <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px] truncate">
-              <span style={{ color: netPnl >= 0 ? C.green : C.red }}>{fmt(netPnl)}</span>
+              <span style={{ color: sessionPnl >= 0 ? C.green : C.red }}>{fmt(sessionPnl)}</span>
               <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.target.toLocaleString()}</span>
             </div>
             {/* Barra de progreso pequeña */}
@@ -666,12 +746,12 @@ function AccountCard({ account, rules, trades }) {
               fontSize: 11, 
               padding: "4px 10px", 
               borderRadius: 8, 
-              background: netPnl >= 0 ? C.greenBg : C.redBg, 
-              color: netPnl >= 0 ? C.greenText : C.redText, 
+              background: sessionPnl >= 0 ? C.greenBg : C.redBg, 
+              color: sessionPnl >= 0 ? C.greenText : C.redText, 
               fontWeight: 600,
               display: "inline-block",
             }}>
-              {fmt(netPnl)}
+              {fmt(sessionPnl)}
             </span>
           </div>
 
@@ -703,8 +783,8 @@ function AccountCard({ account, rules, trades }) {
 
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-              <span>Objetivo de Ganancia</span>
-              <span>{fmt(netPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
+              <span>Objetivo de Ganancia (Sesión)</span>
+              <span>{fmt(sessionPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
             </div>
             <Bar pct={targetPct} color={C.green} />
           </div>
@@ -1756,7 +1836,7 @@ function SettingsPanel({
   setAiKey,
   trades = [],
 }) {
-  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
+  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "" });
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
@@ -1966,7 +2046,7 @@ function SettingsPanel({
         body: JSON.stringify(newAcct),
       });
       if (res.ok) {
-        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, balance: "", threshold: "", updateDate: "", activeDays: "" });
+        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "" });
         setAcctError("");
         fetchAccounts();
       } else {
@@ -2141,6 +2221,10 @@ function SettingsPanel({
                     <option value="CLOSED">Cerrada</option>
                     <option value="BURNED">Quemada 🔥</option>
                   </select>
+                  <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct({...editAcct, type: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                    <option value="EXAMEN">Examen 📝</option>
+                    <option value="REAL">Real 💼</option>
+                  </select>
                   <input type="number" value={editAcct.balance !== undefined && editAcct.balance !== null ? editAcct.balance : ""} onChange={e => setEditAcct({...editAcct, balance: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="📋 Saldo Broker (referencia)" />
                   <input type="number" value={editAcct.threshold !== undefined && editAcct.threshold !== null ? editAcct.threshold : ""} onChange={e => setEditAcct({...editAcct, threshold: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Umbral Liq." />
                   <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha ref. broker" />
@@ -2164,6 +2248,11 @@ function SettingsPanel({
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       {a.name}
+                      {a.type === "REAL" ? (
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 500 }}>Real 💼</span>
+                      ) : (
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 500 }}>Examen 📝</span>
+                      )}
                       {a.status === "CLOSED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
                       {a.status === "BURNED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
                     </div>
@@ -2187,6 +2276,13 @@ function SettingsPanel({
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
               <input type="text" placeholder="Ej: BX101840-06 (100K)" value={newAcct.name} onChange={e => setNewAcct({...newAcct, name: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Categoría de Cuenta</label>
+              <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({...newAcct, type: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                <option value="EXAMEN">Examen 📝</option>
+                <option value="REAL">Real 💼</option>
+              </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Saldo Inicial ($)</label>
@@ -3589,15 +3685,18 @@ export default function App() {
       </Module>
     );
     if (mod.id === "accounts") {
-      const activeCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE").length;
-      const burnedCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "BURNED").length;
-      const closedCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "CLOSED").length;
       const totalCount = accountsList.length;
+      const examenCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE" && a.type === "EXAMEN").length;
+      const realCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE" && a.type === "REAL").length;
+      const inactiveCount = accountsList.filter(a => a.status === "BURNED" || a.status === "CLOSED").length;
 
       const filteredAccounts = accountsList.filter(a => {
         const status = a.status || "ACTIVE";
         if (accountsPanelFilter === "all") return true;
-        return status.toUpperCase() === accountsPanelFilter.toUpperCase();
+        if (accountsPanelFilter === "EXAMEN") return status.toUpperCase() === "ACTIVE" && a.type === "EXAMEN";
+        if (accountsPanelFilter === "REAL") return status.toUpperCase() === "ACTIVE" && a.type === "REAL";
+        if (accountsPanelFilter === "INACTIVE") return status.toUpperCase() === "BURNED" || status.toUpperCase() === "CLOSED";
+        return true;
       });
 
       return (
@@ -3613,9 +3712,9 @@ export default function App() {
           }}>
             {[
               { id: "all", label: "Todas", count: totalCount },
-              { id: "ACTIVE", label: "Activas", count: activeCount },
-              { id: "BURNED", label: "Quemadas 🔥", count: burnedCount },
-              { id: "CLOSED", label: "Cerradas 🔒", count: closedCount },
+              { id: "EXAMEN", label: "Examen 📝", count: examenCount },
+              { id: "REAL", label: "Reales 💼", count: realCount },
+              { id: "INACTIVE", label: "Quemadas / Cerradas 🔒", count: inactiveCount },
             ].map(f => (
               <button 
                 key={f.id} 
@@ -3824,6 +3923,7 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
+      <SundayReminder />
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
       <div className="flex flex-col md:flex-row justify-between gap-4 items-center md:items-center mb-5">
         <div className="flex flex-col items-center md:items-start text-center md:text-left">

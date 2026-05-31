@@ -48,10 +48,15 @@ export async function POST(request) {
         clerkUserId: userId,
         name: body.name,
         size: parseFloat(body.size) || 0,
+        // startSize = original starting balance (set once at creation, never changes)
+        startSize: body.startSize !== undefined && body.startSize !== null && body.startSize !== ''
+          ? parseFloat(body.startSize)
+          : parseFloat(body.size) || 0,
         target: parseFloat(body.target) || 0,
         dd_limit: parseFloat(body.dd_limit) || 0,
         daily_limit: parseFloat(body.daily_limit) || 0,
         status: body.status || 'ACTIVE',
+        type: body.type || 'EXAMEN',
         balance: body.balance !== undefined && body.balance !== null && body.balance !== '' ? parseFloat(body.balance) : null,
         threshold: body.threshold !== undefined && body.threshold !== null && body.threshold !== '' ? parseFloat(body.threshold) : null,
         updateDate: body.updateDate !== undefined && body.updateDate !== null && body.updateDate !== '' ? body.updateDate : null,

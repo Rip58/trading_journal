@@ -39,11 +39,13 @@ model Account {
   id               Int      @id @default(autoincrement())
   clerkUserId      String
   name             String
-  size             Float
+  size             Float    // Current broker balance (updated each weekend via sync)
+  startSize        Float?   // Original starting balance, never changes (e.g. 50000, 25000)
   target           Float
   dd_limit         Float
   daily_limit      Float
   status           String   @default("ACTIVE")
+  type             String   @default("EXAMEN")
   balance          Float?
   threshold        Float?
   updateDate       String?

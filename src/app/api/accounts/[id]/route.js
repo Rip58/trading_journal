@@ -39,10 +39,15 @@ export async function PUT(request, { params }) {
       data: {
         name: body.name,
         size: parseFloat(body.size) || 0,
+        // Only update startSize if explicitly sent — it should almost never change
+        ...(body.startSize !== undefined ? {
+          startSize: body.startSize === null || body.startSize === '' ? null : parseFloat(body.startSize)
+        } : {}),
         target: parseFloat(body.target) || 0,
         dd_limit: parseFloat(body.dd_limit) || 0,
         daily_limit: parseFloat(body.daily_limit) || 0,
         status: body.status || undefined,
+        type: body.type || undefined,
         balance: body.balance !== undefined ? (body.balance === null || body.balance === '' ? null : parseFloat(body.balance)) : undefined,
         threshold: body.threshold !== undefined ? (body.threshold === null || body.threshold === '' ? null : parseFloat(body.threshold)) : undefined,
         updateDate: body.updateDate !== undefined ? (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) : undefined,
