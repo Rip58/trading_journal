@@ -1518,22 +1518,68 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
             throw new Error(data.error || "Error de la IA");
           }
 
+          const parseOptionalFloat = (val) => {
+            if (val === undefined || val === null || val === "") return null;
+            let cleaned = String(val).trim();
+            if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+              cleaned = "-" + cleaned.slice(1, -1);
+            }
+            cleaned = cleaned.replace(/[^0-9.,-]/g, "");
+            if (cleaned === "" || cleaned === "-") return null;
+
+            const hasComma = cleaned.includes(",");
+            const hasDot = cleaned.includes(".");
+            if (hasComma && hasDot) {
+              const commaIndex = cleaned.indexOf(",");
+              const dotIndex = cleaned.indexOf(".");
+              if (commaIndex < dotIndex) {
+                cleaned = cleaned.replace(/,/g, "");
+              } else {
+                cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+              }
+            } else if (hasComma) {
+              cleaned = cleaned.replace(",", ".");
+            }
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? null : parsed;
+          };
+
+          const parseOptionalInt = (val) => {
+            const f = parseOptionalFloat(val);
+            return f !== null ? Math.round(f) : null;
+          };
+
           // Merge parsed data into form state
-          setForm((prev) => ({
-            ...prev,
-            ...data,
-            qty: parseInt(data.qty) || prev.qty,
-            entry: parseFloat(data.entry) || prev.entry,
-            exit_price: parseFloat(data.exit_price) || prev.exit_price,
-            gross: parseFloat(data.gross) || prev.gross,
-            commission: parseFloat(data.commission) || prev.commission,
-            pnl: parseFloat(data.pnl) || prev.pnl,
-            mae: parseFloat(data.mae) || prev.mae,
-            mfe: parseFloat(data.mfe) || prev.mfe,
-            etd: parseFloat(data.etd) || prev.etd,
-            rr: parseFloat(data.rr) || prev.rr,
-            image: base64,
-          }));
+          setForm((prev) => {
+            const grossVal = parseOptionalFloat(data.gross) ?? prev.gross;
+            const commissionVal = parseOptionalFloat(data.commission) ?? prev.commission;
+            const pnlVal = parseOptionalFloat(data.pnl) ?? (grossVal - commissionVal);
+            const maeVal = parseOptionalFloat(data.mae) ?? prev.mae;
+            const mfeVal = parseOptionalFloat(data.mfe) ?? prev.mfe;
+            const etdVal = parseOptionalFloat(data.etd) ?? prev.etd;
+            let rrVal = parseOptionalFloat(data.rr);
+            if ((rrVal === null || rrVal === 0) && maeVal > 0) {
+              rrVal = parseFloat((grossVal / maeVal).toFixed(2));
+            } else if (rrVal === null) {
+              rrVal = prev.rr;
+            }
+
+            return {
+              ...prev,
+              ...data,
+              qty: parseOptionalInt(data.qty) ?? prev.qty,
+              entry: parseOptionalFloat(data.entry) ?? prev.entry,
+              exit_price: parseOptionalFloat(data.exit_price) ?? prev.exit_price,
+              gross: grossVal,
+              commission: commissionVal,
+              pnl: pnlVal,
+              mae: maeVal,
+              mfe: mfeVal,
+              etd: etdVal,
+              rr: rrVal,
+              image: base64,
+            };
+          });
 
           setScanSuccess(true);
         } catch (err) {
@@ -2076,7 +2122,6 @@ function SettingsPanel({
         setEditingAcctId(null);
         setEditAcct(null);
         setAcctError("");
-        setBrokerDiffModal(null);
         fetchAccounts();
         fetchTrades();
       } else {
@@ -3279,33 +3324,71 @@ export default function App() {
 
           const today = new Date().toISOString().slice(0, 10);
 
+          const parseOptionalFloat = (val) => {
+            if (val === undefined || val === null || val === "") return null;
+            let cleaned = String(val).trim();
+            if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+              cleaned = "-" + cleaned.slice(1, -1);
+            }
+            cleaned = cleaned.replace(/[^0-9.,-]/g, "");
+            if (cleaned === "" || cleaned === "-") return null;
+
+            const hasComma = cleaned.includes(",");
+            const hasDot = cleaned.includes(".");
+            if (hasComma && hasDot) {
+              const commaIndex = cleaned.indexOf(",");
+              const dotIndex = cleaned.indexOf(".");
+              if (commaIndex < dotIndex) {
+                cleaned = cleaned.replace(/,/g, "");
+              } else {
+                cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+              }
+            } else if (hasComma) {
+              cleaned = cleaned.replace(",", ".");
+            }
+            const parsed = parseFloat(cleaned);
+            return isNaN(parsed) ? null : parsed;
+          };
+
+          const parseOptionalInt = (val) => {
+            const f = parseOptionalFloat(val);
+            return f !== null ? Math.round(f) : null;
+          };
+
           const newTradesData = rawTrades.map((t) => {
             // Normalize date
-            let dateVal = t.date || today;
-            if (dateVal && !dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            let dateVal = t.date;
+            if (dateVal && typeof dateVal === "string" && !dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
               dateVal = normalizeDateToYYYYMMDD(dateVal);
+            } else if (!dateVal) {
+              dateVal = null;
             }
 
-            const grossVal = parseLocaleFloat(t.gross) || 0;
-            const commissionVal = parseLocaleFloat(t.commission) || 0;
-            const pnlVal = parseLocaleFloat(t.pnl) || (grossVal + commissionVal);
-            const maeVal = parseLocaleFloat(t.mae) || 0;
-            const mfeVal = parseLocaleFloat(t.mfe) || 0;
-            const etdVal = parseLocaleFloat(t.etd) || 0;
-            let rrVal = parseLocaleFloat(t.rr) || 0;
-            if (rrVal === 0 && maeVal > 0) rrVal = parseFloat((grossVal / maeVal).toFixed(2));
-            let resultVal = t.result || (pnlVal > 0 ? "Win" : pnlVal < 0 ? "Loss" : "Break Even");
+            const grossVal = parseOptionalFloat(t.gross);
+            const commissionVal = parseOptionalFloat(t.commission) ?? 0;
+            let pnlVal = parseOptionalFloat(t.pnl);
+            if (pnlVal === null && grossVal !== null) {
+              pnlVal = grossVal + commissionVal;
+            }
+            const maeVal = parseOptionalFloat(t.mae);
+            const mfeVal = parseOptionalFloat(t.mfe);
+            const etdVal = parseOptionalFloat(t.etd);
+            let rrVal = parseOptionalFloat(t.rr);
+            if ((rrVal === null || rrVal === 0) && maeVal > 0 && grossVal !== null) {
+              rrVal = parseFloat((grossVal / maeVal).toFixed(2));
+            }
+            const resultVal = t.result || (pnlVal !== null ? (pnlVal > 0 ? "Win" : pnlVal < 0 ? "Loss" : "Break Even") : null);
 
             const tradeCandidate = {
               date: dateVal,
-              entry_time: t.entry_time || "",
-              exit_time: t.exit_time || "",
-              account: t.account || (accountsList[0]?.name || ""),
-              instrument: t.instrument || "NQ Futures",
-              direction: t.direction || "Long",
-              qty: Math.round(parseLocaleFloat(t.qty)) || 1,
-              entry: parseLocaleFloat(t.entry) || 0,
-              exit_price: parseLocaleFloat(t.exit_price) || 0,
+              entry_time: t.entry_time || null,
+              exit_time: t.exit_time || null,
+              account: t.account || (accountsList[0]?.name || null),
+              instrument: t.instrument || null,
+              direction: t.direction || null,
+              qty: parseOptionalInt(t.qty),
+              entry: parseOptionalFloat(t.entry),
+              exit_price: parseOptionalFloat(t.exit_price),
               gross: grossVal,
               commission: commissionVal,
               pnl: pnlVal,
@@ -4378,188 +4461,293 @@ export default function App() {
                   overflowY: "auto",
                   paddingRight: 6,
                 }}>
-                  {pendingImport.trades.map((trade, index) => (
-                    <div key={index} style={{
-                      padding: 12,
-                      background: "var(--color-background-secondary)",
-                      border: trade.isDuplicate ? "1px solid #d97706" : "0.5px solid var(--color-border-secondary)",
-                      borderRadius: 10,
-                      opacity: trade.isExcluded ? 0.65 : 1,
-                      transition: "opacity 0.2s ease, border-color 0.2s ease",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                          Trade #{index + 1} {trade.instrument && `- ${trade.instrument}`} {trade.direction && `(${trade.direction})`}
-                        </span>
-                        
-                        {/* Selector Importar / No importar */}
-                        <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
-                          <button
-                            type="button"
-                            onClick={() => handleTradeFieldChange(index, "isExcluded", false)}
-                            style={{
-                              fontSize: 10,
-                              padding: "4px 10px",
-                              border: "none",
-                              cursor: "pointer",
-                              fontWeight: 600,
-                              background: !trade.isExcluded ? C.green : "transparent",
-                              color: !trade.isExcluded ? "#fff" : "var(--color-text-secondary)",
-                            }}
-                          >
-                            Importar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleTradeFieldChange(index, "isExcluded", true)}
-                            style={{
-                              fontSize: 10,
-                              padding: "4px 10px",
-                              border: "none",
-                              cursor: "pointer",
-                              fontWeight: 600,
-                              background: trade.isExcluded ? (theme === "dark" ? "rgba(255,255,255,0.1)" : "#e5e7eb") : "transparent",
-                              color: trade.isExcluded ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-                            }}
-                          >
-                            No Importar
-                          </button>
-                        </div>
-                      </div>
+                  {pendingImport.trades.map((trade, index) => {
+                    const isCriticalMissing = (field, val) => {
+                      if (field === "strategy" || field === "notes" || field === "commission") return false;
+                      return val === null || val === undefined || String(val).trim() === "";
+                    };
+                    
+                    const getInputStyle = (field, val) => {
+                      const missing = isCriticalMissing(field, val);
+                      return {
+                        width: "100%",
+                        fontSize: "11px",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        border: missing 
+                          ? `1.5px solid ${C.red}` 
+                          : "0.5px solid var(--color-border-tertiary)",
+                        background: missing
+                          ? (theme === "dark" ? "rgba(239, 68, 68, 0.05)" : "#FEF2F2")
+                          : "var(--color-background-primary)",
+                        color: "var(--color-text-primary)",
+                        outline: "none",
+                        transition: "all 0.2s ease"
+                      };
+                    };
 
-                      {/* Advertencia de duplicado */}
-                      {trade.isDuplicate && (
-                        <div style={{
-                          padding: "6px 10px",
-                          borderRadius: 6,
-                          background: theme === "dark" ? "rgba(239, 159, 39, 0.12)" : "#FEF3C7",
-                          color: theme === "dark" ? "#FBBF24" : "#92400E",
-                          border: theme === "dark" ? "1px solid rgba(239, 159, 39, 0.25)" : "1px solid #FDE68A",
-                          fontSize: 11,
-                          fontWeight: 500,
-                        }}>
-                          ⚠️ <strong>Posible duplicado ({trade.duplicatePct}%):</strong> coincide con trade #{trade.duplicateOf?.id} ({trade.duplicateOf?.date} {trade.duplicateOf?.entry_time} | {trade.duplicateOf?.account} | PnL: {trade.duplicateOf?.pnl})
-                        </div>
-                      )}
-
-                      {/* Inputs de edición */}
-                      <div style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-                        gap: 10,
+                    return (
+                      <div key={index} style={{
+                        padding: 12,
+                        background: "var(--color-background-secondary)",
+                        border: trade.isDuplicate ? "1px solid #d97706" : "0.5px solid var(--color-border-secondary)",
+                        borderRadius: 10,
+                        opacity: trade.isExcluded ? 0.65 : 1,
+                        transition: "opacity 0.2s ease, border-color 0.2s ease",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
                       }}>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Fecha</label>
-                          <input
-                            type="date"
-                            value={trade.date}
-                            onChange={(e) => handleTradeFieldChange(index, "date", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                            Trade #{index + 1} {trade.instrument && `- ${trade.instrument}`} {trade.direction && `(${trade.direction})`}
+                          </span>
+                          
+                          {/* Selector Importar / No importar */}
+                          <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "0.5px solid var(--color-border-tertiary)" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleTradeFieldChange(index, "isExcluded", false)}
+                              style={{
+                                fontSize: 10,
+                                padding: "4px 10px",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                background: !trade.isExcluded ? C.green : "transparent",
+                                color: !trade.isExcluded ? "#fff" : "var(--color-text-secondary)",
+                              }}
+                            >
+                              Importar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTradeFieldChange(index, "isExcluded", true)}
+                              style={{
+                                fontSize: 10,
+                                padding: "4px 10px",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                background: trade.isExcluded ? (theme === "dark" ? "rgba(255,255,255,0.1)" : "#e5e7eb") : "transparent",
+                                color: trade.isExcluded ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                              }}
+                            >
+                              No Importar
+                            </button>
+                          </div>
                         </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Ent.</label>
-                          <input
-                            type="text"
-                            value={trade.entry_time}
-                            onChange={(e) => handleTradeFieldChange(index, "entry_time", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Sal.</label>
-                          <input
-                            type="text"
-                            value={trade.exit_time}
-                            onChange={(e) => handleTradeFieldChange(index, "exit_time", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Cuenta</label>
-                          <select
-                            value={trade.account}
-                            onChange={(e) => handleTradeFieldChange(index, "account", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          >
-                            {allAccountsForForm.map(a => (
-                              <option key={a.value} value={a.value}>{a.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Contratos (Qty)</label>
-                          <input
-                            type="number"
-                            value={trade.qty}
-                            onChange={(e) => handleTradeFieldChange(index, "qty", parseInt(e.target.value) || 1)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Ent.</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={trade.entry}
-                            onChange={(e) => handleTradeFieldChange(index, "entry", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Sal.</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={trade.exit_price}
-                            onChange={(e) => handleTradeFieldChange(index, "exit_price", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Net PnL</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={trade.pnl}
-                            onChange={(e) => handleTradeFieldChange(index, "pnl", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Estrategia</label>
-                          <input
-                            type="text"
-                            value={trade.strategy}
-                            onChange={(e) => handleTradeFieldChange(index, "strategy", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Notas</label>
-                          <input
-                            type="text"
-                            value={trade.notes}
-                            onChange={(e) => handleTradeFieldChange(index, "notes", e.target.value)}
-                            disabled={wizardStatus !== "" && wizardStatus !== "error"}
-                            style={{ width: "100%", fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                          />
+
+                        {/* Advertencia de duplicado */}
+                        {trade.isDuplicate && (
+                          <div style={{
+                            padding: "6px 10px",
+                            borderRadius: 6,
+                            background: theme === "dark" ? "rgba(239, 159, 39, 0.12)" : "#FEF3C7",
+                            color: theme === "dark" ? "#FBBF24" : "#92400E",
+                            border: theme === "dark" ? "1px solid rgba(239, 159, 39, 0.25)" : "1px solid #FDE68A",
+                            fontSize: 11,
+                            fontWeight: 500,
+                          }}>
+                            ⚠️ <strong>Posible duplicado ({trade.duplicatePct}%):</strong> coincide con trade #{trade.duplicateOf?.id} ({trade.duplicateOf?.date} {trade.duplicateOf?.entry_time} | {trade.duplicateOf?.account} | PnL: {trade.duplicateOf?.pnl})
+                          </div>
+                        )}
+
+                        {/* Inputs de edición */}
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                          gap: 10,
+                        }}>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Fecha</label>
+                            <input
+                              type="date"
+                              value={trade.date || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "date", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("date", trade.date)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Ent.</label>
+                            <input
+                              type="text"
+                              value={trade.entry_time || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "entry_time", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("entry_time", trade.entry_time)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Hora Sal.</label>
+                            <input
+                              type="text"
+                              value={trade.exit_time || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "exit_time", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("exit_time", trade.exit_time)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Cuenta</label>
+                            <select
+                              value={trade.account || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "account", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("account", trade.account)}
+                            >
+                              <option value="">Seleccionar...</option>
+                              {allAccountsForForm.map(a => (
+                                <option key={a.value} value={a.value}>{a.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Instrumento</label>
+                            <input
+                              type="text"
+                              value={trade.instrument || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "instrument", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("instrument", trade.instrument)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Dirección</label>
+                            <select
+                              value={trade.direction || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "direction", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("direction", trade.direction)}
+                            >
+                              <option value="">Seleccionar...</option>
+                              <option value="Long">Long</option>
+                              <option value="Short">Short</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Contratos (Qty)</label>
+                            <input
+                              type="number"
+                              value={trade.qty !== null && trade.qty !== undefined ? trade.qty : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "qty", e.target.value === "" ? null : parseInt(e.target.value, 10))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("qty", trade.qty)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Ent.</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.entry !== null && trade.entry !== undefined ? trade.entry : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "entry", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("entry", trade.entry)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Precio Sal.</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.exit_price !== null && trade.exit_price !== undefined ? trade.exit_price : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "exit_price", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("exit_price", trade.exit_price)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Comisión</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.commission !== null && trade.commission !== undefined ? trade.commission : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "commission", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("commission", trade.commission)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Net PnL</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.pnl !== null && trade.pnl !== undefined ? trade.pnl : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "pnl", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("pnl", trade.pnl)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>MAE</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.mae !== null && trade.mae !== undefined ? trade.mae : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "mae", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("mae", trade.mae)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>MFE</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.mfe !== null && trade.mfe !== undefined ? trade.mfe : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "mfe", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("mfe", trade.mfe)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>ETD</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.etd !== null && trade.etd !== undefined ? trade.etd : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "etd", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("etd", trade.etd)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>R Múltiple</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={trade.rr !== null && trade.rr !== undefined ? trade.rr : ""}
+                              onChange={(e) => handleTradeFieldChange(index, "rr", e.target.value === "" ? null : parseFloat(e.target.value))}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("rr", trade.rr)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Estrategia</label>
+                            <input
+                              type="text"
+                              value={trade.strategy || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "strategy", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("strategy", trade.strategy)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: "block", fontSize: 9, color: "var(--color-text-secondary)", marginBottom: 2, fontWeight: 600, textTransform: "uppercase" }}>Notas</label>
+                            <input
+                              type="text"
+                              value={trade.notes || ""}
+                              onChange={(e) => handleTradeFieldChange(index, "notes", e.target.value)}
+                              disabled={wizardStatus !== "" && wizardStatus !== "error"}
+                              style={getInputStyle("notes", trade.notes)}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}
