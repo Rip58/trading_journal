@@ -2542,7 +2542,16 @@ function SettingsPanel({
                 Hay una nueva versión de la aplicación desplegada en Vercel. Por favor, actualiza para asegurarte de tener las últimas características y correcciones de errores.
               </div>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  const targetVersion = serverVersion.commitSha || serverVersion.deploymentId;
+                  if (targetVersion && targetVersion !== 'development' && targetVersion !== 'local') {
+                    const nextUrl = new URL(window.location.href);
+                    nextUrl.searchParams.set('v', targetVersion);
+                    window.location.replace(nextUrl.toString());
+                  } else {
+                    window.location.reload();
+                  }
+                }}
                 style={{
                   alignSelf: "flex-start",
                   padding: "5px 12px",
@@ -2829,10 +2838,43 @@ export default function App() {
         const res = await fetch(`/api/version?t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
-          const sha = data.commitSha === 'development' ? 'Local' : (data.commitSha ? data.commitSha.slice(0, 7) : 'Local');
+          const serverCommit = data.commitSha;
+          const serverDeployId = data.deploymentId;
+          
+          const sha = serverCommit === 'development' ? 'Local' : (serverCommit ? serverCommit.slice(0, 7) : 'Local');
           setDeployId(sha);
+
+          // Auto-reload check if client is outdated compared to server deployment
+          const clientCommit = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'development';
+          const clientDeployId = process.env.NEXT_PUBLIC_VERCEL_DEPLOYMENT_ID || 'local';
+
+          const hasNewCommit = serverCommit !== 'development' && clientCommit !== 'development' && serverCommit !== clientCommit;
+          const hasNewDeploy = serverDeployId !== 'local' && clientDeployId !== 'local' && serverDeployId !== clientDeployId;
+
+          if (hasNewCommit || hasNewDeploy) {
+            // Only trigger reload in production (ignore on localhost)
+            if (typeof window !== 'undefined' && 
+                window.location.hostname !== 'localhost' && 
+                window.location.hostname !== '127.0.0.1') {
+              
+              const urlParams = new URLSearchParams(window.location.search);
+              const currentVParam = urlParams.get('v');
+              const targetVersion = serverCommit || serverDeployId;
+
+              if (currentVParam !== targetVersion && targetVersion && targetVersion !== 'development' && targetVersion !== 'local') {
+                console.log(`Auto-reload: Client version (${clientCommit}) is out of date compared to Server version (${targetVersion}). Reloading...`);
+                const nextUrl = new URL(window.location.href);
+                nextUrl.searchParams.set('v', targetVersion);
+                window.location.replace(nextUrl.toString());
+              } else {
+                console.warn(`Already reloaded with query param v=${targetVersion}, but client version is still ${clientCommit}. Stopping reload to prevent loop.`);
+              }
+            }
+          }
         }
-      } catch {}
+      } catch (err) {
+        console.error("Error during startup version check:", err);
+      }
     };
     fetchVersion();
   }, []);
