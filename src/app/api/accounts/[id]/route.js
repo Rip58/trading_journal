@@ -53,6 +53,14 @@ export async function PUT(request, { params }) {
         updateDate: body.updateDate !== undefined ? (body.updateDate === null || body.updateDate === '' ? null : body.updateDate) : undefined,
         activeDays: body.activeDays !== undefined ? (body.activeDays === null || body.activeDays === '' ? null : parseInt(body.activeDays)) : undefined,
         brokerUpdateTime: brokerUpdateTime,
+        // Campos del RESUMEN DE CUENTAS de Bulenox
+        planId: body.planId !== undefined ? (body.planId === null || body.planId === '' ? null : String(body.planId)) : undefined,
+        nextBill: body.nextBill !== undefined ? (body.nextBill === null || body.nextBill === '' ? null : String(body.nextBill)) : undefined,
+        maxContracts: body.maxContracts !== undefined ? (body.maxContracts === null || body.maxContracts === '' ? null : parseInt(body.maxContracts)) : undefined,
+        closedPnl: body.closedPnl !== undefined ? (body.closedPnl === null || body.closedPnl === '' ? null : parseFloat(body.closedPnl)) : undefined,
+        safetyReserve: body.safetyReserve !== undefined ? (body.safetyReserve === null || body.safetyReserve === '' ? null : parseFloat(body.safetyReserve)) : undefined,
+        bestPnlDay: body.bestPnlDay !== undefined ? (body.bestPnlDay === null || body.bestPnlDay === '' ? null : String(body.bestPnlDay)) : undefined,
+        consistency: body.consistency !== undefined ? (body.consistency === null || body.consistency === '' ? null : String(body.consistency)) : undefined,
       },
     });
 

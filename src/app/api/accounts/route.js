@@ -62,6 +62,14 @@ export async function POST(request) {
         updateDate: body.updateDate !== undefined && body.updateDate !== null && body.updateDate !== '' ? body.updateDate : null,
         activeDays: body.activeDays !== undefined && body.activeDays !== null && body.activeDays !== '' ? parseInt(body.activeDays) : null,
         brokerUpdateTime: body.brokerUpdateTime !== undefined && body.brokerUpdateTime !== '' && body.brokerUpdateTime !== null ? body.brokerUpdateTime : null,
+        // Campos del RESUMEN DE CUENTAS de Bulenox
+        planId: body.planId !== undefined && body.planId !== null && body.planId !== '' ? String(body.planId) : null,
+        nextBill: body.nextBill !== undefined && body.nextBill !== null && body.nextBill !== '' ? String(body.nextBill) : null,
+        maxContracts: body.maxContracts !== undefined && body.maxContracts !== null && body.maxContracts !== '' ? parseInt(body.maxContracts) : null,
+        closedPnl: body.closedPnl !== undefined && body.closedPnl !== null && body.closedPnl !== '' ? parseFloat(body.closedPnl) : null,
+        safetyReserve: body.safetyReserve !== undefined && body.safetyReserve !== null && body.safetyReserve !== '' ? parseFloat(body.safetyReserve) : null,
+        bestPnlDay: body.bestPnlDay !== undefined && body.bestPnlDay !== null && body.bestPnlDay !== '' ? String(body.bestPnlDay) : null,
+        consistency: body.consistency !== undefined && body.consistency !== null && body.consistency !== '' ? String(body.consistency) : null,
       },
     });
     

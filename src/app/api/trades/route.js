@@ -62,6 +62,12 @@ export async function POST(request) {
         timeframe: body.timeframe || '15s',
         notes: body.notes || '',
         image: body.image || null,
+        balance: body.balance !== undefined && body.balance !== null && body.balance !== ''
+          ? parseLocaleFloat(body.balance)
+          : null,
+        threshold: body.threshold !== undefined && body.threshold !== null && body.threshold !== ''
+          ? parseLocaleFloat(body.threshold)
+          : null,
       },
     });
     

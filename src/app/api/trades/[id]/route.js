@@ -46,6 +46,12 @@ export async function PUT(request, { params }) {
         timeframe: body.timeframe,
         notes: body.notes,
         image: body.image,
+        balance: body.balance !== undefined
+          ? (body.balance === null || body.balance === '' ? null : parseLocaleFloat(body.balance))
+          : undefined,
+        threshold: body.threshold !== undefined
+          ? (body.threshold === null || body.threshold === '' ? null : parseLocaleFloat(body.threshold))
+          : undefined,
       },
     });
 

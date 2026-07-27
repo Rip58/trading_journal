@@ -498,7 +498,7 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
 }
 
 
-const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "BX101840-05 (50K)", instrument: "NQ Futures", direction: "Long", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: -4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "", timeframe: "15s", notes: "", image: "" };
+const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "", instrument: "NQ", direction: "", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: 4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "Resumen diario", timeframe: "Diario", notes: "", image: "", balance: "", threshold: "" };
 
 // ── Mini chart (SVG sparkline) ──────────────────────────────────────────────
 function Sparkline({ data, color, height = 40 }) {
@@ -527,6 +527,111 @@ function Sparkline({ data, color, height = 40 }) {
   );
 }
 
+// ── Formato compacto de dinero ($25.1K) ─────────────────────────────────────
+const fmtK = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+  return `$${Math.round(v)}`;
+};
+
+// ── Sparkline de cuenta (balance diario + líneas de referencia) ─────────────
+// Dibuja la evolución del balance diario con una línea discontinua roja en el
+// umbral de autoliquidación y otra verde en la reserva safety (o el objetivo).
+function AccountSparkline({ series, threshold, safety, objective, height = 72 }) {
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(560);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const update = () => {
+      if (containerRef.current) setWidth(containerRef.current.offsetWidth || 560);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const hasSafety = safety !== null && safety !== undefined && !isNaN(safety);
+  const hasThreshold = threshold !== null && threshold !== undefined && !isNaN(threshold);
+  const upperRef = hasSafety ? safety : (objective !== null && objective !== undefined && !isNaN(objective) ? objective : null);
+
+  if (!series || series.length < 2) {
+    return (
+      <div ref={containerRef} style={{ height, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        Sin datos de balance diario suficientes
+      </div>
+    );
+  }
+
+  const values = series.map(p => p.balance);
+  const firstV = values[0];
+  const lastV = values[values.length - 1];
+  const lineColor = lastV >= firstV ? C.green : C.red;
+
+  // El eje Y abarca desde min(umbral, mínimo balance) hasta max(safety/objetivo, máximo balance)
+  const candidatesMin = [...values];
+  const candidatesMax = [...values];
+  if (hasThreshold) candidatesMin.push(threshold);
+  if (upperRef !== null) candidatesMax.push(upperRef);
+  let minY = Math.min(...candidatesMin);
+  let maxY = Math.max(...candidatesMax);
+  const pad = (maxY - minY || 1) * 0.12;
+  minY -= pad;
+  maxY += pad;
+
+  const labelW = 52;                       // espacio reservado para las etiquetas
+  const plotW = Math.max(width - labelW, 40);
+  const topPad = 6, botPad = 6;
+  const plotH = height - topPad - botPad;
+  const yOf = (v) => topPad + (1 - (v - minY) / (maxY - minY)) * plotH;
+  const xOf = (i) => (i / (series.length - 1)) * plotW;
+
+  const pts = series.map((p, i) => `${xOf(i).toFixed(2)},${yOf(p.balance).toFixed(2)}`);
+  const gradId = `acctspark${lineColor.replace("#", "")}`;
+
+  return (
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <svg width={width} height={height} style={{ display: "block", overflow: "visible" }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        {/* Área + línea de balance */}
+        <path d={`M${pts.join("L")}L${plotW},${height - botPad}L0,${height - botPad}Z`} fill={`url(#${gradId})`} />
+        <polyline points={pts.join(" ")} fill="none" stroke={lineColor} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* Umbral de autoliquidación */}
+        {hasThreshold && (
+          <>
+            <line x1="0" y1={yOf(threshold)} x2={plotW} y2={yOf(threshold)} stroke={C.red} strokeWidth="1" strokeDasharray="4,3" opacity="0.75" />
+            <text x={plotW + 6} y={yOf(threshold) + 3} fontSize="9" fill={C.red} style={{ fontVariantNumeric: "tabular-nums" }}>{fmtK(threshold)}</text>
+          </>
+        )}
+
+        {/* Reserva safety (o nivel objetivo si no hay safety) */}
+        {upperRef !== null && (
+          <>
+            <line x1="0" y1={yOf(upperRef)} x2={plotW} y2={yOf(upperRef)} stroke={C.green} strokeWidth="1" strokeDasharray="4,3" opacity="0.75" />
+            <text x={plotW + 6} y={yOf(upperRef) + 3} fontSize="9" fill={C.green} style={{ fontVariantNumeric: "tabular-nums" }}>{fmtK(upperRef)}</text>
+          </>
+        )}
+
+        {/* Último punto */}
+        <circle cx={xOf(series.length - 1)} cy={yOf(lastV)} r="2.5" fill={lineColor} />
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--color-text-tertiary)", marginTop: 4, paddingRight: labelW }}>
+        <span>{series[0].date}</span>
+        <span>{series[series.length - 1].date}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Mini Donut ──────────────────────────────────────────────────────────────
 function MiniDonut({ wins, losses, size = 30 }) {
   const total = wins + losses || 1;
@@ -548,16 +653,14 @@ function MiniDonut({ wins, losses, size = 30 }) {
 // ── KPI Card ────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, color, spark, rightElement }) {
   return (
-    <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
-          <div style={{ fontSize: 20, fontWeight: 500, color: color || "var(--color-text-primary)" }}>{value}</div>
-        </div>
-        {rightElement && <div style={{ marginLeft: 8, flexShrink: 0 }}>{rightElement}</div>}
+    <div className="kpi-tile" style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "15px 16px", display: "flex", flexDirection: "column", minHeight: 96 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        {rightElement && <span style={{ flexShrink: 0 }}>{rightElement}</span>}
       </div>
-      {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>{sub}</div>}
-      {spark && <div style={{ marginTop: 6 }}><Sparkline data={spark} color={color || C.blue} /></div>}
+      <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: color || "var(--color-text-primary)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
+      {spark && <div style={{ marginTop: "auto", paddingTop: 10 }}><Sparkline data={spark} color={color || C.blue} height={26} /></div>}
     </div>
   );
 }
@@ -588,24 +691,38 @@ function AccountCard({ account, rules, trades }) {
   const uniqueDays = [...new Set(trades.map(t => t.date))].length;
   const ddUsed = Math.abs(maxDD);
   const ddPct = (ddUsed / activeRules.dd_limit) * 100;
-  const targetPct = Math.max(0, Math.min((sessionPnl / activeRules.target) * 100, 100));
-  const ddRemaining = activeRules.dd_limit - ddUsed;
-  const ddColor = ddPct >= 80 ? C.red : ddPct >= 50 ? C.amber : C.green;
-  
   const normalBorderColor = ddPct >= 80 ? "#F5C4B3" : ddPct >= 50 ? "#FAC775" : "#9FE1CB";
   const borderColor = isClosed ? "var(--color-border-secondary)" : isBurned ? C.red : normalBorderColor;
   
-  const alertColor = isClosed
-    ? { bg: "var(--color-background-secondary)", text: "var(--color-text-secondary)" }
-    : isBurned
-      ? { bg: C.redBg, text: C.redText }
-      : (ddPct >= 90 ? { bg: C.redBg, text: C.redText } : ddPct >= 60 ? { bg: "#FAEEDA", text: "#854F0B" } : { bg: C.greenBg, text: C.greenText });
-      
-  const alertMsg = isClosed
-    ? "🔒 Cuenta Cerrada (Histórica)"
-    : isBurned
-      ? "💀 Cuenta Quemada (Superó DD)"
-      : (ddPct >= 90 ? `⚠️ CRÍTICO — $${Math.round(ddRemaining)} restantes` : ddPct >= 60 ? `⚡ Precaución — ${fmtN(ddPct, 1)}% usado` : `✓ Saludable — ${fmtN(100 - ddPct, 0)}% DD libre`);
+  // ── Datos de la ficha minimalista (misma para REAL y EXAMEN) ──────────────
+  // Serie de balances diarios: trades ordenados por fecha con campo `balance`
+  const balanceSeries = [...trades]
+    .filter(t => t.balance !== null && t.balance !== undefined && !isNaN(t.balance))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .map(t => ({ date: t.date, balance: Number(t.balance) }));
+
+  const currentValue = activeRules.balance ?? (balanceSeries.length ? balanceSeries[balanceSeries.length - 1].balance : finalBalance);
+  const baseSize = activeRules.startSize ?? activeRules.size;
+  const safety = activeRules.safetyReserve;
+  const hasSafety = safety !== null && safety !== undefined && !isNaN(safety);
+  // Superado el safety se puede retirar
+  const canWithdraw = hasSafety && currentValue >= safety;
+  // Nivel superior de referencia del gráfico: safety en REAL, objetivo en EXAMEN
+  const objectiveLevel = hasSafety ? null : (baseSize + (activeRules.target || 0));
+
+  // Margen restante desde el valor actual hasta el umbral de liquidación (DD)
+  const ddDistance = activeRules.threshold ? currentValue - activeRules.threshold : null;
+
+  const fichaItems = [
+    { key: "valor", label: "Valor", value: `$${Math.round(currentValue).toLocaleString()}`, color: currentValue >= baseSize ? C.green : C.red },
+    { key: "margenDd", label: "Margen a DD", value: ddDistance !== null ? `$${Math.round(ddDistance).toLocaleString()}` : "—", color: ddDistance === null ? undefined : ddDistance <= 400 ? C.red : ddDistance <= 800 ? C.amber : C.green },
+    { key: "umbral", label: "Umbral DD", value: activeRules.threshold ? `$${Math.round(activeRules.threshold).toLocaleString()}` : "—", color: C.red },
+    hasSafety
+      ? { key: "safety", label: "Safety", value: `$${Math.round(safety).toLocaleString()}`, color: C.green, badge: canWithdraw ? "Retiros ✓" : null }
+      : { key: "objetivo", label: "Objetivo", value: `$${Math.round(objectiveLevel).toLocaleString()}` },
+    { key: "dias", label: "Días de trade", value: `${activeRules.activeDays ?? uniqueDays}` },
+    { key: "act", label: "Últ. act.", value: activeRules.updateDate || "—" },
+  ];
 
   return (
     <div style={{ 
@@ -693,163 +810,57 @@ function AccountCard({ account, rules, trades }) {
           </div>
         </div>
 
-        {/* Fila 2: Columnas de información (Obj, DD, Días, PnL) */}
-        {/* En móvil se muestra debajo, en desktop se muestra al lado en una sola fila */}
-        <div className="grid grid-cols-3 sm:flex sm:items-center gap-2 sm:gap-6 w-full sm:w-auto justify-between sm:justify-end">
-          
-          {/* Valor / Objetivo */}
-          <div className="flex flex-col min-w-0 sm:min-w-[100px]">
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
-              <span className="hidden sm:inline">Valor / Objetivo</span>
-              <span className="sm:hidden">Obj.</span>
-            </div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px] truncate">
-              <span style={{ color: sessionPnl >= 0 ? C.green : C.red }}>{fmt(sessionPnl)}</span>
-              <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.target.toLocaleString()}</span>
-            </div>
-            {/* Barra de progreso pequeña */}
-            <div style={{ width: "100%", height: 3, background: "var(--color-border-secondary)", borderRadius: 1.5, marginTop: 4, overflow: "hidden" }}>
-              <div style={{ width: `${targetPct}%`, height: "100%", background: C.green, borderRadius: 1.5 }} />
-            </div>
-          </div>
-
-          {/* Drawdown */}
-          <div className="flex flex-col min-w-0 sm:min-w-[100px]">
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
-              <span className="hidden sm:inline">Drawdown (DD)</span>
-              <span className="sm:hidden">DD</span>
-            </div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px] truncate">
-              <span style={{ color: ddColor }}>-${Math.round(ddUsed).toLocaleString()}</span>
-              <span style={{ color: "var(--color-text-tertiary)" }}> / ${activeRules.dd_limit.toLocaleString()}</span>
-            </div>
-            {/* Barra de progreso pequeña */}
-            <div style={{ width: "100%", height: 3, background: "var(--color-border-secondary)", borderRadius: 1.5, marginTop: 4, overflow: "hidden" }}>
-              <div style={{ width: `${ddPct}%`, height: "100%", background: ddColor, borderRadius: 1.5 }} />
-            </div>
-          </div>
-
-          {/* Días de Trade */}
-          <div className="flex flex-col min-w-0 sm:min-w-[60px]">
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>
-              <span className="hidden sm:inline">Días Trade</span>
-              <span className="sm:hidden">Días</span>
-            </div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-primary)" }} className="sm:text-[11px]">
-              {activeRules.activeDays ?? uniqueDays} <span style={{ fontSize: 9, color: "var(--color-text-secondary)", fontWeight: 400 }} className="sm:text-[10px]">días</span>
-            </div>
-          </div>
-
-          {/* Badge de P&L en Desktop (oculto en móviles) */}
-          <div className="hidden sm:block sm:min-w-[80px] sm:text-right">
-            <span style={{ 
-              fontSize: 11, 
-              padding: "4px 10px", 
-              borderRadius: 8, 
-              background: sessionPnl >= 0 ? C.greenBg : C.redBg, 
-              color: sessionPnl >= 0 ? C.greenText : C.redText, 
-              fontWeight: 600,
-              display: "inline-block",
-            }}>
-              {fmt(sessionPnl)}
-            </span>
-          </div>
-
+        {/* Badge de P&L en Desktop (oculto en móviles) */}
+        <div className="hidden sm:block sm:text-right">
+          <span style={{
+            fontSize: 11,
+            padding: "4px 10px",
+            borderRadius: 8,
+            background: sessionPnl >= 0 ? C.greenBg : C.redBg,
+            color: sessionPnl >= 0 ? C.greenText : C.redText,
+            fontWeight: 600,
+            display: "inline-block",
+          }}>
+            {fmt(sessionPnl)}
+          </span>
         </div>
       </div>
 
-      {/* CONTENIDO DESPLEGADO */}
+      {/* FICHA DE CUENTA (contenido desplegado) */}
       {expanded && (
-        <div style={{ 
-          padding: "16px 20px", 
-          borderTop: "0.5px solid var(--color-border-secondary)", 
+        <div style={{
+          padding: "16px 20px",
+          borderTop: "0.5px solid var(--color-border-secondary)",
           background: "var(--color-background-primary)",
         }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
-            {[
-              ["Saldo Estimado", `$${finalBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, "var(--color-text-primary)"],
-              ["Pico de Cuenta", `+$${Math.round(peak).toLocaleString()}`, C.green],
-              ["Max Drawdown", `-$${Math.round(ddUsed).toLocaleString()}`, C.red],
-              ["Días de Operativa", `${trades.length} trades (${uniqueDays} d)`, "var(--color-text-primary)"],
-              ["Drawdown Restante", `$${Math.round(ddRemaining).toLocaleString()}`, ddRemaining < 300 ? C.red : C.green],
-              ["Límite Diario", activeRules.daily_limit ? `$${activeRules.daily_limit.toLocaleString()}` : "N/A", "var(--color-text-primary)"]
-            ].map(([l, v, c]) => (
-              <div key={l} style={{ background: "var(--color-background-secondary)", padding: "8px 12px", borderRadius: 8, border: "0.5px solid var(--color-border-secondary)" }}>
-                <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{l}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: c, marginTop: 2 }}>{v}</div>
+          {/* Fila compacta de datos */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 10, marginBottom: 14 }}>
+            {fichaItems.map(({ key, label, value, color, badge }) => (
+              <div key={key} style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4, fontVariantNumeric: "tabular-nums", color: color || "var(--color-text-primary)", whiteSpace: "nowrap" }}>
+                  {value}
+                </div>
+                {badge && (
+                  <div style={{ marginTop: 5, display: "inline-block", fontSize: 9, fontWeight: 600, padding: "1.5px 6px", borderRadius: 4, background: C.greenBg, color: C.greenText }}>
+                    {badge}
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-              <span>Objetivo de Ganancia (Sesión)</span>
-              <span>{fmt(sessionPnl)} / ${activeRules.target.toLocaleString()} · {fmtN(targetPct, 0)}%</span>
+          {/* Evolución del balance diario */}
+          <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", marginBottom: 8 }}>
+              Evolución del balance
             </div>
-            <Bar pct={targetPct} color={C.green} />
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-secondary)", marginBottom: 3 }}>
-              <span>Límite de Drawdown</span>
-              <span>${Math.round(ddUsed).toLocaleString()} / ${activeRules.dd_limit.toLocaleString()} · {fmtN(ddPct, 1)}%</span>
-            </div>
-            <Bar pct={ddPct} color={ddColor} />
-          </div>
-
-          {/* Sección de Datos de Rithmic */}
-          {(activeRules.balance !== undefined && activeRules.balance !== null) && (
-            <div style={{ 
-              marginBottom: 16, 
-              padding: "10px 14px", 
-              borderRadius: 8, 
-              background: "rgba(128,128,128,0.03)", 
-              border: "0.5px solid var(--color-border-secondary)" 
-            }}>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8, fontWeight: 600 }}>
-                Datos Reales (Rithmic Sync)
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Saldo Rithmic</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)", marginTop: 2 }}>
-                    ${activeRules.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Umbral Liquidación</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: C.red, marginTop: 2 }}>
-                    ${activeRules.threshold ? activeRules.threshold.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Días Operados Broker</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)", marginTop: 2 }}>
-                    {activeRules.activeDays ?? "N/A"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>Última Actualización</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                    {activeRules.updateDate || "N/A"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div style={{ 
-            fontSize: 10, 
-            padding: "8px 12px", 
-            borderRadius: 6, 
-            background: alertColor.bg, 
-            color: alertColor.text, 
-            fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 6
-          }}>
-            {alertMsg}
+            <AccountSparkline
+              series={balanceSeries}
+              threshold={activeRules.threshold}
+              safety={activeRules.safetyReserve}
+              objective={objectiveLevel}
+            />
           </div>
         </div>
       )}
@@ -861,20 +872,22 @@ function AccountCard({ account, rules, trades }) {
 // ── Equity SVG ──────────────────────────────────────────────────────────────
 function EquityChart({ trades, accountFilter, accountsList }) {
   const containerRef = useRef(null);
-  const [width, setWidth] = useState(620);
+  const [width, setWidth] = useState(0);
   const [hoverIdx, setHoverIdx] = useState(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const updateWidth = () => {
       if (containerRef.current) {
-        setWidth(containerRef.current.getBoundingClientRect().width);
+        const w = containerRef.current.getBoundingClientRect().width;
+        if (w > 0) setWidth(w);
       }
     };
     updateWidth();
     const observer = new ResizeObserver(updateWidth);
     observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    window.addEventListener("resize", updateWidth);
+    return () => { observer.disconnect(); window.removeEventListener("resize", updateWidth); };
   }, []);
 
   useEffect(() => {
@@ -901,7 +914,7 @@ function EquityChart({ trades, accountFilter, accountsList }) {
   if (pts.length < 2) return <div style={{ padding: 20, color: "var(--color-text-secondary)", fontSize: 13 }}>Sin datos suficientes</div>;
 
   const W = width || 620;
-  const H = 160;
+  const H = 210;
   const PAD = 45;
   const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
   const range = max - min || 1;
@@ -966,10 +979,11 @@ function EquityChart({ trades, accountFilter, accountsList }) {
   };
 
   return (
-    <div ref={containerRef} style={{ width: "100%" }}>
+    <div ref={containerRef} style={{ width: "100%", minHeight: H }}>
+      {width > 0 && (
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        style={{ width: "100%", height: H, cursor: "crosshair", overflow: "visible" }}
+        style={{ width: "100%", height: H, cursor: "crosshair", overflow: "visible", display: "block" }}
         role="img"
         aria-label="Equity curve acumulada"
         onMouseMove={handleMouseMove}
@@ -977,6 +991,16 @@ function EquityChart({ trades, accountFilter, accountsList }) {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleMouseLeave}
       >
+        <defs>
+          <linearGradient id="eqAreaGreen" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.green} stopOpacity="0.26" />
+            <stop offset="100%" stopColor={C.green} stopOpacity="0.03" />
+          </linearGradient>
+          <linearGradient id="eqAreaRed" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.red} stopOpacity="0.03" />
+            <stop offset="100%" stopColor={C.red} stopOpacity="0.26" />
+          </linearGradient>
+        </defs>
         {ticks.map((v, i) => {
           const y = toY(v);
           return (
@@ -986,14 +1010,23 @@ function EquityChart({ trades, accountFilter, accountsList }) {
             </g>
           );
         })}
-        <polygon points={areaGreenPts} fill="rgba(29,158,117,0.12)" />
-        <polygon points={areaRedPts} fill="rgba(216,90,48,0.12)" />
+        <polygon points={areaGreenPts} fill="url(#eqAreaGreen)" />
+        <polygon points={areaRedPts} fill="url(#eqAreaRed)" />
         {pts.map((v, i) => {
           if (i === 0) return null;
           const avg = (pts[i - 1] + v) / 2;
-          return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? C.green : C.red} strokeWidth={1.8} />;
+          return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? C.green : C.red} strokeWidth={2} strokeLinecap="round" />;
         })}
         <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(128,128,128,0.5)" strokeWidth={1} />
+        <circle
+          cx={toX(pts.length - 1)}
+          cy={toY(pts[pts.length - 1])}
+          r={3.5}
+          fill={pts[pts.length - 1] >= 0 ? C.green : C.red}
+          stroke="var(--color-background-primary)"
+          strokeWidth={1.5}
+          pointerEvents="none"
+        />
 
         {hoverIdx !== null && (() => {
           const x = toX(hoverIdx);
@@ -1073,6 +1106,7 @@ function EquityChart({ trades, accountFilter, accountsList }) {
           );
         })()}
       </svg>
+      )}
     </div>
   );
 }
@@ -1469,135 +1503,21 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         }
       }
     }
+    // La comisión se guarda siempre negativa pero se muestra en positivo
+    const comm = parseLocaleFloat(initial.commission) || 0;
+    initial.commission = comm === 0 ? "" : String(Math.abs(comm));
+    initial.balance = initial.balance === null || initial.balance === undefined ? "" : initial.balance;
+    initial.threshold = initial.threshold === null || initial.threshold === undefined ? "" : initial.threshold;
+    // Si las notas son las autogeneradas del resumen, se dejan vacías para no duplicarlas
+    if (/^Balance cierre: \$[\d.]+ \| Umbral autoliq\.: \$[\d.]+$/.test((initial.notes || "").trim())) {
+      initial.notes = "";
+    }
     return initial;
   });
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState("");
-  const [scanSuccess, setScanSuccess] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  useEffect(() => {
-    const gross = (parseLocaleFloat(form.pnl) || 0) - (parseLocaleFloat(form.commission) || 0);
-    const mae = parseLocaleFloat(form.mae) || 0;
-    const calculatedRR = mae > 0 ? parseFloat((gross / mae).toFixed(2)) : 0;
-    if (form.rr !== calculatedRR) {
-      setForm(f => ({ ...f, rr: calculatedRR }));
-    }
-  }, [form.pnl, form.commission, form.mae, form.rr]);
-
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const provider = localStorage.getItem("tj_ai_provider") || "gemini";
-    const apiKey = localStorage.getItem("tj_ai_key") || "";
-
-    if (!apiKey) {
-      setScanError("Configura primero tu API Key en Ajustes ⚙️");
-      return;
-    }
-
-    setScanning(true);
-    setScanError("");
-    setScanSuccess(false);
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        try {
-          const base64 = ev.target.result;
-          const res = await fetch("/api/parse-trade", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: base64, provider, apiKey }),
-          });
-
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.error || "Error de la IA");
-          }
-
-          const parseOptionalFloat = (val) => {
-            if (val === undefined || val === null || val === "") return null;
-            let cleaned = String(val).trim();
-            if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-              cleaned = "-" + cleaned.slice(1, -1);
-            }
-            cleaned = cleaned.replace(/[^0-9.,-]/g, "");
-            if (cleaned === "" || cleaned === "-") return null;
-
-            const hasComma = cleaned.includes(",");
-            const hasDot = cleaned.includes(".");
-            if (hasComma && hasDot) {
-              const commaIndex = cleaned.indexOf(",");
-              const dotIndex = cleaned.indexOf(".");
-              if (commaIndex < dotIndex) {
-                cleaned = cleaned.replace(/,/g, "");
-              } else {
-                cleaned = cleaned.replace(/\./g, "").replace(",", ".");
-              }
-            } else if (hasComma) {
-              cleaned = cleaned.replace(",", ".");
-            }
-            const parsed = parseFloat(cleaned);
-            return isNaN(parsed) ? null : parsed;
-          };
-
-          const parseOptionalInt = (val) => {
-            const f = parseOptionalFloat(val);
-            return f !== null ? Math.round(f) : null;
-          };
-
-          // Merge parsed data into form state
-          setForm((prev) => {
-            const grossVal = parseOptionalFloat(data.gross) ?? prev.gross;
-            const commissionVal = parseOptionalFloat(data.commission) ?? prev.commission;
-            const pnlVal = parseOptionalFloat(data.pnl) ?? (grossVal - commissionVal);
-            const maeVal = parseOptionalFloat(data.mae) ?? prev.mae;
-            const mfeVal = parseOptionalFloat(data.mfe) ?? prev.mfe;
-            const etdVal = parseOptionalFloat(data.etd) ?? prev.etd;
-            let rrVal = parseOptionalFloat(data.rr);
-            if ((rrVal === null || rrVal === 0) && maeVal > 0) {
-              rrVal = parseFloat((grossVal / maeVal).toFixed(2));
-            } else if (rrVal === null) {
-              rrVal = prev.rr;
-            }
-
-            return {
-              ...prev,
-              ...data,
-              qty: parseOptionalInt(data.qty) ?? prev.qty,
-              entry: parseOptionalFloat(data.entry) ?? prev.entry,
-              exit_price: parseOptionalFloat(data.exit_price) ?? prev.exit_price,
-              gross: grossVal,
-              commission: commissionVal,
-              pnl: pnlVal,
-              mae: maeVal,
-              mfe: mfeVal,
-              etd: etdVal,
-              rr: rrVal,
-              image: base64,
-            };
-          });
-
-          setScanSuccess(true);
-        } catch (err) {
-          console.error(err);
-          setScanError(err.message || "Error al procesar la imagen");
-        } finally {
-          setScanning(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error(err);
-      setScanError("Error al leer el archivo");
-      setScanning(false);
-    }
-  };
-
-  const renderField = (label, field, type = "text", opts) => (
+  const renderField = (label, field, type = "text", opts, placeholder) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
       {opts ? (
@@ -1609,210 +1529,105 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
           })}
         </select>
       ) : (
-        <input 
-          type={type === "number" ? "text" : type} 
+        <input
+          type={type === "number" ? "text" : type}
           inputMode={type === "number" ? "decimal" : undefined}
-          value={form[field] ?? ""} 
+          placeholder={placeholder}
+          value={form[field] ?? ""}
           onChange={e => {
             const val = e.target.value;
             if (type === "number") {
-              const cleaned = val.replace(/[^0-9.,-]/g, "");
-              set(field, cleaned);
+              set(field, val.replace(/[^0-9.,-]/g, ""));
             } else {
               set(field, val);
             }
           }}
-          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} 
+          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
         />
       )}
     </div>
   );
 
-  const defaultInstruments = ["NQ Futures", "ES Futures", "MNQ Micro"];
-  const instrumentOpts = defaultInstruments.includes(form.instrument)
-    ? defaultInstruments
-    : form.instrument 
-      ? [form.instrument, ...defaultInstruments] 
-      : defaultInstruments;
-
   const accountOpts = accounts.some(a => a.value === form.account)
     ? accounts
-    : form.account 
+    : form.account
       ? [{ value: form.account, label: form.account }, ...accounts]
-      : accounts;
+      : [{ value: "", label: "Selecciona una cuenta" }, ...accounts];
+
+  const pnlPreview = parseLocaleFloat(form.pnl) || 0;
+  const commPreview = Math.abs(parseLocaleFloat(form.commission) || 0);
+
+  const handleSave = () => {
+    const pnlNum = parseLocaleFloat(form.pnl) || 0;
+    // La comisión SIEMPRE se guarda negativa
+    const commNum = -Math.abs(parseLocaleFloat(form.commission) || 0);
+    const balanceNum = form.balance === "" || form.balance === null || form.balance === undefined
+      ? null : parseLocaleFloat(form.balance);
+    const thresholdNum = form.threshold === "" || form.threshold === null || form.threshold === undefined
+      ? null : parseLocaleFloat(form.threshold);
+
+    // Notas automáticas coherentes con los trades importados de Bulenox
+    const autoNotes = (balanceNum !== null && thresholdNum !== null)
+      ? `Balance cierre: $${balanceNum} | Umbral autoliq.: $${thresholdNum}`
+      : "";
+    const notes = (form.notes || "").trim() || autoNotes;
+
+    onSave({
+      ...form,
+      date: form.date,
+      account: form.account,
+      pnl: pnlNum,
+      commission: commNum,
+      gross: pnlNum + Math.abs(commNum),
+      balance: balanceNum,
+      threshold: thresholdNum,
+      notes,
+      // Valores automáticos del formato "resumen diario" (no se preguntan)
+      result: pnlNum > 0 ? "Win" : "Loss",
+      instrument: "NQ",
+      qty: 1,
+      strategy: "Resumen diario",
+      timeframe: "Diario",
+      direction: "",
+      entry_time: "",
+      exit_time: "",
+      entry: 0,
+      exit_price: 0,
+      mae: 0,
+      mfe: 0,
+      etd: 0,
+      rr: 0,
+      image: null,
+    });
+  };
 
   return (
     <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
-      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{isNew ? "Añadir operación" : `Editar trade #${form.id}`}</div>
-
-      {isNew && (
-        <div style={{
-          border: "1.5px dashed var(--color-border-tertiary)",
-          borderRadius: 8,
-          padding: "12px",
-          textAlign: "center",
-          background: "var(--color-background-secondary)",
-          marginBottom: 14,
-          position: "relative",
-          cursor: "pointer",
-        }}>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            disabled={scanning}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              opacity: 0,
-              cursor: "pointer",
-            }}
-          />
-          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)" }}>
-            {scanning ? "⏳ Procesando captura con IA..." : "📸 Arrastra o selecciona una captura para autocompletar"}
-          </div>
-          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4 }}>
-            Soporta capturas de NinjaTrader, TradingView, MetaTrader, etc.
-          </div>
-          {scanError && <div style={{ fontSize: 11, color: C.red, marginTop: 6, fontWeight: 500 }}>⚠️ {scanError}</div>}
-          {scanSuccess && <div style={{ fontSize: 11, color: C.green, marginTop: 6, fontWeight: 500 }}>✓ Datos extraídos y completados. ¡Revisa los campos!</div>}
-        </div>
-      )}
+      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{isNew ? "Añadir día operado" : `Editar día #${form.id}`}</div>
+      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 12 }}>
+        Resumen diario Bulenox · un registro por día operado
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 mb-2.5">
         {renderField("Fecha", "date", "date")}
-        {renderField("Hora entrada", "entry_time")}
-        {renderField("Hora salida", "exit_time")}
         {renderField("Cuenta", "account", "text", accountOpts)}
-        {renderField("Instrumento", "instrument", "text", instrumentOpts)}
-        {renderField("Temporalidad", "timeframe", "text", ["15s", "30s", "1m", "3m", "7m"])}
-        {renderField("Dirección", "direction", "text", ["Long", "Short"])}
-        {renderField("Resultado", "result", "text", ["Win", "Loss", "Break Even"])}
-        {renderField("Cantidad", "qty", "number")}
-        {renderField("Precio entrada", "entry", "number")}
-        {renderField("Precio salida", "exit_price", "number")}
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>Estrategia</label>
-          <select 
-            value={["Estrategia 1", "Estrategia 2", "Estrategia 3"].includes(form.strategy) ? form.strategy : (form.strategy === "" ? "" : "Otra")} 
-            onChange={e => {
-              const val = e.target.value;
-              if (val === "Otra") {
-                set("strategy", "Otra");
-              } else {
-                set("strategy", val);
-              }
-            }} 
-            style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", height: 30 }}
-          >
-            <option value="">Ninguna</option>
-            <option value="Estrategia 1">Estrategia 1</option>
-            <option value="Estrategia 2">Estrategia 2</option>
-            <option value="Estrategia 3">Estrategia 3</option>
-            <option value="Otra">Otra...</option>
-          </select>
-          {(!["Estrategia 1", "Estrategia 2", "Estrategia 3"].includes(form.strategy) && form.strategy !== "") && (
-            <input 
-              type="text" 
-              value={form.strategy === "Otra" ? "" : form.strategy} 
-              placeholder="Escribe la estrategia..."
-              onChange={e => set("strategy", e.target.value)}
-              style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", marginTop: 4 }} 
-            />
-          )}
-        </div>
-        {renderField("Net PnL ($)", "pnl", "number")}
-        {renderField("Comisión ($)", "commission", "number")}
-        {renderField("R múltiple", "rr", "number")}
-        {renderField("MAE", "mae", "number")}
-        {renderField("MFE", "mfe", "number")}
-        {renderField("ETD", "etd", "number")}
+        {renderField("PnL neto ($)", "pnl", "number", null, "Ej: 417.46")}
+        {renderField("Comisión ($)", "commission", "number", null, "Ej: 13")}
+        {renderField("Balance cierre ($)", "balance", "number", null, "Ej: 25417")}
+        {renderField("Umbral autoliq. / DD ($)", "threshold", "number", null, "Ej: 23917")}
       </div>
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas</label>
-        <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", resize: "vertical" }} />
+
+      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
+        La comisión se guarda en negativo automáticamente · Bruto calculado: ${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · Resultado: {pnlPreview > 0 ? "Win" : "Loss"}
       </div>
+
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 5 }}>Imagen de la operativa</label>
-        
-        {form.image ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--color-background-secondary)", padding: 8, borderRadius: 8, border: "0.5px solid var(--color-border-secondary)" }}>
-            <img src={form.image} alt="Operativa" style={{ height: 60, width: 80, objectFit: "cover", borderRadius: 4, border: "0.5px solid var(--color-border-tertiary)" }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "var(--color-text-primary)", fontWeight: 500 }}>Captura de pantalla cargada</div>
-              <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginTop: 2 }}>La imagen se guardará junto con el trade.</div>
-            </div>
-            <button 
-              type="button"
-              onClick={() => set("image", null)}
-              style={{ padding: "4px 8px", background: "transparent", border: `0.5px solid ${C.red}`, color: C.red, borderRadius: 6, fontSize: 10, cursor: "pointer" }}
-            >
-              Eliminar imagen
-            </button>
-          </div>
-        ) : (
-          <div style={{
-            border: "1.5px dashed var(--color-border-secondary)",
-            borderRadius: 8,
-            padding: "12px",
-            textAlign: "center",
-            background: "var(--color-background-secondary)",
-            position: "relative",
-            cursor: "pointer",
-          }}>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    set("image", ev.target.result);
-                  };
-                  reader.readAsDataURL(file);
-                }
-              }}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                opacity: 0,
-                cursor: "pointer",
-              }}
-            />
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>
-              📸 Cargar captura de pantalla de la operativa
-            </div>
-            <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginTop: 2 }}>
-              Selecciona o arrastra una imagen (PNG, JPG, JPEG)
-            </div>
-          </div>
-        )}
+        <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas (opcional)</label>
+        <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Si lo dejas vacío se generan notas automáticas con balance y umbral" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", resize: "vertical" }} />
       </div>
+
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => {
-          const pnlNum = parseLocaleFloat(form.pnl);
-          const commNum = parseLocaleFloat(form.commission);
-          onSave({
-            ...form,
-            qty: Math.round(parseLocaleFloat(form.qty)) || 1,
-            entry: parseLocaleFloat(form.entry),
-            exit_price: parseLocaleFloat(form.exit_price),
-            commission: commNum,
-            pnl: pnlNum,
-            mae: parseLocaleFloat(form.mae),
-            mfe: parseLocaleFloat(form.mfe),
-            etd: parseLocaleFloat(form.etd),
-            rr: parseLocaleFloat(form.rr),
-            gross: pnlNum - commNum
-          });
-        }} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
+        <button onClick={handleSave} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
         <button onClick={onCancel} style={{ padding: "6px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>Cancelar</button>
       </div>
     </div>
@@ -1882,12 +1697,18 @@ function SettingsPanel({
   setAiKey,
   trades = [],
 }) {
-  const [newAcct, setNewAcct] = useState({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "" });
+  // Campos del RESUMEN DE CUENTAS de Bulenox. size / daily_limit / startSize
+  // no se piden en el formulario: se envían con valores internos por defecto.
+  const EMPTY_ACCT = { name: "", target: 3000, dd_limit: 2500, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "", planId: "", nextBill: "", maxContracts: "", safetyReserve: "", bestPnlDay: "", consistency: "" };
+  const [newAcct, setNewAcct] = useState(EMPTY_ACCT);
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
+  const [wipeModal, setWipeModal] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState("");
+  const [wipeError, setWipeError] = useState("");
   const [brokerSyncModal, setBrokerSyncModal] = useState(null); // { id, balance, acctName }
 
   const handleSyncBase = async () => {
@@ -1964,35 +1785,39 @@ function SettingsPanel({
     checkVercelVersion(true); // Silent check on mount
   }, []);
 
-  const handleWipeDatabase = async () => {
-    if (!confirm("⚠️ ¿ESTÁS COMPLETAMENTE SEGURO?\n\nEsta acción eliminará permanentemente todas las cuentas de trading y todas las operaciones (trades) guardadas en la base de datos. Esta operación es irreversible.")) {
-      return;
-    }
-    
-    const confirmPhrase = prompt("Para confirmar la eliminación completa de la base de datos, escribe la palabra VACIAR en mayúsculas:");
-    if (confirmPhrase !== "VACIAR") {
-      alert("Confirmación incorrecta. Operación cancelada.");
-      return;
-    }
+  // Abre el modal de confirmación (reemplaza los diálogos nativos confirm/prompt
+  // que algunos navegadores bloquean, haciendo que el botón "no hiciera nada").
+  const openWipeModal = () => {
+    setWipeConfirmText("");
+    setWipeError("");
+    setWipeModal(true);
+  };
 
+  const confirmWipeDatabase = async () => {
+    if (wipeConfirmText.trim().toUpperCase() !== "VACIAR") {
+      setWipeError('Escribe exactamente VACIAR para confirmar.');
+      return;
+    }
     try {
       setWipeLoading(true);
+      setWipeError("");
       const res = await fetch("/api/db-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "clean_database" }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        alert("✓ Base de datos vaciada con éxito. La aplicación se reiniciará limpia.");
         await fetchAccounts();
         await fetchTrades();
         await fetchDbStatus();
+        setWipeModal(false);
+        setWipeConfirmText("");
       } else {
-        alert(`⚠️ Error: ${data.error}`);
+        setWipeError(data.error || `Error ${res.status} al vaciar la base de datos.`);
       }
     } catch (e) {
-      alert("⚠️ Error de red al intentar vaciar la base de datos.");
+      setWipeError("Error de red al intentar vaciar la base de datos.");
     } finally {
       setWipeLoading(false);
     }
@@ -2086,13 +1911,25 @@ function SettingsPanel({
       return;
     }
     try {
+      // Valores internos por defecto (no se piden en el formulario)
+      const balanceNum = newAcct.balance === "" || newAcct.balance === null ? null : parseFloat(newAcct.balance);
+      const payload = {
+        ...newAcct,
+        size: balanceNum || 25000,
+        daily_limit: 0,
+        startSize: 25000,
+        // Las cuentas REAL de 25K llevan reserva de seguridad 26600 por defecto
+        safetyReserve: newAcct.safetyReserve !== "" && newAcct.safetyReserve !== null
+          ? newAcct.safetyReserve
+          : (newAcct.type === "REAL" ? 26600 : ""),
+      };
       const res = await fetch("/api/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newAcct),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
-        setNewAcct({ name: "", size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "" });
+        setNewAcct(EMPTY_ACCT);
         setAcctError("");
         fetchAccounts();
       } else {
@@ -2257,23 +2094,43 @@ function SettingsPanel({
               {editingAcctId === a.id ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 w-full">
                   <input type="text" value={editAcct.name} onChange={e => setEditAcct({...editAcct, name: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Nombre" />
-                  <input type="number" value={editAcct.size} onChange={e => setEditAcct({...editAcct, size: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Balance" />
-                  <input type="number" value={editAcct.target} onChange={e => setEditAcct({...editAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Objetivo" />
-                  <input type="number" value={editAcct.dd_limit} onChange={e => setEditAcct({...editAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Max DD" />
-                  <input type="number" value={editAcct.daily_limit} onChange={e => setEditAcct({...editAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Límite Diario" />
+                  <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct({...editAcct, type: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                    <option value="EXAMEN">Examen 📝</option>
+                    <option value="REAL">Real 💼</option>
+                  </select>
                   <select value={editAcct.status || "ACTIVE"} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
                     <option value="ACTIVE">Activa</option>
                     <option value="CLOSED">Cerrada</option>
                     <option value="BURNED">Quemada 🔥</option>
                   </select>
-                  <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct({...editAcct, type: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                    <option value="EXAMEN">Examen 📝</option>
-                    <option value="REAL">Real 💼</option>
-                  </select>
-                  <input type="number" value={editAcct.balance !== undefined && editAcct.balance !== null ? editAcct.balance : ""} onChange={e => setEditAcct({...editAcct, balance: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="📋 Saldo Broker (referencia)" />
-                  <input type="number" value={editAcct.threshold !== undefined && editAcct.threshold !== null ? editAcct.threshold : ""} onChange={e => setEditAcct({...editAcct, threshold: e.target.value === "" ? null : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Umbral Liq." />
-                  <input type="text" value={editAcct.updateDate !== undefined && editAcct.updateDate !== null ? editAcct.updateDate : ""} onChange={e => setEditAcct({...editAcct, updateDate: e.target.value === "" ? null : e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Fecha ref. broker" />
-                  <input type="number" value={editAcct.activeDays !== undefined && editAcct.activeDays !== null ? editAcct.activeDays : ""} onChange={e => setEditAcct({...editAcct, activeDays: e.target.value === "" ? null : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Días Operados" />
+                  {[
+                    ["Plan ID", "planId", "text"],
+                    ["Próx. facturación (MM/DD/AA)", "nextBill", "text"],
+                    ["Objetivo ($)", "target", "number"],
+                    ["Max. contratos", "maxContracts", "int"],
+                    ["DD máximo ($)", "dd_limit", "number"],
+                    ["Balance ($)", "balance", "number"],
+                    ["Umbral autoliq. ($)", "threshold", "number"],
+                    ["Reserva safety ($)", "safetyReserve", "number"],
+                    ["Mejor día PnL", "bestPnlDay", "text"],
+                    ["Consistencia", "consistency", "text"],
+                    ["Fecha actualización", "updateDate", "text"],
+                    ["Días activos", "activeDays", "int"],
+                  ].map(([ph, field, kind]) => (
+                    <input
+                      key={field}
+                      type={kind === "text" ? "text" : "number"}
+                      placeholder={ph}
+                      value={editAcct[field] !== undefined && editAcct[field] !== null ? editAcct[field] : ""}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (kind === "text") setEditAcct({...editAcct, [field]: v === "" ? null : v});
+                        else if (kind === "int") setEditAcct({...editAcct, [field]: v === "" ? null : parseInt(v)});
+                        else setEditAcct({...editAcct, [field]: v === "" ? null : parseFloat(v)});
+                      }}
+                      style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: field === "balance" ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                    />
+                  ))}
                   {editAcct.balance !== null && editAcct.balance !== undefined && editAcct.balance !== "" && !isNaN(parseFloat(editAcct.balance)) && (
                     <button
                       onClick={() => setBrokerSyncModal({ id: a.id, balance: parseFloat(editAcct.balance), acctName: editAcct.name })}
@@ -2302,7 +2159,7 @@ function SettingsPanel({
                       {a.status === "BURNED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      Saldo: ${a.size.toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()} · Diario: ${a.daily_limit.toLocaleString()}
+                      Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}{a.planId ? ` · Plan: ${a.planId}` : ""}{a.maxContracts ? ` · ${a.maxContracts} contratos` : ""}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4 }}>
@@ -2318,49 +2175,48 @@ function SettingsPanel({
         <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12, marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
-              <input type="text" placeholder="Ej: BX101840-06 (100K)" value={newAcct.name} onChange={e => setNewAcct({...newAcct, name: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Categoría de Cuenta</label>
-              <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({...newAcct, type: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                <option value="EXAMEN">Examen 📝</option>
-                <option value="REAL">Real 💼</option>
-              </select>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Saldo Inicial ($)</label>
-              <input type="number" placeholder="Ej: 50000" value={newAcct.size} onChange={e => setNewAcct({...newAcct, size: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Objetivo de Ganancia ($)</label>
-              <input type="number" placeholder="Ej: 3000" value={newAcct.target} onChange={e => setNewAcct({...newAcct, target: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Drawdown ($)</label>
-              <input type="number" placeholder="Ej: 2500" value={newAcct.dd_limit} onChange={e => setNewAcct({...newAcct, dd_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div className="flex flex-col gap-0.5 col-span-1 sm:col-span-2">
-               <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Límite de Pérdida Diaria ($)</label>
-               <input type="number" placeholder="Ej: 1100" value={newAcct.daily_limit} onChange={e => setNewAcct({...newAcct, daily_limit: parseFloat(e.target.value) || 0})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Saldo Rithmic ($ · Opcional)</label>
-              <input type="number" placeholder="Ej: 25105.66" value={newAcct.balance} onChange={e => setNewAcct({...newAcct, balance: e.target.value === "" ? "" : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Umbral Liq. ($ · Opcional)</label>
-              <input type="number" placeholder="Ej: 23797.83" value={newAcct.threshold} onChange={e => setNewAcct({...newAcct, threshold: e.target.value === "" ? "" : parseFloat(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Fecha Act. (MM/DD/AA · Opcional)</label>
-              <input type="text" placeholder="Ej: 05/22/26" value={newAcct.updateDate} onChange={e => setNewAcct({...newAcct, updateDate: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Días Operados (Opcional)</label>
-              <input type="number" placeholder="Ej: 2" value={newAcct.activeDays} onChange={e => setNewAcct({...newAcct, activeDays: e.target.value === "" ? "" : parseInt(e.target.value)})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
+            {[
+              ["Nombre de Cuenta", "name", "text", "Ej: BX101840-14"],
+              ["Tipo de Cuenta", "type", "select"],
+              ["Plan ID", "planId", "text", "Ej: 1MLBQ"],
+              ["Próx. Facturación (MM/DD/AA)", "nextBill", "text", "Ej: 08/23/26"],
+              ["Objetivo de Ganancia ($)", "target", "number", "Ej: 1500"],
+              ["Max. Contratos", "maxContracts", "int", "Ej: 3"],
+              ["DD Máximo ($)", "dd_limit", "number", "Ej: 1500"],
+              ["Balance ($)", "balance", "number", "Ej: 25105.66"],
+              ["Umbral Autoliq. ($)", "threshold", "number", "Ej: 23797.83"],
+              ["Reserva Safety ($)", "safetyReserve", "number", "Ej: 26600"],
+              ["Mejor Día PnL", "bestPnlDay", "text", "Ej: $417.46 (06/11/26)"],
+              ["Consistencia", "consistency", "text", "Ej: 87%"],
+              ["Fecha Actualización (MM/DD/AA)", "updateDate", "text", "Ej: 07/25/26"],
+              ["Días Activos", "activeDays", "int", "Ej: 12"],
+            ].map(([label, field, kind, placeholder]) => (
+              <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>{label}</label>
+                {kind === "select" ? (
+                  <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({...newAcct, type: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                    <option value="EXAMEN">Examen 📝</option>
+                    <option value="REAL">Real 💼</option>
+                  </select>
+                ) : (
+                  <input
+                    type={kind === "text" ? "text" : "number"}
+                    placeholder={placeholder}
+                    value={newAcct[field] ?? ""}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (kind === "text") setNewAcct({...newAcct, [field]: v});
+                      else if (kind === "int") setNewAcct({...newAcct, [field]: v === "" ? "" : parseInt(v)});
+                      else setNewAcct({...newAcct, [field]: v === "" ? "" : parseFloat(v)});
+                    }}
+                    style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginBottom: 8 }}>
+            El tamaño base ($25K) y el límite diario se aplican automáticamente. Las cuentas REAL de 25K usan una reserva safety de $26.600 por defecto.
           </div>
           <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
             + Crear Cuenta
@@ -2629,7 +2485,7 @@ function SettingsPanel({
           Acciones irreversibles sobre la base de datos. Por favor, procede con cautela.
         </p>
         <button
-          onClick={handleWipeDatabase}
+          onClick={openWipeModal}
           disabled={wipeLoading}
           style={{
             width: "100%",
@@ -2687,6 +2543,82 @@ function SettingsPanel({
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button onClick={() => setBrokerSyncModal(null)} style={{ fontSize: 11, padding: "8px 14px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer", fontWeight: 500 }}>Cancelar</button>
               <button onClick={handleSyncBase} style={{ fontSize: 11, padding: "8px 18px", borderRadius: 6, border: "none", background: C.blue, color: "#fff", cursor: "pointer", fontWeight: 600 }}>✓ Confirmar Sync</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {wipeModal && (
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(8px)",
+          display: "flex", justifyContent: "center", alignItems: "center",
+          zIndex: 2000, padding: 20,
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 440,
+            background: "var(--color-background-primary)",
+            border: `0.5px solid ${C.red}`,
+            borderRadius: 16, padding: 24,
+            boxShadow: "0 20px 40px -5px rgba(0,0,0,0.25)",
+            display: "flex", flexDirection: "column", gap: 16,
+          }}>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: C.red, display: "flex", alignItems: "center", gap: 8 }}>
+                ⚠️ Vaciar base de datos
+              </h3>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 6, marginBottom: 0, lineHeight: 1.5 }}>
+                Se eliminarán <strong>permanentemente</strong> todas tus cuentas y todos tus trades. Esta acción es <strong>irreversible</strong>.
+              </p>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 6, fontWeight: 500 }}>
+                Escribe <strong style={{ color: C.red }}>VACIAR</strong> para confirmar:
+              </label>
+              <input
+                type="text"
+                autoFocus
+                value={wipeConfirmText}
+                onChange={e => { setWipeConfirmText(e.target.value); if (wipeError) setWipeError(""); }}
+                onKeyDown={e => { if (e.key === "Enter" && wipeConfirmText.trim().toUpperCase() === "VACIAR") confirmWipeDatabase(); }}
+                placeholder="VACIAR"
+                disabled={wipeLoading}
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  fontSize: 13, padding: "9px 12px", borderRadius: 8,
+                  border: `0.5px solid ${wipeError ? C.red : "var(--color-border-secondary)"}`,
+                  background: "var(--color-background-secondary)",
+                  color: "var(--color-text-primary)", outline: "none",
+                  letterSpacing: "1px", fontWeight: 600,
+                }}
+              />
+              {wipeError && (
+                <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0" }}>{wipeError}</p>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                onClick={() => { setWipeModal(false); setWipeConfirmText(""); setWipeError(""); }}
+                disabled={wipeLoading}
+                style={{ fontSize: 11, padding: "8px 14px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "transparent", color: "var(--color-text-secondary)", cursor: wipeLoading ? "not-allowed" : "pointer", fontWeight: 500 }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmWipeDatabase}
+                disabled={wipeLoading || wipeConfirmText.trim().toUpperCase() !== "VACIAR"}
+                style={{
+                  fontSize: 11, padding: "8px 18px", borderRadius: 6, border: "none",
+                  background: (wipeLoading || wipeConfirmText.trim().toUpperCase() !== "VACIAR") ? "var(--color-border-tertiary)" : C.red,
+                  color: "#fff",
+                  cursor: (wipeLoading || wipeConfirmText.trim().toUpperCase() !== "VACIAR") ? "not-allowed" : "pointer",
+                  fontWeight: 600, opacity: wipeLoading ? 0.7 : 1,
+                }}
+              >
+                {wipeLoading ? "Eliminando…" : "Vaciar definitivamente"}
+              </button>
             </div>
           </div>
         </div>
@@ -3681,7 +3613,18 @@ export default function App() {
     return base.filter(t => t.instrument !== "Ajuste de Broker");
   }, [trades, selectedAccounts]);
   const stats = useMemo(() => calcStats(filtered), [filtered]);
-  
+
+  // Comisiones del mes corriente + media por día de trade (periodo = mes actual)
+  const commissionMonth = useMemo(() => {
+    const ym = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    const monthTrades = filtered.filter(t => (t.date || "").slice(0, 7) === ym);
+    const total = monthTrades.reduce((s, t) => s + Math.abs(t.commission || 0), 0);
+    const days = new Set(monthTrades.map(t => t.date)).size;
+    const perDay = days ? total / days : 0;
+    const label = new Date(ym + "-01T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" });
+    return { total, days, perDay, label };
+  }, [filtered]);
+
   const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
 
   const activeAccountsForForm = useMemo(() => {
@@ -3784,28 +3727,14 @@ export default function App() {
     }
     if (mod.id === "kpis") return (
       <Module key={mod.id} {...props}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           <KpiCard label="Net P&L" value={fmt(Math.round(trueNetPnl))} color={trueNetPnl >= 0 ? C.green : C.red} spark={equitySpark} />
-          <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W / ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
+          <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W · ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
+          <KpiCard label="Trade mayor" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
+          <KpiCard label="Trade menor" value={fmt(Math.round(stats.maxLoss || 0))} color={C.red} />
           <KpiCard label="Profit factor" value={fmtN(stats.pf || 0, 2)} color={(stats.pf || 0) >= 1 ? C.green : C.red} />
-          <KpiCard label="Avg RR" value={`${fmtN(stats.avgRR || 0, 2)}R`} color={(stats.avgRR || 0) > 0 ? C.green : C.red} />
-          <KpiCard label="Mejor trade" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
-          <KpiCard label="Peor trade" value={fmt(Math.round(stats.maxLoss || 0))} color={C.red} />
-          <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 2 }}>Media Win</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: C.green, marginBottom: 8 }}>{fmt(stats.avgWin || 0)}</div>
-              
-              <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 2 }}>Media Lose</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: C.red, marginBottom: 6 }}>{fmt(-(stats.avgLoss || 0))}</div>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-secondary)", paddingTop: 4, marginTop: 4 }}>
-              Ratio: {stats.avgLoss > 0 ? fmtN((stats.avgWin || 0) / stats.avgLoss, 2) : "N/A"}
-            </div>
-          </div>
-          <KpiCard label="Duración media" value={formatDuration(stats.avgDuration)} sub={stats.avgDuration !== null && stats.avgDuration !== undefined ? `W: ${formatDuration(stats.avgWinDuration)} / L: ${formatDuration(stats.avgLossDuration)}` : "Sin datos de tiempo"} color="var(--color-text-primary)" />
-          <KpiCard label="Comisiones" value={fmt(Math.round(stats.commissions || 0))} color={C.red} sub={`${stats.days || 0} días`} />
-          <KpiCard label="Trades" value={stats.n || 0} color="var(--color-text-primary)" />
+          <KpiCard label="Comisiones (mes)" value={`-$${Math.round(commissionMonth.total).toLocaleString()}`} color={C.red} sub={commissionMonth.label} />
+          <KpiCard label="Comis./día trade" value={`-$${fmtN(commissionMonth.perDay, 1)}`} color={C.red} sub={`${commissionMonth.days} días de trade`} />
         </div>
       </Module>
     );
@@ -3813,14 +3742,11 @@ export default function App() {
       const totalCount = accountsList.length;
       const examenCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE" && a.type === "EXAMEN").length;
       const realCount = accountsList.filter(a => (a.status || "ACTIVE").toUpperCase() === "ACTIVE" && a.type === "REAL").length;
-      const inactiveCount = accountsList.filter(a => a.status === "BURNED" || a.status === "CLOSED").length;
 
       const filteredAccounts = accountsList.filter(a => {
         const status = a.status || "ACTIVE";
-        if (accountsPanelFilter === "all") return true;
         if (accountsPanelFilter === "EXAMEN") return status.toUpperCase() === "ACTIVE" && a.type === "EXAMEN";
         if (accountsPanelFilter === "REAL") return status.toUpperCase() === "ACTIVE" && a.type === "REAL";
-        if (accountsPanelFilter === "INACTIVE") return status.toUpperCase() === "BURNED" || status.toUpperCase() === "CLOSED";
         return true;
       });
 
@@ -3838,8 +3764,7 @@ export default function App() {
             {[
               { id: "all", label: "Todas", count: totalCount },
               { id: "EXAMEN", label: "Examen 📝", count: examenCount },
-              { id: "REAL", label: "Reales 💼", count: realCount },
-              { id: "INACTIVE", label: "Quemadas / Cerradas 🔒", count: inactiveCount },
+              { id: "REAL", label: "Real 💼", count: realCount },
             ].map(f => (
               <button 
                 key={f.id} 
@@ -3972,10 +3897,10 @@ export default function App() {
         </div>
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         <div className="scroll-fade-container" style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 1050 }}>
+          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr>
-                {["#", "Fecha", "Hora", "Temp.", "Cuenta", "Dir", "Instr", "Entrada", "Salida", "PnL", "RR", "Estrategia", "Res.", "Captura", ""].map(h => (
+                {["#", "Fecha", "Cuenta", "PnL", "Comisión", "Balance", "Umbral DD", "Res.", ""].map(h => (
                    <th key={h} style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-tertiary)", textAlign: "left", padding: "5px 6px", borderBottom: "0.5px solid var(--color-border-tertiary)", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -3985,30 +3910,18 @@ export default function App() {
                 <tr key={t.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                   <td style={{ padding: "5px 6px", color: "var(--color-text-secondary)" }}>{t.id}</td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.date}</td>
-                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.entry_time || "—"}</td>
-                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{t.timeframe || "—"}</td>
                   <td style={{ padding: "5px 6px", fontSize: 10, whiteSpace: "nowrap" }}>{t.account.split(" ")[0]}</td>
-                  <td style={{ padding: "5px 6px", color: t.direction === "Long" ? C.green : C.red, fontWeight: 500 }}>{t.direction}</td>
-                  <td style={{ padding: "5px 6px", fontSize: 10 }}>
-                    {(t.instrument || "").includes("NQ") ? "NQ" : (t.instrument || "").includes("ES") ? "ES" : t.instrument}
+                  <td style={{ padding: "5px 6px", color: t.pnl > 0 ? C.green : t.pnl < 0 ? C.red : "inherit", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{fmt(t.pnl)}</td>
+                  <td style={{ padding: "5px 6px", color: C.red, opacity: 0.75, fontVariantNumeric: "tabular-nums" }}>
+                    {t.commission ? `-$${Math.abs(t.commission).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
                   </td>
-                  <td style={{ padding: "5px 6px" }}>{t.entry}</td>
-                  <td style={{ padding: "5px 6px" }}>{t.exit_price}</td>
-                  <td style={{ padding: "5px 6px", color: t.pnl > 0 ? C.green : t.pnl < 0 ? C.red : "inherit", fontWeight: 500 }}>{fmt(t.pnl)}</td>
-                  <td style={{ padding: "5px 6px" }}>{fmtN(t.rr, 2)}R</td>
-                  <td style={{ padding: "5px 6px", fontSize: 10, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{t.strategy || "—"}</td>
+                  <td style={{ padding: "5px 6px", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {t.balance !== null && t.balance !== undefined ? `$${t.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                  </td>
+                  <td style={{ padding: "5px 6px", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "var(--color-text-secondary)" }}>
+                    {t.threshold !== null && t.threshold !== undefined ? `$${t.threshold.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                  </td>
                   <td style={{ padding: "5px 6px" }}><span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: t.result === "Win" ? C.greenBg : C.redBg, color: t.result === "Win" ? C.greenText : C.redText }}>{t.result}</span></td>
-                  <td style={{ padding: "5px 6px", textAlign: "center" }}>
-                    {t.image ? (
-                      <button 
-                        onClick={() => setSelectedTradeImage(t.image)}
-                        style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: 0 }}
-                        title="Ver captura de pantalla"
-                      >
-                        🖼️
-                      </button>
-                    ) : "—"}
-                  </td>
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
                     <button onClick={() => { setEditingTrade(t); setAddingTrade(false); }} style={{ fontSize: 10, padding: "2px 7px", marginRight: 4, border: "0.5px solid var(--color-border-secondary)", borderRadius: 3, background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}>✏️</button>
                     <button onClick={() => setDeleteConfirm(t.id)} style={{ fontSize: 10, padding: "2px 7px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 3, background: "transparent", cursor: "pointer", color: C.red }}>✕</button>

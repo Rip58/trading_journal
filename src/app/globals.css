@@ -155,3 +155,16 @@ button:active {
 .lose-glow {
   box-shadow: 0 0 15px rgba(216, 90, 48, 0.15);
 }
+
+/* Minimalist KPI tiles — subtle lift on hover */
+.kpi-tile {
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.kpi-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kpi-tile { transition: none; }
+  .kpi-tile:hover { transform: none; }
+}

@@ -32,6 +32,8 @@ model Trade {
   timeframe   String
   notes       String
   image       String?
+  balance     Float?   // Balance de cierre del día (resumen diario Bulenox)
+  threshold   Float?   // Umbral de autoliquidación / DD del día
   createdAt   DateTime @default(now())
 }
 
@@ -51,6 +53,13 @@ model Account {
   updateDate       String?
   activeDays       Int?
   brokerUpdateTime String?
+  planId           String?  // Plan ID de Bulenox (ej. "1MLBQ")
+  nextBill         String?  // Próxima facturación MM/DD/YY
+  maxContracts     Int?     // Máximo de contratos permitidos
+  closedPnl        Float?   // PnL cerrado acumulado (Closed P&L)
+  safetyReserve    Float?   // Reserva de seguridad (cuentas REAL)
+  bestPnlDay       String?  // Mejor día de PnL (texto, ej. "$417.46 (06/11/26)")
+  consistency      String?  // Consistencia (texto, ej. "87%")
   createdAt        DateTime @default(now())
 
   @@unique([clerkUserId, name])

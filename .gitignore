@@ -45,3 +45,9 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# volcados locales de la BD (datos de trading, no versionar)
+/backups/
+
+# configuracion local del agente
+/.claude/
