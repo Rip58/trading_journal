@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { UserButton } from "@clerk/nextjs";
 import { normalizeDateToYYYYMMDD, parseLocaleFloat } from "@/lib/dateUtils";
 
@@ -789,6 +790,7 @@ function AccountCard({ account, rules, trades }) {
               </span>
               {activeRules.type === "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 600 }}>Real 💼</span>}
               {activeRules.type !== "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 600 }}>Examen 📝</span>}
+              {activeRules.propfirm && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>{activeRules.propfirm}</span>}
               {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada 🔒</span>}
               {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
             </div>
@@ -1682,14 +1684,17 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
     });
   };
 
-  return (
-    <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+  // Popup centrado vía portal al body: los módulos tienen overflow:hidden y
+  // transform en hover, que romperían un position:fixed anidado.
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 460, maxHeight: "90dvh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }}>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{isNew ? "Añadir día operado" : `Editar día #${form.id}`}</div>
       <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 12 }}>
         Resumen diario Bulenox · un registro por día operado
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 mb-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
         {renderField("Fecha", "date", "date")}
         {renderField("Cuenta", "account", "text", accountOpts)}
 
@@ -1755,10 +1760,12 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleSave} style={{ padding: "6px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Guardar</button>
-        <button onClick={onCancel} style={{ padding: "6px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Guardar</button>
+        <button onClick={onCancel} style={{ flex: 1, padding: "9px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
       </div>
-    </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1827,8 +1834,12 @@ function SettingsPanel({
 }) {
   // Campos del RESUMEN DE CUENTAS de Bulenox. size / daily_limit / startSize
   // no se piden en el formulario: se envían con valores internos por defecto.
-  const EMPTY_ACCT = { name: "", target: 3000, dd_limit: 2500, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", updateDate: "", activeDays: "", planId: "", nextBill: "", maxContracts: "", safetyReserve: "", bestPnlDay: "", consistency: "" };
+  const EMPTY_ACCT = { name: "", propfirm: "Bulenox", target: 3000, dd_limit: 2500, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", activeDays: "", safetyReserve: "", bestPnlDay: "", consistency: "" };
   const [newAcct, setNewAcct] = useState(EMPTY_ACCT);
+  // Propfirms conocidas + las que existan ya en cuentas del usuario
+  const [newPfCustom, setNewPfCustom] = useState(false);
+  const [editPfCustom, setEditPfCustom] = useState(false);
+  const propfirmOpts = [...new Set(["Bulenox", "Lucid", ...accountsList.map(a => a.propfirm).filter(Boolean)])];
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
@@ -2058,6 +2069,7 @@ function SettingsPanel({
       });
       if (res.ok) {
         setNewAcct(EMPTY_ACCT);
+        setNewPfCustom(false);
         setAcctError("");
         fetchAccounts();
       } else {
@@ -2231,18 +2243,37 @@ function SettingsPanel({
                     <option value="CLOSED">Cerrada</option>
                     <option value="BURNED">Quemada 🔥</option>
                   </select>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <select
+                      value={editPfCustom ? "__custom__" : (editAcct.propfirm || "Bulenox")}
+                      onChange={e => {
+                        if (e.target.value === "__custom__") { setEditPfCustom(true); setEditAcct({ ...editAcct, propfirm: "" }); }
+                        else { setEditPfCustom(false); setEditAcct({ ...editAcct, propfirm: e.target.value }); }
+                      }}
+                      style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                    >
+                      {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+                      <option value="__custom__">➕ Otra…</option>
+                    </select>
+                    {editPfCustom && (
+                      <input
+                        type="text"
+                        placeholder="Nombre de la propfirm"
+                        value={editAcct.propfirm ?? ""}
+                        onChange={e => setEditAcct({ ...editAcct, propfirm: e.target.value })}
+                        autoFocus
+                        style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    )}
+                  </div>
                   {[
-                    ["Plan ID", "planId", "text"],
-                    ["Próx. facturación (MM/DD/AA)", "nextBill", "text"],
                     ["Objetivo ($)", "target", "number"],
-                    ["Max. contratos", "maxContracts", "int"],
                     ["DD máximo ($)", "dd_limit", "number"],
                     ["Balance ($)", "balance", "number"],
                     ["Umbral autoliq. ($)", "threshold", "number"],
                     ["Reserva safety ($)", "safetyReserve", "number"],
                     ["Mejor día PnL", "bestPnlDay", "text"],
                     ["Consistencia", "consistency", "text"],
-                    ["Fecha actualización", "updateDate", "text"],
                     ["Días activos", "activeDays", "int"],
                   ].map(([ph, field, kind]) => (
                     <input
@@ -2287,11 +2318,11 @@ function SettingsPanel({
                       {a.status === "BURNED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}{a.planId ? ` · Plan: ${a.planId}` : ""}{a.maxContracts ? ` · ${a.maxContracts} contratos` : ""}
+                      {a.propfirm ? `${a.propfirm} · ` : ""}Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
+                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); setEditPfCustom(false); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
                     <button onClick={() => handleDeleteAccount(a.id)} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: C.red, cursor: "pointer" }}>✕ Borrar</button>
                   </div>
                 </>
@@ -2305,18 +2336,15 @@ function SettingsPanel({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
             {[
               ["Nombre de Cuenta", "name", "text", "Ej: BX101840-14"],
+              ["Propfirm", "propfirm", "propfirm"],
               ["Tipo de Cuenta", "type", "select"],
-              ["Plan ID", "planId", "text", "Ej: 1MLBQ"],
-              ["Próx. Facturación (MM/DD/AA)", "nextBill", "text", "Ej: 08/23/26"],
               ["Objetivo de Ganancia ($)", "target", "number", "Ej: 1500"],
-              ["Max. Contratos", "maxContracts", "int", "Ej: 3"],
               ["DD Máximo ($)", "dd_limit", "number", "Ej: 1500"],
               ["Balance ($)", "balance", "number", "Ej: 25105.66"],
               ["Umbral Autoliq. ($)", "threshold", "number", "Ej: 23797.83"],
               ["Reserva Safety ($)", "safetyReserve", "number", "Ej: 26600"],
               ["Mejor Día PnL", "bestPnlDay", "text", "Ej: $417.46 (06/11/26)"],
               ["Consistencia", "consistency", "text", "Ej: 87%"],
-              ["Fecha Actualización (MM/DD/AA)", "updateDate", "text", "Ej: 07/25/26"],
               ["Días Activos", "activeDays", "int", "Ej: 12"],
             ].map(([label, field, kind, placeholder]) => (
               <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -2326,6 +2354,30 @@ function SettingsPanel({
                     <option value="EXAMEN">Examen 📝</option>
                     <option value="REAL">Real 💼</option>
                   </select>
+                ) : kind === "propfirm" ? (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <select
+                      value={newPfCustom ? "__custom__" : (newAcct.propfirm || "Bulenox")}
+                      onChange={e => {
+                        if (e.target.value === "__custom__") { setNewPfCustom(true); setNewAcct({ ...newAcct, propfirm: "" }); }
+                        else { setNewPfCustom(false); setNewAcct({ ...newAcct, propfirm: e.target.value }); }
+                      }}
+                      style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                    >
+                      {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+                      <option value="__custom__">➕ Otra…</option>
+                    </select>
+                    {newPfCustom && (
+                      <input
+                        type="text"
+                        placeholder="Nombre de la propfirm"
+                        value={newAcct.propfirm ?? ""}
+                        onChange={e => setNewAcct({ ...newAcct, propfirm: e.target.value })}
+                        autoFocus
+                        style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                      />
+                    )}
+                  </div>
                 ) : (
                   <input
                     type={kind === "text" ? "text" : "number"}
@@ -4060,9 +4112,7 @@ export default function App() {
           </table>
         </div>
         {editingTrade && (
-          <div style={{ marginTop: 12 }}>
-            <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} />
-          </div>
+          <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} />
         )}
         {deleteConfirm && (
           <div style={{ padding: "10px 14px", background: C.redBg, borderRadius: 8, marginTop: 12, display: "flex", alignItems: "center", gap: 12 }}>

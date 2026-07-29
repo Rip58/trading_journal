@@ -184,3 +184,13 @@ button:active {
     display: none;
   }
 }
+
+/* iOS hace auto-zoom al enfocar campos con letra < 16px. En pantallas
+   táctiles los controles de formulario suben a 16px para evitarlo. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

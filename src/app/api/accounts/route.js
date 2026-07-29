@@ -62,6 +62,7 @@ export async function POST(request) {
         updateDate: body.updateDate !== undefined && body.updateDate !== null && body.updateDate !== '' ? body.updateDate : null,
         activeDays: body.activeDays !== undefined && body.activeDays !== null && body.activeDays !== '' ? parseInt(body.activeDays) : null,
         brokerUpdateTime: body.brokerUpdateTime !== undefined && body.brokerUpdateTime !== '' && body.brokerUpdateTime !== null ? body.brokerUpdateTime : null,
+        propfirm: body.propfirm !== undefined && body.propfirm !== null && body.propfirm !== '' ? String(body.propfirm) : null,
         // Campos del RESUMEN DE CUENTAS de Bulenox
         planId: body.planId !== undefined && body.planId !== null && body.planId !== '' ? String(body.planId) : null,
         nextBill: body.nextBill !== undefined && body.nextBill !== null && body.nextBill !== '' ? String(body.nextBill) : null,

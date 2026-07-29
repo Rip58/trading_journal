@@ -53,6 +53,7 @@ model Account {
   updateDate       String?
   activeDays       Int?
   brokerUpdateTime String?
+  propfirm         String?  // Propfirm de la cuenta (Bulenox, Lucid, u otra)
   planId           String?  // Plan ID de Bulenox (ej. "1MLBQ")
   nextBill         String?  // Próxima facturación MM/DD/YY
   maxContracts     Int?     // Máximo de contratos permitidos

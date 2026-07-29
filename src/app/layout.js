@@ -6,6 +6,15 @@ export const metadata = {
   description: "Registro y analíticas de mis trades en futuros",
 };
 
+// maximumScale: 1 evita el auto-zoom de iOS al enfocar inputs (el pellizco
+// manual sigue funcionando en iOS, que lo ignora para gestos del usuario).
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="es" suppressHydrationWarning>
