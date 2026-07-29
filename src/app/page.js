@@ -1169,16 +1169,41 @@ function CalendarWidget({ trades }) {
     setCurrentMonth(`${y}-${String(mo + 1).padStart(2, "0")}`);
   };
 
-  const monthStats = useMemo(() => {
-    const monthTrades = trades.filter(t => {
-      const normDate = normalizeDateToYYYYMMDD(t.date);
-      return normDate.startsWith(currentMonth);
+  // Estadísticas globales (desde el primer trade) y por mes, en una sola pasada.
+  // Se agrega primero por día para que los "días" cuenten fechas únicas.
+  const calStats = useMemo(() => {
+    const dayMap = new Map(); // "YYYY-MM-DD" -> { pnl, comm }
+    trades.forEach(t => {
+      const d = normalizeDateToYYYYMMDD(t.date);
+      if (!dayMap.has(d)) dayMap.set(d, { pnl: 0, comm: 0 });
+      const day = dayMap.get(d);
+      day.pnl += t.pnl || 0;
+      day.comm += Math.abs(t.commission || 0);
     });
-    const totalGlobal = monthTrades.reduce((acc, t) => acc + (t.pnl || 0), 0);
-    const totalWin = monthTrades.reduce((acc, t) => (t.pnl || 0) > 0 ? acc + t.pnl : acc, 0);
-    const totalLose = monthTrades.reduce((acc, t) => (t.pnl || 0) < 0 ? acc + t.pnl : acc, 0);
-    return { totalGlobal, totalWin, totalLose };
-  }, [trades, currentMonth]);
+
+    const byMonth = new Map(); // "YYYY-MM" -> stats
+    const global = { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0, first: null, last: null };
+    [...dayMap.entries()].forEach(([d, day]) => {
+      const ym = d.slice(0, 7);
+      if (!byMonth.has(ym)) byMonth.set(ym, { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0 });
+      const m = byMonth.get(ym);
+      m.pnl += day.pnl; global.pnl += day.pnl;
+      m.comm += day.comm; global.comm += day.comm;
+      m.days++; global.days++;
+      if (day.pnl > 0) { m.win += day.pnl; global.win += day.pnl; m.winDays++; global.winDays++; }
+      else if (day.pnl < 0) { m.lose += day.pnl; global.lose += day.pnl; m.loseDays++; global.loseDays++; }
+      if (!global.first || d < global.first) global.first = d;
+      if (!global.last || d > global.last) global.last = d;
+    });
+
+    // Meses ordenados descendente (más reciente primero)
+    const months = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    const years = new Set(months.map(([ym]) => ym.slice(0, 4)));
+    return { global, months, multiYear: years.size > 1 };
+  }, [trades]);
+
+  const monthStats = calStats.months.find(([ym]) => ym === currentMonth)?.[1]
+    || { pnl: 0, win: 0, lose: 0 };
 
   const byDate = {};
   trades.forEach(t => {
@@ -1338,100 +1363,141 @@ function CalendarWidget({ trades }) {
         </div>
       </div>
 
-      {/* Resumen Mensual */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 12,
-        marginTop: 16,
-      }}>
-        {/* Total Global Card */}
-        <div style={{
-          background: monthStats.totalGlobal >= 0 ? C.greenBg : C.redBg,
-          border: `0.5px solid ${monthStats.totalGlobal >= 0 ? "#9FE1CB" : "#F5C4B3"}`,
-          borderRadius: 8,
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          cursor: "default",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "none";
-          e.currentTarget.style.boxShadow = "none";
-        }}
-        >
-          <div style={{ fontSize: 9, color: monthStats.totalGlobal >= 0 ? C.greenText : C.redText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
-            Total Global
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: monthStats.totalGlobal >= 0 ? C.greenText : C.redText }}>
-            {fmt(monthStats.totalGlobal)}
-          </div>
+      {/* Resumen del mes visualizado */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", marginBottom: 6 }}>
+          Resumen del mes
         </div>
-
-        {/* Total Win Card */}
-        <div style={{
-          background: C.greenBg,
-          border: "0.5px solid #9FE1CB",
-          borderRadius: 8,
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          cursor: "default",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "none";
-          e.currentTarget.style.boxShadow = "none";
-        }}
-        >
-          <div style={{ fontSize: 9, color: C.greenText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
-            Total Win
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.greenText }}>
-            {fmt(monthStats.totalWin)}
-          </div>
-        </div>
-
-        {/* Total Lose Card */}
-        <div style={{
-          background: C.redBg,
-          border: "0.5px solid #F5C4B3",
-          borderRadius: 8,
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-          cursor: "default",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "none";
-          e.currentTarget.style.boxShadow = "none";
-        }}
-        >
-          <div style={{ fontSize: 9, color: C.redText, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
-            Total Lose
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.redText }}>
-            {fmt(monthStats.totalLose)}
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+          {[
+            { label: "PnL del Mes", value: monthStats.pnl, bg: monthStats.pnl >= 0 ? C.greenBg : C.redBg, border: monthStats.pnl >= 0 ? "#9FE1CB" : "#F5C4B3", col: monthStats.pnl >= 0 ? C.greenText : C.redText },
+            { label: "Ganado", value: monthStats.win, bg: C.greenBg, border: "#9FE1CB", col: C.greenText },
+            { label: "Perdido", value: monthStats.lose, bg: C.redBg, border: "#F5C4B3", col: C.redText },
+          ].map(card => (
+            <div key={card.label} style={{ background: card.bg, border: `0.5px solid ${card.border}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ fontSize: 9, color: card.col, opacity: 0.8, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>
+                {card.label}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: card.col, fontVariantNumeric: "tabular-nums" }}>
+                {fmt(card.value)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Global: histórico completo desde el primer trade */}
+      {calStats.global.days > 0 && (
+        <div style={{ marginTop: 14, background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px" }}>
+            Global · Desde el primer trade
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 0", marginTop: 8 }}>
+            {/* PnL total (hero) */}
+            <div style={{ paddingRight: 22 }}>
+              <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: calStats.global.pnl >= 0 ? C.greenText : C.redText }}>
+                {fmt(Math.round(calStats.global.pnl))}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>PnL Total</div>
+            </div>
+            {/* Win rate */}
+            <div style={{ padding: "0 22px", borderLeft: "1px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)" }}>
+                {calStats.global.winDays + calStats.global.loseDays > 0
+                  ? `${Math.round((calStats.global.winDays / (calStats.global.winDays + calStats.global.loseDays)) * 100)}%`
+                  : "—"}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>Win rate</div>
+            </div>
+            {/* Ganado / Perdido */}
+            <div style={{ padding: "0 22px", borderLeft: "1px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: C.green, opacity: 0.9 }}>{fmt(Math.round(calStats.global.win))}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: C.red, opacity: 0.9 }}>{fmt(Math.round(calStats.global.lose))}</div>
+            </div>
+            {/* Comisiones */}
+            <div style={{ padding: "0 22px", borderLeft: "1px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "var(--color-text-tertiary)" }}>
+                -${Math.round(calStats.global.comm).toLocaleString()}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>Comisiones</div>
+            </div>
+            {/* Días operados + rango */}
+            <div style={{ paddingLeft: 22, borderLeft: "1px solid var(--color-border-tertiary)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)" }}>
+                {calStats.global.days} días
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>
+                {calStats.global.first && calStats.global.last
+                  ? `${MONTH_NAMES[parseInt(calStats.global.first.slice(5, 7)) - 1].slice(0, 3)} ${calStats.global.first.slice(0, 4)} – ${MONTH_NAMES[parseInt(calStats.global.last.slice(5, 7)) - 1].slice(0, 3)} ${calStats.global.last.slice(0, 4)}`
+                  : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Historial mensual: una fila por mes con actividad, clic navega el calendario */}
+      {calStats.months.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", marginBottom: 4 }}>
+            Historial mensual
+          </div>
+          <div className="cal-hist-row" style={{ padding: "4px 8px" }}>
+            {["Mes", "PnL", "W/L", "Win rate", "Comisiones"].map((h, i) => (
+              <div key={h} className={i >= 3 ? "cal-hist-hide-sm" : undefined} style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", textAlign: i === 0 ? "left" : "right" }}>{h}</div>
+            ))}
+          </div>
+          {(() => {
+            const rows = [];
+            let lastYear = null;
+            calStats.months.forEach(([ym, m]) => {
+              const y = ym.slice(0, 4);
+              // Subtotal por año solo cuando hay varios años
+              if (calStats.multiYear && y !== lastYear) {
+                const yearPnl = calStats.months.filter(([k]) => k.startsWith(y)).reduce((s, [, v]) => s + v.pnl, 0);
+                rows.push(
+                  <div key={`y-${y}`} className="cal-hist-row" style={{ padding: "5px 8px", background: "var(--color-background-secondary)", borderRadius: 6, marginTop: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px" }}>{y}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", color: yearPnl >= 0 ? C.greenText : C.redText }}>{fmt(Math.round(yearPnl))}</div>
+                    <div /><div className="cal-hist-hide-sm" /><div className="cal-hist-hide-sm" />
+                  </div>
+                );
+                lastYear = y;
+              }
+              const active = ym === currentMonth;
+              const wr = m.winDays + m.loseDays > 0 ? Math.round((m.winDays / (m.winDays + m.loseDays)) * 100) : null;
+              const monthLabel = `${MONTH_NAMES[parseInt(ym.slice(5, 7)) - 1].slice(0, 3)} ${ym.slice(0, 4)}`;
+              rows.push(
+                <div
+                  key={ym}
+                  className="cal-hist-row"
+                  onClick={() => setCurrentMonth(ym)}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                  style={{
+                    padding: "7px 8px",
+                    borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    background: active ? "var(--color-background-secondary)" : "transparent",
+                    transition: "background-color 0.15s ease",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: active ? 600 : 400, color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                    {active && <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green, display: "inline-block", flexShrink: 0 }} />}
+                    {monthLabel}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: "tabular-nums", textAlign: "right", color: m.pnl >= 0 ? C.greenText : C.redText }}>{fmt(Math.round(m.pnl))}</div>
+                  <div style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: "var(--color-text-secondary)" }}>{m.winDays}/{m.loseDays}</div>
+                  <div className="cal-hist-hide-sm" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: "var(--color-text-secondary)" }}>{wr !== null ? `${wr}%` : "—"}</div>
+                  <div className="cal-hist-hide-sm" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: "var(--color-text-tertiary)" }}>-${Math.round(m.comm).toLocaleString()}</div>
+                </div>
+              );
+            });
+            return rows;
+          })()}
+        </div>
+      )}
     </div>
   );
 }
@@ -1506,6 +1572,9 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
     // La comisión se guarda siempre negativa pero se muestra en positivo
     const comm = parseLocaleFloat(initial.commission) || 0;
     initial.commission = comm === 0 ? "" : String(Math.abs(comm));
+    // El PnL se introduce en magnitud; el signo lo decide el selector Win/Loss
+    const pnlVal = parseLocaleFloat(initial.pnl) || 0;
+    initial.pnl = pnlVal === 0 ? "" : String(Math.abs(pnlVal));
     initial.balance = initial.balance === null || initial.balance === undefined ? "" : initial.balance;
     initial.threshold = initial.threshold === null || initial.threshold === undefined ? "" : initial.threshold;
     // Si las notas son las autogeneradas del resumen, se dejan vacías para no duplicarlas
@@ -1515,7 +1584,17 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
     return initial;
   });
 
+  // Signo del PnL: se elige con el selector Win/Loss en vez de escribir el menos
+  const [isLoss, setIsLoss] = useState(() => (parseLocaleFloat(trade?.pnl) || 0) < 0);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Si se escribe un negativo a mano, se pasa a Loss y se guarda la magnitud
+  const setPnl = (raw) => {
+    const cleaned = raw.replace(/[^0-9.,-]/g, "");
+    if (cleaned.includes("-")) setIsLoss(true);
+    setForm(f => ({ ...f, pnl: cleaned.replace(/-/g, "") }));
+  };
 
   const renderField = (label, field, type = "text", opts, placeholder) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1554,11 +1633,13 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       ? [{ value: form.account, label: form.account }, ...accounts]
       : [{ value: "", label: "Selecciona una cuenta" }, ...accounts];
 
-  const pnlPreview = parseLocaleFloat(form.pnl) || 0;
+  // El campo guarda la magnitud; el selector Win/Loss aplica el signo
+  const signedPnl = (isLoss ? -1 : 1) * Math.abs(parseLocaleFloat(form.pnl) || 0);
+  const pnlPreview = signedPnl;
   const commPreview = Math.abs(parseLocaleFloat(form.commission) || 0);
 
   const handleSave = () => {
-    const pnlNum = parseLocaleFloat(form.pnl) || 0;
+    const pnlNum = signedPnl;
     // La comisión SIEMPRE se guarda negativa
     const commNum = -Math.abs(parseLocaleFloat(form.commission) || 0);
     const balanceNum = form.balance === "" || form.balance === null || form.balance === undefined
@@ -1583,7 +1664,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       threshold: thresholdNum,
       notes,
       // Valores automáticos del formato "resumen diario" (no se preguntan)
-      result: pnlNum > 0 ? "Win" : "Loss",
+      result: isLoss ? "Loss" : "Win",
       instrument: "NQ",
       qty: 1,
       strategy: "Resumen diario",
@@ -1611,14 +1692,61 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 mb-2.5">
         {renderField("Fecha", "date", "date")}
         {renderField("Cuenta", "account", "text", accountOpts)}
-        {renderField("PnL neto ($)", "pnl", "number", null, "Ej: 417.46")}
+
+        {/* PnL: magnitud + selector de signo Win/Loss */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>PnL neto ($)</label>
+            <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+              {[
+                { loss: false, label: "Win", bg: C.greenBg, fg: C.greenText },
+                { loss: true, label: "Loss", bg: C.redBg, fg: C.redText },
+              ].map(o => {
+                const on = isLoss === o.loss;
+                return (
+                  <button
+                    key={o.label}
+                    type="button"
+                    onClick={() => setIsLoss(o.loss)}
+                    aria-pressed={on}
+                    style={{
+                      padding: "2px 9px",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      border: "none",
+                      cursor: "pointer",
+                      background: on ? o.bg : "transparent",
+                      color: on ? o.fg : "var(--color-text-tertiary)",
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 600, color: isLoss ? C.red : C.green, pointerEvents: "none" }}>
+              {isLoss ? "−" : "+"}
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Ej: 417.46"
+              value={form.pnl ?? ""}
+              onChange={e => setPnl(e.target.value)}
+              style={{ width: "100%", fontSize: 12, padding: "5px 8px 5px 20px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: isLoss ? C.red : C.green, fontWeight: 500 }}
+            />
+          </div>
+        </div>
+
         {renderField("Comisión ($)", "commission", "number", null, "Ej: 13")}
         {renderField("Balance cierre ($)", "balance", "number", null, "Ej: 25417")}
         {renderField("Umbral autoliq. / DD ($)", "threshold", "number", null, "Ej: 23917")}
       </div>
 
       <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
-        La comisión se guarda en negativo automáticamente · Bruto calculado: ${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · Resultado: {pnlPreview > 0 ? "Win" : "Loss"}
+        PnL a guardar: <strong style={{ color: isLoss ? C.red : C.green }}>{pnlPreview >= 0 ? "+" : "−"}${Math.abs(pnlPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> · Bruto: ${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · La comisión se guarda en negativo automáticamente
       </div>
 
       <div style={{ marginBottom: 12 }}>
