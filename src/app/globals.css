@@ -194,3 +194,16 @@ button:active {
     font-size: 16px !important;
   }
 }
+
+/* Calendario: L-V a ancho completo, S/D estrechos (no se opera en fin de
+   semana) y la columna SEMANA más ancha en escritorio. */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr) 0.55fr 0.55fr 1.4fr;
+  gap: 2px;
+}
+@media (max-width: 640px) {
+  .cal-grid {
+    grid-template-columns: repeat(5, 1fr) 0.45fr 0.45fr 1.15fr;
+  }
+}

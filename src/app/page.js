@@ -652,17 +652,73 @@ function MiniDonut({ wins, losses, size = 30 }) {
 }
 
 // ── KPI Card ────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color, spark, rightElement }) {
+function KpiCard({ label, value, sub, color, spark, rightElement, arrows }) {
   return (
     <div className="kpi-tile" style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "15px 16px", display: "flex", flexDirection: "column", minHeight: 96 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
         {rightElement && <span style={{ flexShrink: 0 }}>{rightElement}</span>}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: color || "var(--color-text-primary)" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>{sub}</div>}
+      {arrows ? (
+        // Navegación de periodo: flecha a cada lado con el valor centrado
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <PeriodArrowBtn dir="prev" enabled={arrows.canPrev} onClick={arrows.onPrev} />
+          <div style={{ flex: 1, textAlign: "center", fontSize: 28, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: color || "var(--color-text-primary)" }}>{value}</div>
+          <PeriodArrowBtn dir="next" enabled={arrows.canNext} onClick={arrows.onNext} />
+        </div>
+      ) : (
+        <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: color || "var(--color-text-primary)" }}>{value}</div>
+      )}
+      {sub && <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 6, fontVariantNumeric: "tabular-nums", textAlign: arrows ? "center" : undefined }}>{sub}</div>}
       {spark && <div style={{ marginTop: "auto", paddingTop: 10 }}><Sparkline data={spark} color={color || C.blue} height={26} /></div>}
     </div>
+  );
+}
+
+// ── Catálogo de planes de propfirm ───────────────────────────────────────────
+// Specs oficiales (bulenox.com/help, support.lucidtrading.com). El umbral es el
+// INICIAL: a partir del primer día operado manda el que traiga el registro diario.
+// safetyReserve = saldo mínimo que debe quedar para poder retirar.
+const PROPFIRM_PLANS = {
+  Bulenox: [
+    { id: "bx-t-25", label: "25K · Opción 1 (Trailing DD)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%" },
+    { id: "bx-t-50", label: "50K · Opción 1 (Trailing DD)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%" },
+    { id: "bx-e-25", label: "25K · Opción 2 (EOD + límite diario)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%", daily_limit: 500 },
+    { id: "bx-e-50", label: "50K · Opción 2 (EOD + límite diario)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%", daily_limit: 1100 },
+  ],
+  Lucid: [
+    { id: "lp-25", label: "25K · LucidPro", size: 25000, target: 1250, dd_limit: 1000, threshold: 24000, safetyReserve: 26100, maxContracts: 2, consistency: "40%" },
+    { id: "lp-50", label: "50K · LucidPro", size: 50000, target: 3000, dd_limit: 2000, threshold: 48000, safetyReserve: 52100, maxContracts: 4, consistency: "40%", daily_limit: 1200 },
+  ],
+};
+
+// ── Flecha de periodo para KPIs navegables (una a cada lado del valor) ──────
+function PeriodArrowBtn({ dir, enabled, onClick }) {
+  return (
+    <button
+      aria-label={dir === "prev" ? "Mes anterior" : "Mes siguiente"}
+      disabled={!enabled}
+      onClick={onClick}
+      style={{
+        width: 28,
+        height: 28,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 20,
+        lineHeight: 1,
+        background: "none",
+        border: "none",
+        borderRadius: 8,
+        cursor: enabled ? "pointer" : "default",
+        color: "var(--color-text-tertiary)",
+        opacity: enabled ? 1 : 0.25,
+        padding: 0,
+      }}
+      onMouseEnter={(e) => { if (enabled) { e.currentTarget.style.color = "var(--color-text-secondary)"; e.currentTarget.style.background = "var(--color-background-primary)"; } }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--color-text-tertiary)"; e.currentTarget.style.background = "none"; }}
+    >{dir === "prev" ? "‹" : "›"}</button>
   );
 }
 
@@ -702,7 +758,16 @@ function AccountCard({ account, rules, trades }) {
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .map(t => ({ date: t.date, balance: Number(t.balance) }));
 
-  const currentValue = activeRules.balance ?? (balanceSeries.length ? balanceSeries[balanceSeries.length - 1].balance : finalBalance);
+  // El día operado más reciente manda: balance y umbral se toman de ahí y solo
+  // se cae al valor guardado en la cuenta cuando todavía no hay trades.
+  const lastDay = [...trades]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .filter(t => t.balance !== null && t.balance !== undefined && !isNaN(t.balance))
+    .pop();
+  const currentValue = lastDay ? Number(lastDay.balance) : (activeRules.balance ?? finalBalance);
+  const liveThreshold = (lastDay && lastDay.threshold !== null && lastDay.threshold !== undefined && !isNaN(lastDay.threshold))
+    ? Number(lastDay.threshold)
+    : activeRules.threshold;
   const baseSize = activeRules.startSize ?? activeRules.size;
   const safety = activeRules.safetyReserve;
   const hasSafety = safety !== null && safety !== undefined && !isNaN(safety);
@@ -712,17 +777,16 @@ function AccountCard({ account, rules, trades }) {
   const objectiveLevel = hasSafety ? null : (baseSize + (activeRules.target || 0));
 
   // Margen restante desde el valor actual hasta el umbral de liquidación (DD)
-  const ddDistance = activeRules.threshold ? currentValue - activeRules.threshold : null;
+  const ddDistance = liveThreshold ? currentValue - liveThreshold : null;
 
   const fichaItems = [
     { key: "valor", label: "Valor", value: `$${Math.round(currentValue).toLocaleString()}`, color: currentValue >= baseSize ? C.green : C.red },
     { key: "margenDd", label: "Margen a DD", value: ddDistance !== null ? `$${Math.round(ddDistance).toLocaleString()}` : "—", color: ddDistance === null ? undefined : ddDistance <= 400 ? C.red : ddDistance <= 800 ? C.amber : C.green },
-    { key: "umbral", label: "Umbral DD", value: activeRules.threshold ? `$${Math.round(activeRules.threshold).toLocaleString()}` : "—", color: C.red },
+    { key: "umbral", label: "Umbral DD", value: liveThreshold ? `$${Math.round(liveThreshold).toLocaleString()}` : "—", color: C.red },
     hasSafety
       ? { key: "safety", label: "Safety", value: `$${Math.round(safety).toLocaleString()}`, color: C.green, badge: canWithdraw ? "Retiros ✓" : null }
       : { key: "objetivo", label: "Objetivo", value: `$${Math.round(objectiveLevel).toLocaleString()}` },
-    { key: "dias", label: "Días de trade", value: `${activeRules.activeDays ?? uniqueDays}` },
-    { key: "act", label: "Últ. act.", value: activeRules.updateDate || "—" },
+    { key: "dias", label: "Días de trade", value: `${uniqueDays || activeRules.activeDays || 0}` },
   ];
 
   return (
@@ -859,7 +923,7 @@ function AccountCard({ account, rules, trades }) {
             </div>
             <AccountSparkline
               series={balanceSeries}
-              threshold={activeRules.threshold}
+              threshold={liveThreshold}
               safety={activeRules.safetyReserve}
               objective={objectiveLevel}
             />
@@ -1302,13 +1366,13 @@ function CalendarWidget({ trades }) {
       </div>
 
       <div className="scroll-fade-container" style={{ overflowX: "auto", paddingBottom: 4 }}>
-        <div style={{ minWidth: 520 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2, marginBottom: 4 }}>
+        <div style={{ minWidth: 440 }}>
+          <div className="cal-grid" style={{ marginBottom: 4 }}>
             {dayLabels.map((d, i) => (
               <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? "#BA7517" : d === "SEMANA" ? "#854F0B" : "var(--color-text-tertiary)", padding: "2px 0" }}>{d}</div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 2 }}>
+          <div className="cal-grid">
             {weeks.map((week, wIdx) => {
               let weekPnl = 0;
               let weekTrades = 0;
@@ -1834,12 +1898,40 @@ function SettingsPanel({
 }) {
   // Campos del RESUMEN DE CUENTAS de Bulenox. size / daily_limit / startSize
   // no se piden en el formulario: se envían con valores internos por defecto.
-  const EMPTY_ACCT = { name: "", propfirm: "Bulenox", target: 3000, dd_limit: 2500, status: "ACTIVE", type: "EXAMEN", balance: "", threshold: "", activeDays: "", safetyReserve: "", bestPnlDay: "", consistency: "" };
+  const DEFAULT_PLAN = PROPFIRM_PLANS.Bulenox[0];
+  const EMPTY_ACCT = {
+    name: "", propfirm: "Bulenox", status: "ACTIVE", type: "EXAMEN",
+    size: DEFAULT_PLAN.size, startSize: DEFAULT_PLAN.size, target: DEFAULT_PLAN.target,
+    dd_limit: DEFAULT_PLAN.dd_limit, threshold: DEFAULT_PLAN.threshold,
+    safetyReserve: DEFAULT_PLAN.safetyReserve, maxContracts: DEFAULT_PLAN.maxContracts,
+    consistency: DEFAULT_PLAN.consistency, daily_limit: DEFAULT_PLAN.daily_limit ?? 0,
+  };
   const [newAcct, setNewAcct] = useState(EMPTY_ACCT);
   // Propfirms conocidas + las que existan ya en cuentas del usuario
   const [newPfCustom, setNewPfCustom] = useState(false);
   const [editPfCustom, setEditPfCustom] = useState(false);
+  const [newPlanId, setNewPlanId] = useState(DEFAULT_PLAN.id);
+  const [editPlanId, setEditPlanId] = useState("");
+  const [showNewPlanDetails, setShowNewPlanDetails] = useState(false);
   const propfirmOpts = [...new Set(["Bulenox", "Lucid", ...accountsList.map(a => a.propfirm).filter(Boolean)])];
+
+  // Vuelca los parámetros de riesgo del plan elegido sobre la cuenta en edición
+  const applyPlan = (planId, propfirm, current, setter) => {
+    const plan = (PROPFIRM_PLANS[propfirm] || []).find(p => p.id === planId);
+    if (!plan) return;
+    setter({
+      ...current,
+      size: plan.size,
+      startSize: plan.size,
+      target: plan.target,
+      dd_limit: plan.dd_limit,
+      threshold: plan.threshold,
+      safetyReserve: plan.safetyReserve,
+      maxContracts: plan.maxContracts,
+      consistency: plan.consistency,
+      daily_limit: plan.daily_limit ?? 0,
+    });
+  };
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
@@ -2050,18 +2142,9 @@ function SettingsPanel({
       return;
     }
     try {
-      // Valores internos por defecto (no se piden en el formulario)
-      const balanceNum = newAcct.balance === "" || newAcct.balance === null ? null : parseFloat(newAcct.balance);
-      const payload = {
-        ...newAcct,
-        size: balanceNum || 25000,
-        daily_limit: 0,
-        startSize: 25000,
-        // Las cuentas REAL de 25K llevan reserva de seguridad 26600 por defecto
-        safetyReserve: newAcct.safetyReserve !== "" && newAcct.safetyReserve !== null
-          ? newAcct.safetyReserve
-          : (newAcct.type === "REAL" ? 26600 : ""),
-      };
+      // size/startSize salen del plan elegido. El balance no se pide: arranca en
+      // el nominal y a partir del primer día operado manda el registro diario.
+      const payload = { ...newAcct, balance: newAcct.size };
       const res = await fetch("/api/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2070,6 +2153,8 @@ function SettingsPanel({
       if (res.ok) {
         setNewAcct(EMPTY_ACCT);
         setNewPfCustom(false);
+        setNewPlanId(DEFAULT_PLAN.id);
+        setShowNewPlanDetails(false);
         setAcctError("");
         fetchAccounts();
       } else {
@@ -2266,15 +2351,22 @@ function SettingsPanel({
                       />
                     )}
                   </div>
+                  <select
+                    value={editPlanId}
+                    onChange={e => { setEditPlanId(e.target.value); applyPlan(e.target.value, editAcct.propfirm, editAcct, setEditAcct); }}
+                    disabled={!(PROPFIRM_PLANS[editAcct.propfirm] || []).length}
+                    style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${editPlanId ? C.blue : "var(--color-border-secondary)"}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", opacity: (PROPFIRM_PLANS[editAcct.propfirm] || []).length ? 1 : 0.5 }}
+                  >
+                    <option value="">{(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes"}</option>
+                    {(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
                   {[
                     ["Objetivo ($)", "target", "number"],
                     ["DD máximo ($)", "dd_limit", "number"],
-                    ["Balance ($)", "balance", "number"],
                     ["Umbral autoliq. ($)", "threshold", "number"],
                     ["Reserva safety ($)", "safetyReserve", "number"],
-                    ["Mejor día PnL", "bestPnlDay", "text"],
+                    ["Max. contratos", "maxContracts", "int"],
                     ["Consistencia", "consistency", "text"],
-                    ["Días activos", "activeDays", "int"],
                   ].map(([ph, field, kind]) => (
                     <input
                       key={field}
@@ -2322,7 +2414,7 @@ function SettingsPanel({
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); setEditPfCustom(false); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
+                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); setEditPfCustom(false); setEditPlanId(""); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
                     <button onClick={() => handleDeleteAccount(a.id)} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: C.red, cursor: "pointer" }}>✕ Borrar</button>
                   </div>
                 </>
@@ -2334,69 +2426,97 @@ function SettingsPanel({
         <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12, marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-            {[
-              ["Nombre de Cuenta", "name", "text", "Ej: BX101840-14"],
-              ["Propfirm", "propfirm", "propfirm"],
-              ["Tipo de Cuenta", "type", "select"],
-              ["Objetivo de Ganancia ($)", "target", "number", "Ej: 1500"],
-              ["DD Máximo ($)", "dd_limit", "number", "Ej: 1500"],
-              ["Balance ($)", "balance", "number", "Ej: 25105.66"],
-              ["Umbral Autoliq. ($)", "threshold", "number", "Ej: 23797.83"],
-              ["Reserva Safety ($)", "safetyReserve", "number", "Ej: 26600"],
-              ["Mejor Día PnL", "bestPnlDay", "text", "Ej: $417.46 (06/11/26)"],
-              ["Consistencia", "consistency", "text", "Ej: 87%"],
-              ["Días Activos", "activeDays", "int", "Ej: 12"],
-            ].map(([label, field, kind, placeholder]) => (
-              <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>{label}</label>
-                {kind === "select" ? (
-                  <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({...newAcct, type: e.target.value})} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                    <option value="EXAMEN">Examen 📝</option>
-                    <option value="REAL">Real 💼</option>
-                  </select>
-                ) : kind === "propfirm" ? (
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <select
-                      value={newPfCustom ? "__custom__" : (newAcct.propfirm || "Bulenox")}
-                      onChange={e => {
-                        if (e.target.value === "__custom__") { setNewPfCustom(true); setNewAcct({ ...newAcct, propfirm: "" }); }
-                        else { setNewPfCustom(false); setNewAcct({ ...newAcct, propfirm: e.target.value }); }
-                      }}
-                      style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
-                    >
-                      {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
-                      <option value="__custom__">➕ Otra…</option>
-                    </select>
-                    {newPfCustom && (
-                      <input
-                        type="text"
-                        placeholder="Nombre de la propfirm"
-                        value={newAcct.propfirm ?? ""}
-                        onChange={e => setNewAcct({ ...newAcct, propfirm: e.target.value })}
-                        autoFocus
-                        style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <input
-                    type={kind === "text" ? "text" : "number"}
-                    placeholder={placeholder}
-                    value={newAcct[field] ?? ""}
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (kind === "text") setNewAcct({...newAcct, [field]: v});
-                      else if (kind === "int") setNewAcct({...newAcct, [field]: v === "" ? "" : parseInt(v)});
-                      else setNewAcct({...newAcct, [field]: v === "" ? "" : parseFloat(v)});
-                    }}
-                    style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                  />
+            {/* Nombre */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
+              <input type="text" placeholder="Ej: BX101840-14" value={newAcct.name ?? ""} onChange={e => setNewAcct({ ...newAcct, name: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            {/* Tipo */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Tipo de Cuenta</label>
+              <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({ ...newAcct, type: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                <option value="EXAMEN">Examen 📝</option>
+                <option value="REAL">Real 💼</option>
+              </select>
+            </div>
+            {/* Propfirm */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Propfirm</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                <select
+                  value={newPfCustom ? "__custom__" : (newAcct.propfirm || "Bulenox")}
+                  onChange={e => {
+                    if (e.target.value === "__custom__") { setNewPfCustom(true); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: "" }); }
+                    else { setNewPfCustom(false); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: e.target.value }); }
+                  }}
+                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                >
+                  {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+                  <option value="__custom__">➕ Otra…</option>
+                </select>
+                {newPfCustom && (
+                  <input type="text" placeholder="Nombre de la propfirm" value={newAcct.propfirm ?? ""} onChange={e => setNewAcct({ ...newAcct, propfirm: e.target.value })} autoFocus style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
                 )}
               </div>
-            ))}
+            </div>
+            {/* Plan: rellena solo los parámetros de riesgo */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Plan / Tamaño</label>
+              <select
+                value={newPlanId}
+                onChange={e => { setNewPlanId(e.target.value); applyPlan(e.target.value, newAcct.propfirm, newAcct, setNewAcct); }}
+                disabled={!(PROPFIRM_PLANS[newAcct.propfirm] || []).length}
+                style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${newPlanId ? C.blue : "var(--color-border-secondary)"}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", opacity: (PROPFIRM_PLANS[newAcct.propfirm] || []).length ? 1 : 0.5 }}
+              >
+                <option value="">{(PROPFIRM_PLANS[newAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes para esta propfirm"}</option>
+                {(PROPFIRM_PLANS[newAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Parámetros aplicados por el plan — editables si hace falta */}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              onClick={() => setShowNewPlanDetails(v => !v)}
+              style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >
+              {showNewPlanDetails ? "▾" : "▸"} Parámetros del plan
+            </button>
+            {!showNewPlanDetails && (
+              <span style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginLeft: 8 }}>
+                Obj ${(newAcct.target || 0).toLocaleString()} · DD ${(newAcct.dd_limit || 0).toLocaleString()} · Umbral ${(newAcct.threshold || 0).toLocaleString()}
+              </span>
+            )}
+            {showNewPlanDetails && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                {[
+                  ["Objetivo ($)", "target", "number"],
+                  ["DD máximo ($)", "dd_limit", "number"],
+                  ["Umbral inicial ($)", "threshold", "number"],
+                  ["Reserva safety ($)", "safetyReserve", "number"],
+                  ["Max. contratos", "maxContracts", "int"],
+                  ["Consistencia", "consistency", "text"],
+                ].map(([label, field, kind]) => (
+                  <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>{label}</label>
+                    <input
+                      type={kind === "text" ? "text" : "number"}
+                      value={newAcct[field] ?? ""}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (kind === "text") setNewAcct({ ...newAcct, [field]: v });
+                        else if (kind === "int") setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseInt(v) });
+                        else setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseFloat(v) });
+                      }}
+                      style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginBottom: 8 }}>
-            El tamaño base ($25K) y el límite diario se aplican automáticamente. Las cuentas REAL de 25K usan una reserva safety de $26.600 por defecto.
+            Balance, días operados y mejor día se calculan solos a partir de los trades que vayas registrando.
           </div>
           <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
             + Crear Cuenta
@@ -2526,7 +2646,7 @@ function SettingsPanel({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Versión de la App</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v3.0</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v4.0</div>
             </div>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Despliegue en Vercel</div>
@@ -2836,7 +2956,7 @@ export default function App() {
   const [imageImportLoading, setImageImportLoading] = useState(false);
   const [deployId, setDeployId] = useState("");
 
-  const PER_PAGE = 20;
+  const PER_PAGE = 10;
   const isSettingsLoaded = useRef(false);
 
   // Load clientside options on mount
@@ -3795,14 +3915,53 @@ export default function App() {
   const stats = useMemo(() => calcStats(filtered), [filtered]);
 
   // Comisiones del mes corriente + media por día de trade (periodo = mes actual)
-  const commissionMonth = useMemo(() => {
-    const ym = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-    const monthTrades = filtered.filter(t => (t.date || "").slice(0, 7) === ym);
-    const total = monthTrades.reduce((s, t) => s + Math.abs(t.commission || 0), 0);
-    const days = new Set(monthTrades.map(t => t.date)).size;
+  // Periodo de los KPIs de comisiones (compartido por ambos tiles):
+  // null = auto (mes corriente o último con datos), "TOTAL" = global, "YYYY-MM" = mes concreto
+  const [commPeriod, setCommPeriod] = useState(null);
+
+  const commissionStats = useMemo(() => {
+    // Meses con datos, ascendente. La secuencia navegable es [...months, "TOTAL"]
+    const months = [...new Set(filtered.map(t => normalizeDateToYYYYMMDD(t.date).slice(0, 7)))].sort();
+    const now = new Date();
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const fallback = months.includes(currentYm) ? currentYm : (months[months.length - 1] ?? currentYm);
+    // Si el periodo elegido dejó de existir (cambio de filtro de cuenta), volver a auto
+    const period = commPeriod === "TOTAL" || (commPeriod && months.includes(commPeriod)) ? commPeriod : fallback;
+
+    const subset = period === "TOTAL"
+      ? filtered
+      : filtered.filter(t => normalizeDateToYYYYMMDD(t.date).slice(0, 7) === period);
+    const total = subset.reduce((s, t) => s + Math.abs(t.commission || 0), 0);
+    const days = new Set(subset.map(t => normalizeDateToYYYYMMDD(t.date))).size;
     const perDay = days ? total / days : 0;
-    const label = new Date(ym + "-01T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" });
-    return { total, days, perDay, label };
+    const label = period === "TOTAL"
+      ? "Total"
+      : new Date(period + "-01T00:00:00").toLocaleDateString("es-ES", { month: "short", year: "numeric" });
+
+    const idx = period === "TOTAL" ? months.length : months.indexOf(period);
+    const prev = idx > 0 ? months[idx - 1] : null;
+    const next = idx < months.length ? (months[idx + 1] ?? "TOTAL") : null;
+    return { total, days, perDay, label, period, prev, next };
+  }, [filtered, commPeriod]);
+
+  // Rachas de días TP/SL consecutivos sobre la secuencia de días operados.
+  // Se agrega por fecha (multi-cuenta) y un día en 0 rompe ambas rachas.
+  const streaks = useMemo(() => {
+    const dayMap = new Map();
+    filtered.forEach(t => {
+      const d = normalizeDateToYYYYMMDD(t.date);
+      dayMap.set(d, (dayMap.get(d) || 0) + (t.pnl || 0));
+    });
+    const dailyPnls = [...dayMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, pnl]) => pnl);
+    let curW = 0, curL = 0, maxW = 0, maxL = 0;
+    dailyPnls.forEach(pnl => {
+      if (pnl > 0) { curW++; curL = 0; }
+      else if (pnl < 0) { curL++; curW = 0; }
+      else { curW = 0; curL = 0; }
+      maxW = Math.max(maxW, curW);
+      maxL = Math.max(maxL, curL);
+    });
+    return { maxWin: maxW, maxLoss: maxL, curWin: curW, curLoss: curL };
   }, [filtered]);
 
   const accounts = useMemo(() => accountsList.map(a => a.name), [accountsList]);
@@ -3907,14 +4066,37 @@ export default function App() {
     }
     if (mod.id === "kpis") return (
       <Module key={mod.id} {...props}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
           <KpiCard label="Net P&L" value={fmt(Math.round(trueNetPnl))} color={trueNetPnl >= 0 ? C.green : C.red} spark={equitySpark} />
           <KpiCard label="Win rate" value={`${fmtN(stats.wr || 0, 1)}%`} sub={`${stats.wins || 0}W · ${stats.losses || 0}L`} color={(stats.wr || 0) >= 50 ? C.green : C.red} rightElement={<MiniDonut wins={stats.wins || 0} losses={stats.losses || 0} />} />
           <KpiCard label="Trade mayor" value={fmt(Math.round(stats.maxWin || 0))} color={C.green} />
           <KpiCard label="Trade menor" value={fmt(Math.round(stats.maxLoss || 0))} color={C.red} />
           <KpiCard label="Profit factor" value={fmtN(stats.pf || 0, 2)} color={(stats.pf || 0) >= 1 ? C.green : C.red} />
-          <KpiCard label="Comisiones (mes)" value={`-$${Math.round(commissionMonth.total).toLocaleString()}`} color={C.red} sub={commissionMonth.label} />
-          <KpiCard label="Comis./día trade" value={`-$${fmtN(commissionMonth.perDay, 1)}`} color={C.red} sub={`${commissionMonth.days} días de trade`} />
+          <KpiCard
+            label="Comisiones"
+            value={`-$${Math.round(commissionStats.total).toLocaleString()}`}
+            color={C.red}
+            sub={commissionStats.label}
+            arrows={{ canPrev: !!commissionStats.prev, canNext: !!commissionStats.next, onPrev: () => commissionStats.prev && setCommPeriod(commissionStats.prev), onNext: () => commissionStats.next && setCommPeriod(commissionStats.next) }}
+          />
+          <KpiCard
+            label="Comis./día trade"
+            value={`-$${fmtN(commissionStats.perDay, 1)}`}
+            color={C.red}
+            sub={`${commissionStats.days} días de trade · ${commissionStats.label}`}
+            arrows={{ canPrev: !!commissionStats.prev, canNext: !!commissionStats.next, onPrev: () => commissionStats.prev && setCommPeriod(commissionStats.prev), onNext: () => commissionStats.next && setCommPeriod(commissionStats.next) }}
+          />
+          <KpiCard
+            label="Racha máx. (días)"
+            value={
+              <span>
+                <span style={{ color: C.green }}>{streaks.maxWin}W</span>
+                <span style={{ color: "var(--color-text-tertiary)", fontSize: 18, fontWeight: 500, margin: "0 6px" }}>/</span>
+                <span style={{ color: C.red }}>{streaks.maxLoss}L</span>
+              </span>
+            }
+            sub={streaks.curWin > 0 ? `Actual: ${streaks.curWin} ganando` : streaks.curLoss > 0 ? `Actual: ${streaks.curLoss} perdiendo` : "Sin racha activa"}
+          />
         </div>
       </Module>
     );
@@ -4146,7 +4328,7 @@ export default function App() {
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
             <span>📈 Trading Journal</span>
             <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>
-              v3.0 {deployId && `(${deployId})`}
+              v4.0 {deployId && `(${deployId})`}
             </span>
             <button
               onClick={async () => {
