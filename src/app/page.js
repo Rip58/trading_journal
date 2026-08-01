@@ -675,6 +675,20 @@ function KpiCard({ label, value, sub, color, spark, rightElement, arrows }) {
   );
 }
 
+// ── Fases del plan de trading (Sopi Plus) ────────────────────────────────────
+// El "colchón" es el margen desde el saldo hasta el umbral de liquidación.
+// Se calcula con el cierre del último día operado, nunca intradía.
+const PHASES = [
+  { n: 1, name: "Supervivencia", min: 0, max: 500, contracts: 1, sl: 84, tp: 100, color: "red" },
+  { n: 2, name: "Reconstrucción", min: 500, max: 1000, contracts: 2, sl: 167, tp: 200, color: "amber" },
+  { n: 3, name: "Normal", min: 1000, max: Infinity, contracts: 3, sl: 250, tp: 300, color: "green" },
+];
+
+function getPhase(cushion) {
+  if (cushion === null || cushion === undefined || isNaN(cushion)) return null;
+  return PHASES.find(p => cushion >= p.min && cushion < p.max) || PHASES[0];
+}
+
 // ── Catálogo de planes de propfirm ───────────────────────────────────────────
 // Specs oficiales (bulenox.com/help, support.lucidtrading.com). El umbral es el
 // INICIAL: a partir del primer día operado manda el que traiga el registro diario.
@@ -779,6 +793,14 @@ function AccountCard({ account, rules, trades }) {
   // Margen restante desde el valor actual hasta el umbral de liquidación (DD)
   const ddDistance = liveThreshold ? currentValue - liveThreshold : null;
 
+  // Fase del plan según el colchón, con el cierre del último día registrado.
+  // Ese cierre es la base de la PRÓXIMA sesión: el plan prohíbe recalcular intradía.
+  const phase = getPhase(ddDistance);
+  const phaseColor = phase ? C[phase.color] : "var(--color-text-tertiary)";
+  const phaseBg = phase ? (phase.color === "amber" ? "#FDF3E2" : C[phase.color + "Bg"]) : "var(--color-background-secondary)";
+  const phaseText = phase ? (phase.color === "amber" ? "#8A5A0B" : C[phase.color + "Text"]) : "var(--color-text-secondary)";
+  const phaseBasis = lastDay?.date || null;
+
   const fichaItems = [
     { key: "valor", label: "Valor", value: `$${Math.round(currentValue).toLocaleString()}`, color: currentValue >= baseSize ? C.green : C.red },
     { key: "margenDd", label: "Margen a DD", value: ddDistance !== null ? `$${Math.round(ddDistance).toLocaleString()}` : "—", color: ddDistance === null ? undefined : ddDistance <= 400 ? C.red : ddDistance <= 800 ? C.amber : C.green },
@@ -855,6 +877,11 @@ function AccountCard({ account, rules, trades }) {
               {activeRules.type === "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 600 }}>Real 💼</span>}
               {activeRules.type !== "REAL" && !isClosed && !isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 600 }}>Examen 📝</span>}
               {activeRules.propfirm && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>{activeRules.propfirm}</span>}
+              {phase && !isClosed && !isBurned && (
+                <span title={`Fase ${phase.n} · ${phase.name} — colchón $${Math.round(ddDistance).toLocaleString()}`} style={{ fontSize: 9, padding: "1.5px 6px", borderRadius: 4, background: phaseBg, color: phaseText, fontWeight: 700, letterSpacing: ".2px" }}>
+                  FASE {phase.n} · {phase.contracts} MNQ
+                </span>
+              )}
               {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada 🔒</span>}
               {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
             </div>
@@ -915,6 +942,50 @@ function AccountCard({ account, rules, trades }) {
               </div>
             ))}
           </div>
+
+          {/* Medidor de fase del plan de trading */}
+          {phase && (
+            <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px" }}>
+                  Fase del plan
+                </div>
+                <div style={{ fontSize: 9, color: "var(--color-text-tertiary)" }}>
+                  Colchón <strong style={{ color: phaseColor, fontVariantNumeric: "tabular-nums" }}>${Math.round(ddDistance).toLocaleString()}</strong>
+                  {phaseBasis && ` · cierre ${phaseBasis}`}
+                </div>
+              </div>
+
+              {/* Barra segmentada: un tramo por fase, el activo resaltado */}
+              <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                {PHASES.map(p => {
+                  const active = p.n === phase.n;
+                  const col = C[p.color];
+                  return (
+                    <div key={p.n} style={{ flex: p.n === 3 ? 1.4 : 1 }}>
+                      <div style={{ height: 6, borderRadius: 3, background: active ? col : "var(--color-border-tertiary)", opacity: active ? 1 : 0.45 }} />
+                      <div style={{ fontSize: 8.5, marginTop: 4, color: active ? col : "var(--color-text-tertiary)", fontWeight: active ? 700 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        F{p.n} {p.n === 1 ? "<$500" : p.n === 2 ? "$500-999" : "≥$1.000"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Reglas de la fase activa: lo que hay que aplicar hoy */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: 8, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: phaseBg, color: phaseText }}>
+                  FASE {phase.n} · {phase.name.toUpperCase()}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                  {phase.contracts} MNQ
+                </span>
+                <span style={{ fontSize: 11, color: C.red, fontVariantNumeric: "tabular-nums" }}>SL ${phase.sl}</span>
+                <span style={{ fontSize: 11, color: C.green, fontVariantNumeric: "tabular-nums" }}>TP ${phase.tp}</span>
+                <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>1 trade/día</span>
+              </div>
+            </div>
+          )}
 
           {/* Evolución del balance diario */}
           <div style={{ background: "var(--color-background-secondary)", borderRadius: 12, padding: "12px 14px" }}>
@@ -2646,7 +2717,7 @@ function SettingsPanel({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Versión de la App</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v4.0</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v4.1</div>
             </div>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Despliegue en Vercel</div>
@@ -4328,7 +4399,7 @@ export default function App() {
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
             <span>📈 Trading Journal</span>
             <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>
-              v4.0 {deployId && `(${deployId})`}
+              v4.1 {deployId && `(${deployId})`}
             </span>
             <button
               onClick={async () => {
@@ -4349,8 +4420,17 @@ export default function App() {
             >
               🔄
             </button>
+            {/* En iOS Safari un <a target="_blank"> abre el PDF en el visor nativo */}
+            <a
+              href="/plan-trading-nq.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Abrir el plan de trading (PDF)"
+              style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: C.blueBg, color: C.blueText, border: `0.5px solid ${C.blue}`, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              📄 Plan
+            </a>
           </h1>
-          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 }}>NQ Futures · Bulenox · {trades.length} trades</div>
         </div>
         <div className="flex flex-col md:flex-row items-center gap-2.5 w-full md:w-auto">
           {/* Botones de control (Dashboard, Ajustes, Editar layout, Login) encima en móvil, a la derecha en desktop */}
