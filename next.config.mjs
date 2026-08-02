@@ -20,6 +20,19 @@ const nextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // Sin Content-Disposition explícito, varios navegadores descargan el PDF en
+  // vez de mostrarlo. `inline` les pide abrirlo en el visor integrado.
+  async headers() {
+    return [
+      {
+        source: '/plan-trading-nq.pdf',
+        headers: [
+          { key: 'Content-Type', value: 'application/pdf' },
+          { key: 'Content-Disposition', value: 'inline; filename="plan-trading-nq.pdf"' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

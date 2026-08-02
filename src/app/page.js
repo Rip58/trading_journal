@@ -232,11 +232,14 @@ const ALL_MODULES = [
 
 const DEFAULT_LAYOUT = ALL_MODULES.map(m => m.id);
 
+// Los acentos van por variable CSS para poder recolorearlos por contexto
+// (p. ej. la hoja de ajustes dentro del dashboard V2, que va en oscuro).
+// Los valores por defecto están en globals.css y son los de siempre.
 const C = {
-  green: "#1D9E75", red: "#D85A30", blue: "#378ADD",
-  amber: "#EF9F27", gray: "#888780",
-  greenBg: "#E1F5EE", redBg: "#FAECE7", blueBg: "#E6F1FB",
-  greenText: "#0F6E56", redText: "#993C1D", blueText: "#185FA5",
+  green: "var(--c-green)", red: "var(--c-red)", blue: "var(--c-blue)",
+  amber: "var(--c-amber)", gray: "var(--c-gray)",
+  greenBg: "var(--c-green-bg)", redBg: "var(--c-red-bg)", blueBg: "var(--c-blue-bg)",
+  greenText: "var(--c-green-text)", redText: "var(--c-red-text)", blueText: "var(--c-blue-text)",
 };
 
 const fmt = (v) => (v >= 0 ? "+$" : "-$") + Math.abs(Math.round(v)).toLocaleString();
@@ -513,15 +516,17 @@ function Sparkline({ data, color, height = 40 }) {
     return `${x},${y}`;
   });
   const zeroY = h - ((0 - min) / range) * (h - 4) - 2;
+  // El id se sanea: el color puede ser un var(--…) y los paréntesis romperían url(#…)
+  const gid = `sg${String(color).replace(/[^a-zA-Z0-9]/g, "")}`;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height }} preserveAspectRatio="none">
       <defs>
-        <linearGradient id={`sg${color.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
-      <path d={`M${pts.join("L")}L${w},${h}L0,${h}Z`} fill={`url(#sg${color.replace("#","")})`} />
+      <path d={`M${pts.join("L")}L${w},${h}L0,${h}Z`} fill={`url(#${gid})`} />
       <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.5" />
       {min < 0 && max > 0 && <line x1="0" y1={zeroY} x2={w} y2={zeroY} stroke="rgba(128,128,128,0.3)" strokeWidth="0.5" strokeDasharray="3,3" />}
     </svg>
@@ -689,6 +694,21 @@ function getPhase(cushion) {
   return PHASES.find(p => cushion >= p.min && cushion < p.max) || PHASES[0];
 }
 
+// Colchón de una cuenta a partir del cierre del último día operado.
+// Única fuente de verdad: la usan la ficha de cuenta y la verificación de fases.
+function computeCushion(account, accountTrades, fallbackBalance) {
+  const lastDay = [...accountTrades]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .filter(t => t.balance !== null && t.balance !== undefined && !isNaN(t.balance))
+    .pop();
+  const balance = lastDay ? Number(lastDay.balance) : (account.balance ?? fallbackBalance);
+  const threshold = (lastDay && lastDay.threshold !== null && lastDay.threshold !== undefined && !isNaN(lastDay.threshold))
+    ? Number(lastDay.threshold)
+    : account.threshold;
+  const cushion = threshold ? balance - threshold : null;
+  return { balance, threshold, cushion, basis: lastDay?.date || null };
+}
+
 // ── Catálogo de planes de propfirm ───────────────────────────────────────────
 // Specs oficiales (bulenox.com/help, support.lucidtrading.com). El umbral es el
 // INICIAL: a partir del primer día operado manda el que traiga el registro diario.
@@ -774,14 +794,9 @@ function AccountCard({ account, rules, trades }) {
 
   // El día operado más reciente manda: balance y umbral se toman de ahí y solo
   // se cae al valor guardado en la cuenta cuando todavía no hay trades.
-  const lastDay = [...trades]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .filter(t => t.balance !== null && t.balance !== undefined && !isNaN(t.balance))
-    .pop();
-  const currentValue = lastDay ? Number(lastDay.balance) : (activeRules.balance ?? finalBalance);
-  const liveThreshold = (lastDay && lastDay.threshold !== null && lastDay.threshold !== undefined && !isNaN(lastDay.threshold))
-    ? Number(lastDay.threshold)
-    : activeRules.threshold;
+  const cushionInfo = computeCushion(activeRules, trades, finalBalance);
+  const currentValue = cushionInfo.balance;
+  const liveThreshold = cushionInfo.threshold;
   const baseSize = activeRules.startSize ?? activeRules.size;
   const safety = activeRules.safetyReserve;
   const hasSafety = safety !== null && safety !== undefined && !isNaN(safety);
@@ -791,7 +806,7 @@ function AccountCard({ account, rules, trades }) {
   const objectiveLevel = hasSafety ? null : (baseSize + (activeRules.target || 0));
 
   // Margen restante desde el valor actual hasta el umbral de liquidación (DD)
-  const ddDistance = liveThreshold ? currentValue - liveThreshold : null;
+  const ddDistance = cushionInfo.cushion;
 
   // Fase del plan según el colchón, con el cierre del último día registrado.
   // Ese cierre es la base de la PRÓXIMA sesión: el plan prohíbe recalcular intradía.
@@ -799,7 +814,7 @@ function AccountCard({ account, rules, trades }) {
   const phaseColor = phase ? C[phase.color] : "var(--color-text-tertiary)";
   const phaseBg = phase ? (phase.color === "amber" ? "#FDF3E2" : C[phase.color + "Bg"]) : "var(--color-background-secondary)";
   const phaseText = phase ? (phase.color === "amber" ? "#8A5A0B" : C[phase.color + "Text"]) : "var(--color-text-secondary)";
-  const phaseBasis = lastDay?.date || null;
+  const phaseBasis = cushionInfo.basis;
 
   const fichaItems = [
     { key: "valor", label: "Valor", value: `$${Math.round(currentValue).toLocaleString()}`, color: currentValue >= baseSize ? C.green : C.red },
@@ -1693,7 +1708,27 @@ function BarChart({ labels, values, height = 120 }) {
 }
 
 // ── Trade Form ───────────────────────────────────────────────────────────────
-function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
+function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false }) {
+  // Paleta del popup: sigue el tema claro/oscuro clásico por defecto, o la
+  // paleta fija de V2 cuando se abre desde el dashboard nuevo (dark=true).
+  const t = dark
+    ? {
+        bg: V2.card, border: V2.border, text: V2.text, text2: V2.text2, text3: V2.text3,
+        inputBg: V2.segBg, green: V2.green, red: V2.red,
+        greenBg: "rgba(78,204,163,0.16)", redBg: "rgba(232,83,110,0.16)",
+        greenText: V2.green, redText: V2.red,
+        secondaryBg: V2.segBg, secondaryBorder: V2.border, cancelText: V2.text2,
+        saveTextColor: "#0A0A0A",
+      }
+    : {
+        bg: "var(--color-background-primary)", border: "var(--color-border-secondary)",
+        text: "var(--color-text-primary)", text2: "var(--color-text-secondary)", text3: "var(--color-text-tertiary)",
+        inputBg: "var(--color-background-primary)", green: C.green, red: C.red,
+        greenBg: C.greenBg, redBg: C.redBg, greenText: C.greenText, redText: C.redText,
+        secondaryBg: "var(--color-background-secondary)", secondaryBorder: "var(--color-border-secondary)", cancelText: "var(--color-text-secondary)",
+        saveTextColor: "#fff",
+      };
+
   const [form, setForm] = useState(() => {
     const initial = { ...EMPTY_TRADE, ...trade };
     if (initial.date && initial.date.includes("/")) {
@@ -1735,9 +1770,9 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
 
   const renderField = (label, field, type = "text", opts, placeholder) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
+      <label style={{ fontSize: 10, color: t.text2, textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
       {opts ? (
-        <select value={form[field] || ""} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}>
+        <select value={form[field] || ""} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text }}>
           {opts.map(o => {
             const val = typeof o === "object" ? o.value : o;
             const lbl = typeof o === "object" ? o.label : o;
@@ -1758,7 +1793,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
               set(field, val);
             }
           }}
-          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text }}
         />
       )}
     </div>
@@ -1823,9 +1858,9 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
   // transform en hover, que romperían un position:fixed anidado.
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 460, maxHeight: "90dvh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }}>
-      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{isNew ? "Añadir día operado" : `Editar día #${form.id}`}</div>
-      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 12 }}>
+      <div style={{ background: t.bg, border: `0.5px solid ${t.border}`, borderRadius: 14, padding: 18, width: "100%", maxWidth: 460, maxHeight: "90dvh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }}>
+      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3, color: t.text }}>{isNew ? "Añadir día operado" : `Editar día #${form.id}`}</div>
+      <div style={{ fontSize: 10, color: t.text3, marginBottom: 12 }}>
         Resumen diario Bulenox · un registro por día operado
       </div>
 
@@ -1836,11 +1871,11 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         {/* PnL: magnitud + selector de signo Win/Loss */}
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px" }}>PnL neto ($)</label>
-            <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: "0.5px solid var(--color-border-secondary)" }}>
+            <label style={{ fontSize: 10, color: t.text2, textTransform: "uppercase", letterSpacing: ".3px" }}>PnL neto ($)</label>
+            <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", border: `0.5px solid ${t.border}` }}>
               {[
-                { loss: false, label: "Win", bg: C.greenBg, fg: C.greenText },
-                { loss: true, label: "Loss", bg: C.redBg, fg: C.redText },
+                { loss: false, label: "Win", bg: t.greenBg, fg: t.greenText },
+                { loss: true, label: "Loss", bg: t.redBg, fg: t.redText },
               ].map(o => {
                 const on = isLoss === o.loss;
                 return (
@@ -1856,7 +1891,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
                       border: "none",
                       cursor: "pointer",
                       background: on ? o.bg : "transparent",
-                      color: on ? o.fg : "var(--color-text-tertiary)",
+                      color: on ? o.fg : t.text3,
                     }}
                   >
                     {o.label}
@@ -1866,7 +1901,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
             </div>
           </div>
           <div style={{ position: "relative" }}>
-            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 600, color: isLoss ? C.red : C.green, pointerEvents: "none" }}>
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 600, color: isLoss ? t.red : t.green, pointerEvents: "none" }}>
               {isLoss ? "−" : "+"}
             </span>
             <input
@@ -1875,7 +1910,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
               placeholder="Ej: 417.46"
               value={form.pnl ?? ""}
               onChange={e => setPnl(e.target.value)}
-              style={{ width: "100%", fontSize: 12, padding: "5px 8px 5px 20px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: isLoss ? C.red : C.green, fontWeight: 500 }}
+              style={{ width: "100%", fontSize: 12, padding: "5px 8px 5px 20px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: isLoss ? t.red : t.green, fontWeight: 500 }}
             />
           </div>
         </div>
@@ -1885,18 +1920,18 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [] }) {
         {renderField("Umbral autoliq. / DD ($)", "threshold", "number", null, "Ej: 23917")}
       </div>
 
-      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
-        PnL a guardar: <strong style={{ color: isLoss ? C.red : C.green }}>{pnlPreview >= 0 ? "+" : "−"}${Math.abs(pnlPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> · Bruto: ${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · La comisión se guarda en negativo automáticamente
+      <div style={{ fontSize: 10, color: t.text3, marginBottom: 10 }}>
+        PnL a guardar: <strong style={{ color: isLoss ? t.red : t.green }}>{pnlPreview >= 0 ? "+" : "−"}${Math.abs(pnlPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong> · Bruto: ${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · La comisión se guarda en negativo automáticamente
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas (opcional)</label>
-        <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Si lo dejas vacío se generan notas automáticas con balance y umbral" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", resize: "vertical" }} />
+        <label style={{ fontSize: 10, color: t.text2, textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas (opcional)</label>
+        <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Si lo dejas vacío se generan notas automáticas con balance y umbral" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text, resize: "vertical" }} />
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: C.green, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Guardar</button>
-        <button onClick={onCancel} style={{ flex: 1, padding: "9px 16px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: t.green, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Guardar</button>
+        <button onClick={onCancel} style={{ flex: 1, padding: "9px 16px", background: t.secondaryBg, color: t.cancelText, border: `0.5px solid ${t.secondaryBorder}`, borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
       </div>
       </div>
     </div>,
@@ -2717,7 +2752,7 @@ function SettingsPanel({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Versión de la App</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v4.1</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginTop: 4 }}>v5.0</div>
             </div>
             <div style={{ background: "var(--color-background-secondary)", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", fontWeight: 500 }}>Despliegue en Vercel</div>
@@ -2998,6 +3033,1520 @@ function SettingsPanel({
   );
 }
 
+// ── Dashboard V2 ─────────────────────────────────────────────────────────────
+// Clon del diseño de referencia: paleta oscura propia, barra lateral de iconos,
+// tarjetas con acciones y selector de periodo individual.
+const V2 = {
+  bg: "#0A0A0A",
+  side: "#141414",
+  card: "#1A1A1A",
+  border: "#262626",
+  segBg: "#141414",
+  segActive: "#2A2A2A",
+  text: "#FFFFFF",
+  text2: "#8C8C8C",
+  text3: "#5C5C5C",
+  green: "#4ECCA3",
+  red: "#E8536E",
+  track: "#3A3A3A",
+};
+
+// Sin "Day": cada trade es el resumen de un único día operado, así que la
+// vista diaria daría siempre 100% o 0% y no aporta nada.
+const V2_PERIODS = [
+  { id: "year", label: "Year" },
+  { id: "month", label: "Month" },
+  { id: "week", label: "Week" },
+];
+
+// ── Iconos SVG ───────────────────────────────────────────────────────────────
+const IconBolt = ({ s = 22, c = V2.green }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M14 2 4 14h6l-1 8 10-12h-6l1-8Z" fill={c} /></svg>
+);
+const IconGrid = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" fill={c} /><rect x="14" y="3" width="7" height="4" rx="2" fill={c} /><rect x="14" y="10" width="7" height="11" rx="2" fill={c} /><rect x="3" y="13" width="7" height="8" rx="2" fill={c} /></svg>
+);
+const IconChart = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="9" rx="1.5" fill={c} /><rect x="10" y="6" width="4" height="15" rx="1.5" fill={c} /><rect x="17" y="9" width="4" height="12" rx="1.5" fill={c} /></svg>
+);
+const IconDoc = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="3" fill={c} opacity="0.35" /><rect x="7" y="7" width="10" height="2" rx="1" fill={c} /><rect x="7" y="11" width="10" height="2" rx="1" fill={c} /><rect x="7" y="15" width="6" height="2" rx="1" fill={c} /></svg>
+);
+const IconCal = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="3" fill={c} opacity="0.35" /><rect x="3" y="5" width="18" height="5" rx="2" fill={c} /><rect x="7" y="2" width="2" height="5" rx="1" fill={c} /><rect x="15" y="2" width="2" height="5" rx="1" fill={c} /></svg>
+);
+const IconPlus = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6" /><path d="M12 8v8M8 12h8" stroke={c} strokeWidth="1.6" strokeLinecap="round" /></svg>
+);
+const IconSync = ({ s = 18, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 0 1-13.7 5.6M4 12a8 8 0 0 1 13.7-5.6" stroke={c} strokeWidth="1.6" strokeLinecap="round" /><path d="M4 20v-4h4M20 4v4h-4" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const IconInfo = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" stroke={c} strokeWidth="1.7" /><circle cx="12" cy="7.8" r="1.15" fill={c} /><path d="M12 11v5.5" stroke={c} strokeWidth="1.7" strokeLinecap="round" /></svg>
+);
+const IconGear = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.1" stroke={c} strokeWidth="1.7" /><path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3" stroke={c} strokeWidth="1.7" strokeLinecap="round" /></svg>
+);
+const IconTrash = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 4h4M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const IconArrow = ({ up, c, s = 15 }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" style={{ transform: up ? "none" : "scaleY(-1)" }}><path d="M7 17 17 7M17 7H9M17 7v8" stroke={c} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+// ── Agregación por periodo ───────────────────────────────────────────────────
+// El ancla es el último día registrado, no hoy: así el panel siempre muestra
+// datos aunque lleves días sin operar.
+function v2Agg(trades) {
+  const byDay = new Map();
+  trades.forEach(t => {
+    const d = normalizeDateToYYYYMMDD(t.date);
+    if (!byDay.has(d)) byDay.set(d, { pnl: 0, comm: 0 });
+    const e = byDay.get(d);
+    e.pnl += t.pnl || 0;
+    e.comm += Math.abs(t.commission || 0);
+  });
+  return [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+// toISOString() convierte a UTC: con Madrid en UTC+2, la medianoche local del
+// día 1 cae en el día 30 en UTC y el rango se desplaza un día entero. Se
+// formatea en local en vez de tirar de toISOString().
+function v2LocalIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// `offset` desplaza el periodo hacia atrás (-1 = el anterior) para poder
+// navegar semana a semana o mes a mes sin perder la comparación.
+function v2Ranges(period, anchor, offset = 0) {
+  const a = new Date(anchor + "T00:00:00");
+  const iso = v2LocalIso;
+  const shift = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+  if (period === "day") {
+    const c = shift(a, offset);
+    const p = shift(c, -1);
+    return { cur: [iso(c), iso(c)], prev: [iso(p), iso(p)] };
+  }
+  if (period === "week") {
+    // Lunes de la semana del ancla, desplazado `offset` semanas
+    const mon = shift(a, -((a.getDay() + 6) % 7) + offset * 7);
+    const pm = shift(mon, -7);
+    return { cur: [iso(mon), iso(shift(mon, 6))], prev: [iso(pm), iso(shift(pm, 6))] };
+  }
+  if (period === "month") {
+    const y = a.getFullYear(), m = a.getMonth() + offset;
+    const s = new Date(y, m, 1), e = new Date(y, m + 1, 0);
+    const ps = new Date(y, m - 1, 1), pe = new Date(y, m, 0);
+    return { cur: [iso(s), iso(e)], prev: [iso(ps), iso(pe)] };
+  }
+  const y = a.getFullYear() + offset;
+  return { cur: [`${y}-01-01`, `${y}-12-31`], prev: [`${y - 1}-01-01`, `${y - 1}-12-31`] };
+}
+
+// Etiqueta legible del periodo mostrado: "Julio 2026", "Semana 2 de julio"…
+function v2RangeLabel(period, from) {
+  const d = new Date(from + "T00:00:00");
+  const mes = V2_MFULL[d.getMonth()];
+  if (period === "year") return `${d.getFullYear()}`;
+  if (period === "month") return `${mes} ${d.getFullYear()}`;
+  if (period === "week") {
+    const n = Math.floor((d.getDate() - 1) / 7) + 1;
+    return `Semana ${n} de ${mes.toLowerCase()}`;
+  }
+  return `${d.getDate()} ${V2_MN[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
+}
+
+const V2_MN = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const V2_MFULL = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+function v2Slice(days, [from, to]) {
+  const sel = days.filter(([d]) => d >= from && d <= to);
+  const wins = sel.filter(([, v]) => v.pnl > 0).length;
+  const losses = sel.filter(([, v]) => v.pnl < 0).length;
+  const pnl = sel.reduce((s, [, v]) => s + v.pnl, 0);
+  const gp = sel.reduce((s, [, v]) => (v.pnl > 0 ? s + v.pnl : s), 0);
+  const gl = Math.abs(sel.reduce((s, [, v]) => (v.pnl < 0 ? s + v.pnl : s), 0));
+  return {
+    wins, losses, pnl,
+    days: sel.length,
+    wr: wins + losses ? (wins / (wins + losses)) * 100 : 0,
+    pf: gl ? gp / gl : (gp ? Infinity : 0),
+    comm: sel.reduce((s, [, v]) => s + v.comm, 0),
+  };
+}
+
+// ── Piezas visuales ──────────────────────────────────────────────────────────
+function V2Donut({ pct, size = 168, stroke = 15 }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const val = Math.max(0, Math.min(100, pct || 0));
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={V2.track} strokeWidth={stroke} strokeLinecap="round" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={V2.green} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${(c * val) / 100} ${c}`} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 40, fontWeight: 700, color: V2.text, letterSpacing: "-0.02em" }}>{Math.round(val)}</span>
+        <span style={{ fontSize: 20, fontWeight: 500, color: V2.text2, marginLeft: 2, marginTop: 8 }}>%</span>
+      </div>
+    </div>
+  );
+}
+
+// Mismo cálculo que EquityChart (calcReconstructedPnlHistory), solo con la
+// paleta oscura de V2 en vez de las variables CSS del tema claro/oscuro clásico.
+function V2Equity({ trades, accountFilter, accountsList }) {
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(0);
+  const [hoverIdx, setHoverIdx] = useState(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateWidth = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.getBoundingClientRect().width;
+        if (w > 0) setWidth(w);
+      }
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(containerRef.current);
+    window.addEventListener("resize", updateWidth);
+    return () => { observer.disconnect(); window.removeEventListener("resize", updateWidth); };
+  }, []);
+
+  useEffect(() => { setHoverIdx(null); }, [trades, accountFilter]);
+
+  const sorted = useMemo(() => {
+    return [...trades].sort((a, b) => {
+      const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+      if (dateDiff !== 0) return dateDiff;
+      const timeA = parseTimeToSeconds(a.entry_time) || 0;
+      const timeB = parseTimeToSeconds(b.entry_time) || 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+  }, [trades]);
+
+  const pts = useMemo(() => calcReconstructedPnlHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
+
+  if (pts.length < 2) return <div style={{ padding: "20px 0", color: V2.text3, fontSize: 13 }}>Sin datos suficientes</div>;
+
+  const W = width || 620, H = 210, PAD = 45;
+  const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
+  const range = max - min || 1;
+  const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
+  const toY = v => H - PAD / 2 - ((v - min) / range) * (H - PAD);
+  const zeroY = toY(0);
+  const areaGreenPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.min(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
+  const areaRedPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.max(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
+  const ticks = Array.from({ length: 5 }, (_, i) => min + (i / 4) * range);
+
+  const formatTick = (v) => {
+    const abs = Math.abs(Math.round(v));
+    if (abs === 0) return "$0";
+    const sign = v >= 0 ? "+" : "-";
+    return abs >= 1000 ? `${sign}$${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${sign}$${abs}`;
+  };
+
+  const pointFromEvent = (clientX) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * W;
+    let closestIdx = 0, minDiff = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const diff = Math.abs(toX(i) - svgX);
+      if (diff < minDiff) { minDiff = diff; closestIdx = i; }
+    }
+    setHoverIdx(closestIdx);
+  };
+
+  return (
+    <div ref={containerRef} style={{ width: "100%", minHeight: H }}>
+      {width > 0 && (
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width: "100%", height: H, cursor: "crosshair", overflow: "visible", display: "block" }}
+          role="img"
+          aria-label="Equity curve acumulada"
+          onMouseMove={e => pointFromEvent(e.clientX)}
+          onMouseLeave={() => setHoverIdx(null)}
+          onTouchMove={e => e.touches[0] && pointFromEvent(e.touches[0].clientX)}
+          onTouchEnd={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id="v2eqGreen" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={V2.green} stopOpacity="0.30" />
+              <stop offset="100%" stopColor={V2.green} stopOpacity="0.02" />
+            </linearGradient>
+            <linearGradient id="v2eqRed" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={V2.red} stopOpacity="0.02" />
+              <stop offset="100%" stopColor={V2.red} stopOpacity="0.30" />
+            </linearGradient>
+          </defs>
+          {ticks.map((v, i) => {
+            const y = toY(v);
+            const isZero = Math.abs(v) < range * 0.01;
+            return (
+              <g key={i}>
+                <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={isZero ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)"} strokeWidth={isZero ? 1 : 0.5} />
+                <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={V2.text3}>{formatTick(v)}</text>
+              </g>
+            );
+          })}
+          <polygon points={areaGreenPts} fill="url(#v2eqGreen)" />
+          <polygon points={areaRedPts} fill="url(#v2eqRed)" />
+          {pts.map((v, i) => {
+            if (i === 0) return null;
+            const avg = (pts[i - 1] + v) / 2;
+            return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? V2.green : V2.red} strokeWidth={2} strokeLinecap="round" />;
+          })}
+          <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
+          <circle cx={toX(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3.5} fill={pts[pts.length - 1] >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} pointerEvents="none" />
+
+          {hoverIdx !== null && (() => {
+            const x = toX(hoverIdx), y = toY(pts[hoverIdx]), val = pts[hoverIdx];
+            const trade = sorted[hoverIdx];
+            const txt = fmt(val);
+            const dateStr = trade?.date ? normalizeDateToYYYYMMDD(trade.date) : "";
+            const tooltipW = 84, tooltipH = 36;
+            let tx = x - tooltipW / 2;
+            if (tx < 5) tx = 5;
+            if (tx + tooltipW > W - 5) tx = W - tooltipW - 5;
+            const showBelow = y - tooltipH - 12 < 5;
+            const ty = showBelow ? y + 12 : y - tooltipH - 12;
+            return (
+              <g pointerEvents="none">
+                <line x1={x} y1={PAD / 2} x2={x} y2={H - PAD / 2} stroke={V2.border} strokeWidth={1} strokeDasharray="3,3" />
+                <circle cx={x} cy={y} r={6} fill={val >= 0 ? V2.green : V2.red} opacity={0.3} />
+                <circle cx={x} cy={y} r={3.5} fill={val >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} />
+                <rect x={tx} y={ty} width={tooltipW} height={tooltipH} rx={7} fill={V2.segActive} stroke={V2.border} strokeWidth={1} />
+                <text x={tx + tooltipW / 2} y={ty + 15} textAnchor="middle" fontSize={11} fontWeight="700" fill={val >= 0 ? V2.green : V2.red}>{txt}</text>
+                <text x={tx + tooltipW / 2} y={ty + 28} textAnchor="middle" fontSize={9} fill={V2.text3}>{dateStr}</text>
+              </g>
+            );
+          })()}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+// Mismos cálculos que CalendarWidget (calStats, weeks, historial mensual),
+// solo con la paleta oscura de V2 en vez de las variables CSS del tema clásico.
+const V2_AMBER = "#E2B144"; // mismo ámbar ya usado en la tarjeta Fase del plan
+function V2CalendarWidget({ trades }) {
+  const [currentMonth, setCurrentMonth] = useState(() => v2LocalIso(new Date()).slice(0, 7));
+  const lastTradesRef = useRef(null);
+
+  useEffect(() => {
+    if (trades && trades.length > 0 && trades !== lastTradesRef.current) {
+      lastTradesRef.current = trades;
+      const sorted = [...trades].sort((a, b) => normalizeDateToYYYYMMDD(b.date).localeCompare(normalizeDateToYYYYMMDD(a.date)));
+      if (sorted[0]?.date) setCurrentMonth(normalizeDateToYYYYMMDD(sorted[0].date).slice(0, 7));
+    }
+  }, [trades]);
+
+  const year = parseInt(currentMonth.split("-")[0]);
+  const mo = parseInt(currentMonth.split("-")[1]) - 1;
+
+  const handlePrevMonth = () => {
+    let y = year, m = mo - 1;
+    if (m < 0) { m = 11; y -= 1; }
+    setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`);
+  };
+  const handleNextMonth = () => {
+    let y = year, m = mo + 1;
+    if (m > 11) { m = 0; y += 1; }
+    setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`);
+  };
+  const handleMonthSelect = (m) => setCurrentMonth(`${year}-${String(m + 1).padStart(2, "0")}`);
+  const handleYearSelect = (y) => setCurrentMonth(`${y}-${String(mo + 1).padStart(2, "0")}`);
+
+  const calStats = useMemo(() => {
+    const dayMap = new Map();
+    trades.forEach(t => {
+      const d = normalizeDateToYYYYMMDD(t.date);
+      if (!dayMap.has(d)) dayMap.set(d, { pnl: 0, comm: 0 });
+      const day = dayMap.get(d);
+      day.pnl += t.pnl || 0;
+      day.comm += Math.abs(t.commission || 0);
+    });
+    const byMonth = new Map();
+    const global = { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0, first: null, last: null };
+    [...dayMap.entries()].forEach(([d, day]) => {
+      const ym = d.slice(0, 7);
+      if (!byMonth.has(ym)) byMonth.set(ym, { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0 });
+      const m = byMonth.get(ym);
+      m.pnl += day.pnl; global.pnl += day.pnl;
+      m.comm += day.comm; global.comm += day.comm;
+      m.days++; global.days++;
+      if (day.pnl > 0) { m.win += day.pnl; global.win += day.pnl; m.winDays++; global.winDays++; }
+      else if (day.pnl < 0) { m.lose += day.pnl; global.lose += day.pnl; m.loseDays++; global.loseDays++; }
+      if (!global.first || d < global.first) global.first = d;
+      if (!global.last || d > global.last) global.last = d;
+    });
+    const months = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    const years = new Set(months.map(([ym]) => ym.slice(0, 4)));
+    return { global, months, multiYear: years.size > 1 };
+  }, [trades]);
+
+  const monthStats = calStats.months.find(([ym]) => ym === currentMonth)?.[1] || { pnl: 0, win: 0, lose: 0 };
+
+  const byDate = {};
+  trades.forEach(t => {
+    const normalized = normalizeDateToYYYYMMDD(t.date);
+    if (normalized.startsWith(currentMonth)) {
+      if (!byDate[normalized]) byDate[normalized] = { pnl: 0, count: 0 };
+      byDate[normalized].pnl += t.pnl;
+      byDate[normalized].count++;
+    }
+  });
+
+  const daysInMonth = new Date(year, mo + 1, 0).getDate();
+  const startDow = (new Date(year, mo, 1).getDay() + 6) % 7;
+  const weeks = [];
+  let currentWeek = [];
+  for (let i = 0; i < startDow; i++) currentWeek.push({ type: "empty" });
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
+    const dow = (new Date(year, mo, d).getDay() + 6) % 7;
+    currentWeek.push({ type: "day", d, key, dow, info: byDate[key] });
+    if (dow === 6) { weeks.push(currentWeek); currentWeek = []; }
+  }
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) currentWeek.push({ type: "empty" });
+    weeks.push(currentWeek);
+  }
+
+  const fmtPnl = (v) => {
+    const abs = Math.abs(Math.round(v));
+    return abs >= 1000 ? (v < 0 ? "-" : "+") + "$" + (abs / 1000).toFixed(1) + "k" : (v < 0 ? "-" : "+") + "$" + abs;
+  };
+
+  const dayLabels = ["L", "M", "X", "J", "V", "S", "D", "SEMANA"];
+  const selStyle = { padding: "4px 8px", borderRadius: 6, border: `0.5px solid ${V2.border}`, background: V2.card, color: V2.text, fontSize: 12, cursor: "pointer", outline: "none", fontWeight: 500 };
+  const navBtnStyle = { padding: "4px 10px", borderRadius: 6, border: `0.5px solid ${V2.border}`, background: V2.card, color: V2.text2, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", fontWeight: 600, outline: "none" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <button onClick={handlePrevMonth} style={navBtnStyle} title="Mes anterior">◀</button>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <select value={mo} onChange={(e) => handleMonthSelect(parseInt(e.target.value))} style={selStyle}>
+            {V2_MFULL.map((name, idx) => <option key={idx} value={idx}>{name}</option>)}
+          </select>
+          <select value={year} onChange={(e) => handleYearSelect(parseInt(e.target.value))} style={selStyle}>
+            {[2024, 2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <button onClick={handleNextMonth} style={navBtnStyle} title="Mes siguiente">▶</button>
+      </div>
+
+      <div className="v2-scroll-fade" style={{ overflowX: "auto", paddingBottom: 4, position: "relative" }}>
+        <div style={{ minWidth: 440 }}>
+          <div className="cal-grid" style={{ marginBottom: 4 }}>
+            {dayLabels.map((d, i) => (
+              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: (d === "D" || d === "SEMANA") ? V2_AMBER : V2.text3, padding: "2px 0" }}>{d}</div>
+            ))}
+          </div>
+          <div className="cal-grid">
+            {weeks.map((week, wIdx) => {
+              let weekPnl = 0, weekTrades = 0, weekDays = 0;
+              week.forEach(day => {
+                if (day.type === "day" && day.info) {
+                  weekPnl += day.info.pnl;
+                  weekTrades += day.info.count;
+                  if (day.info.count > 0) weekDays++;
+                }
+              });
+              const hasData = weekTrades > 0;
+              const weekBg = hasData ? (weekPnl >= 0 ? "rgba(78,204,163,0.10)" : "rgba(232,83,110,0.10)") : V2.segBg;
+              const weekBorder = hasData ? (weekPnl >= 0 ? "rgba(78,204,163,0.35)" : "rgba(232,83,110,0.35)") : V2.border;
+              const weekCol = weekPnl >= 0 ? V2.green : V2.red;
+
+              return (
+                <Fragment key={wIdx}>
+                  {week.map((c, dIdx) => {
+                    if (c.type === "empty") return <div key={`e-${wIdx}-${dIdx}`} style={{ background: "transparent", minHeight: 50 }} />;
+                    const { info } = c;
+                    const bg = info ? (info.pnl > 0 ? "rgba(78,204,163,0.16)" : info.pnl < 0 ? "rgba(232,83,110,0.16)" : V2.segBg) : V2.segBg;
+                    const col = info ? (info.pnl > 0 ? V2.green : info.pnl < 0 ? V2.red : V2.text2) : V2.text3;
+                    const border = info ? (info.pnl > 0 ? "rgba(78,204,163,0.4)" : info.pnl < 0 ? "rgba(232,83,110,0.4)" : V2.border) : V2.border;
+                    return (
+                      <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                        <div style={{ fontSize: 10, color: V2.text2, fontWeight: 500 }}>{c.d}</div>
+                        {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
+                        {info && <div style={{ fontSize: 9, color: V2.text3 }}>{info.count}t</div>}
+                      </div>
+                    );
+                  })}
+                  <div key={`w-${wIdx}`} style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                    <div style={{ fontSize: 9, color: V2_AMBER, textTransform: "uppercase", letterSpacing: ".2px", fontWeight: 500 }}>Semana</div>
+                    {hasData ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: weekCol }}>{fmtPnl(weekPnl)}</div>
+                        <div style={{ fontSize: 9, color: V2.text3 }}>{weekTrades}t · {weekDays}d</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 10, color: V2.text3, marginTop: 4 }}>—</div>
+                    )}
+                  </div>
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".7px", marginBottom: 6 }}>Resumen del mes</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+          {[
+            { label: "PnL del Mes", value: monthStats.pnl, pos: monthStats.pnl >= 0 },
+            { label: "Ganado", value: monthStats.win, pos: true },
+            { label: "Perdido", value: monthStats.lose, pos: false },
+          ].map(card => (
+            <div key={card.label} style={{ background: card.pos ? "rgba(78,204,163,0.14)" : "rgba(232,83,110,0.14)", border: `0.5px solid ${card.pos ? "rgba(78,204,163,0.4)" : "rgba(232,83,110,0.4)"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ fontSize: 9, color: card.pos ? V2.green : V2.red, opacity: 0.85, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px" }}>{card.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: card.pos ? V2.green : V2.red, fontVariantNumeric: "tabular-nums" }}>{fmt(card.value)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {calStats.global.days > 0 && (
+        <div style={{ marginTop: 14, background: V2.bg, borderRadius: 12, padding: "12px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".7px" }}>Global · Desde el primer trade</div>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 0", marginTop: 8 }}>
+            <div style={{ paddingRight: 22 }}>
+              <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: calStats.global.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(calStats.global.pnl))}</div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>PnL Total</div>
+            </div>
+            <div style={{ padding: "0 22px", borderLeft: `1px solid ${V2.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: V2.text }}>
+                {calStats.global.winDays + calStats.global.loseDays > 0 ? `${Math.round((calStats.global.winDays / (calStats.global.winDays + calStats.global.loseDays)) * 100)}%` : "—"}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>Win rate</div>
+            </div>
+            <div style={{ padding: "0 22px", borderLeft: `1px solid ${V2.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: V2.green, opacity: 0.9 }}>{fmt(Math.round(calStats.global.win))}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: V2.red, opacity: 0.9 }}>{fmt(Math.round(calStats.global.lose))}</div>
+            </div>
+            <div style={{ padding: "0 22px", borderLeft: `1px solid ${V2.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: V2.text3 }}>-${Math.round(calStats.global.comm).toLocaleString()}</div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>Comisiones</div>
+            </div>
+            <div style={{ paddingLeft: 22, borderLeft: `1px solid ${V2.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: V2.text }}>{calStats.global.days} días</div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".3px", marginTop: 2 }}>
+                {calStats.global.first && calStats.global.last
+                  ? `${V2_MFULL[parseInt(calStats.global.first.slice(5, 7)) - 1].slice(0, 3)} ${calStats.global.first.slice(0, 4)} – ${V2_MFULL[parseInt(calStats.global.last.slice(5, 7)) - 1].slice(0, 3)} ${calStats.global.last.slice(0, 4)}`
+                  : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {calStats.months.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".7px", marginBottom: 4 }}>Historial mensual</div>
+          <div className="cal-hist-row" style={{ padding: "4px 8px" }}>
+            {["Mes", "PnL", "W/L", "Win rate", "Comisiones"].map((h, i) => (
+              <div key={h} className={i >= 3 ? "cal-hist-hide-sm" : undefined} style={{ fontSize: 10, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".7px", textAlign: i === 0 ? "left" : "right" }}>{h}</div>
+            ))}
+          </div>
+          {(() => {
+            const rows = [];
+            let lastYear = null;
+            calStats.months.forEach(([ym, m]) => {
+              const y = ym.slice(0, 4);
+              if (calStats.multiYear && y !== lastYear) {
+                const yearPnl = calStats.months.filter(([k]) => k.startsWith(y)).reduce((s, [, v]) => s + v.pnl, 0);
+                rows.push(
+                  <div key={`y-${y}`} className="cal-hist-row" style={{ padding: "5px 8px", background: V2.bg, borderRadius: 6, marginTop: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: V2.text3, textTransform: "uppercase", letterSpacing: ".7px" }}>{y}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", color: yearPnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(yearPnl))}</div>
+                    <div /><div className="cal-hist-hide-sm" /><div className="cal-hist-hide-sm" />
+                  </div>
+                );
+                lastYear = y;
+              }
+              const active = ym === currentMonth;
+              const wr = m.winDays + m.loseDays > 0 ? Math.round((m.winDays / (m.winDays + m.loseDays)) * 100) : null;
+              const monthLabel = `${V2_MFULL[parseInt(ym.slice(5, 7)) - 1].slice(0, 3)} ${ym.slice(0, 4)}`;
+              rows.push(
+                <div
+                  key={ym}
+                  className="cal-hist-row"
+                  onClick={() => setCurrentMonth(ym)}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = V2.segActive; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                  style={{
+                    padding: "7px 8px", borderBottom: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer",
+                    background: active ? V2.segActive : "transparent", transition: "background-color 0.15s ease",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: active ? 600 : 400, color: active ? V2.text : V2.text2, display: "flex", alignItems: "center", gap: 6 }}>
+                    {active && <span style={{ width: 5, height: 5, borderRadius: "50%", background: V2.green, display: "inline-block", flexShrink: 0 }} />}
+                    {monthLabel}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: "tabular-nums", textAlign: "right", color: m.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(m.pnl))}</div>
+                  <div style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: V2.text2 }}>{m.winDays}/{m.loseDays}</div>
+                  <div className="cal-hist-hide-sm" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: V2.text2 }}>{wr !== null ? `${wr}%` : "—"}</div>
+                  <div className="cal-hist-hide-sm" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", textAlign: "right", color: V2.text3 }}>-${Math.round(m.comm).toLocaleString()}</div>
+                </div>
+              );
+            });
+            return rows;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function V2Seg({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", background: V2.segBg, borderRadius: 10, padding: 4, gap: 2 }}>
+      {V2_PERIODS.map(p => {
+        const on = p.id === value;
+        return (
+          <button
+            key={p.id}
+            onClick={() => onChange(p.id)}
+            style={{
+              flex: 1, padding: "8px 4px", borderRadius: 7, border: "none", cursor: "pointer",
+              fontSize: 13, fontWeight: on ? 600 : 400,
+              background: on ? V2.segActive : "transparent",
+              color: on ? V2.text : V2.text3,
+            }}
+          >{p.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+const IconUp = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 19V6M6 12l6-6 6 6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const IconDown = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v13M6 12l6 6 6-6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+function V2Card({ title, subtitle, info, tall, onRemove, onConfig, onUp, onDown, canUp, canDown, period, onPeriod, rangeLabel, onPrevRange, onNextRange, canNextRange, footer, children }) {
+  return (
+    <div style={{
+      background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16,
+      padding: 24, display: "flex", flexDirection: "column",
+      gridRow: tall ? "span 2" : "span 1",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 18 }}>
+        <span
+          title={typeof title === "string" ? title : undefined}
+          style={{
+            fontSize: 19, fontWeight: 500, color: V2.text, letterSpacing: "-0.01em",
+            minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}
+        >
+          {title}{subtitle && <span style={{ color: V2.text3 }}> ({subtitle})</span>}
+        </span>
+        <div style={{ display: "flex", gap: 9, flexShrink: 0, alignItems: "center" }}>
+          <button onClick={onUp} disabled={!canUp} title="Subir" style={{ background: "none", border: "none", padding: 0, cursor: canUp ? "pointer" : "default", opacity: canUp ? 1 : 0.28, display: "flex" }}><IconUp c={V2.text3} /></button>
+          <button onClick={onDown} disabled={!canDown} title="Bajar" style={{ background: "none", border: "none", padding: 0, cursor: canDown ? "pointer" : "default", opacity: canDown ? 1 : 0.28, display: "flex" }}><IconDown c={V2.text3} /></button>
+          <span title={info} style={{ cursor: "help", display: "flex" }}><IconInfo c={V2.text3} /></span>
+          <button onClick={onConfig} title="Configurar tarjetas" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}><IconGear c={V2.text3} /></button>
+          <button onClick={onRemove} title="Quitar tarjeta" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}><IconTrash c={V2.text3} /></button>
+        </div>
+      </div>
+
+      {rangeLabel && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 14 }}>
+          <button onClick={onPrevRange} title="Periodo anterior" style={{ background: "none", border: "none", padding: 2, cursor: "pointer", display: "flex", color: V2.text3 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke={V2.text3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <span style={{ fontSize: 13, color: V2.text2, fontWeight: 500, minWidth: 140, textAlign: "center" }}>{rangeLabel}</span>
+          <button onClick={onNextRange} disabled={!canNextRange} title="Periodo siguiente" style={{ background: "none", border: "none", padding: 2, cursor: canNextRange ? "pointer" : "default", opacity: canNextRange ? 1 : 0.28, display: "flex" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke={V2.text3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
+      )}
+
+      <div style={{ flex: 1 }}>{children}</div>
+
+      {period && (
+        <div style={{ marginTop: 20 }}>
+          <V2Seg value={period} onChange={onPeriod} />
+        </div>
+      )}
+      {footer && (
+        <div style={{ marginTop: 16, fontSize: 14, color: V2.text3, lineHeight: 1.5 }}>{footer}</div>
+      )}
+    </div>
+  );
+}
+
+function V2Metric({ value, deltaPct, up, compare }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 42, fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</span>
+        {deltaPct !== null && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 16, fontWeight: 500, color: up ? V2.green : V2.red }}>
+            <IconArrow up={up} c={up ? V2.green : V2.red} />{Math.abs(deltaPct)}%
+          </span>
+        )}
+      </div>
+      {compare && <div style={{ marginTop: 14, fontSize: 14, color: V2.text3 }}>{compare}</div>}
+    </div>
+  );
+}
+
+// ── Definición de tarjetas ───────────────────────────────────────────────────
+const V2_CARD_DEFS = [
+  { id: "equity", title: "Equity curve", tall: true, info: "Evolución acumulada del PnL, día a día, de la cuenta seleccionada." },
+  { id: "winRatio", title: "% de acierto", tall: true, info: "Porcentaje de días ganadores sobre días operados." },
+  { id: "portfolio", title: "Balance", tall: false, info: "Saldo actual según el cierre del último día registrado." },
+  { id: "profitFactor", title: "Profit factor", tall: false, info: "Ganancia bruta dividida entre pérdida bruta." },
+  { id: "phase", title: "Fase del plan", tall: true, info: "Colchón hasta el umbral de liquidación de la cuenta más ajustada." },
+  { id: "records", title: "Récords", tall: true, info: "Mejor y peor día operado, y las mayores rachas de días consecutivos ganando y perdiendo." },
+];
+
+// Barrido continuo menta → lima → ámbar → carmín: empieza en el verde de acento
+// de la app y acaba en su rojo, así los tonos intermedios del arrastre no
+// pasan por ningún gris sucio.
+const V2_NAV = [
+  { id: "dashboard", label: "Dashboard", Icon: IconGrid, accent: "#4ECCA3" },
+  { id: "stats", label: "Estadísticas", Icon: IconChart, accent: "#A8D95A" },
+  { id: "trades", label: "Trades", Icon: IconDoc, accent: "#E2B144" },
+  { id: "calendar", label: "Calendario", Icon: IconCal, accent: "#E8536E" },
+  { id: "plan", label: "Plan", Icon: IconDoc, accent: "#E86FA8" },
+  { id: "settings", label: "Ajustes", Icon: IconGear, accent: "#A78BFA" },
+];
+
+// ── Menú inferior "Meniscus" ────────────────────────────────────────────────
+// La bola vive SOBRE el borde superior de la barra: barra y bola son un único
+// path y la superficie sube a buscarla con un filete cóncavo (el menisco).
+// Toda la animación va por refs + rAF, fuera del ciclo de render de React.
+const MN = {
+  W: 1000, H: 147, CR: 34,
+  R_REST: 52, R_DRAG: 62, F_RATIO: 0.6,
+  // PITCH acotado para que el filete del menisco en los slots extremos no
+  // invada las esquinas redondeadas de la barra ni siquiera al arrastrar.
+  ICON_Y: 73, LABEL_Y: 118, PITCH: 140,
+  VB: { x: -60, y: -130, w: 1120, h: 292 },
+};
+const MN_PAD = (MN.W - MN.PITCH * (V2_NAV.length - 1)) / 2;
+const MN_SLOTS = V2_NAV.map((_, i) => MN_PAD + i * MN.PITCH);
+
+const mnHexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const mnRgbStr = (c) => `rgb(${c[0] | 0}, ${c[1] | 0}, ${c[2] | 0})`;
+const mnMix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const mnClamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const mnSmooth = (e0, e1, x) => { const t = mnClamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+const MN_ACCENTS = V2_NAV.map(t => mnHexToRgb(t.accent));
+const MN_ICON_IDLE = [255, 255, 255];
+
+// Silueta única: barra + filete cóncavo + lomo de la bola
+function mnBuildPath(cx, r) {
+  const { W, H, CR, F_RATIO } = MN;
+  const f = F_RATIO * r;
+  const dx = Math.sqrt(r * r + 2 * r * f);
+  const tx = dx * (r / (r + f));
+  const ty = -r * f / (r + f);
+  const lBase = cx - dx, rBase = cx + dx;
+  const lTan = cx - tx, rTan = cx + tx;
+  return [
+    `M ${CR} 0`,
+    `H ${lBase.toFixed(2)}`,
+    `A ${f.toFixed(2)} ${f.toFixed(2)} 0 0 0 ${lTan.toFixed(2)} ${ty.toFixed(2)}`,
+    `A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 1 ${rTan.toFixed(2)} ${ty.toFixed(2)}`,
+    `A ${f.toFixed(2)} ${f.toFixed(2)} 0 0 0 ${rBase.toFixed(2)} 0`,
+    `H ${W - CR}`,
+    `A ${CR} ${CR} 0 0 1 ${W} ${CR}`,
+    `V ${H - CR}`,
+    `A ${CR} ${CR} 0 0 1 ${W - CR} ${H}`,
+    `H ${CR}`,
+    `A ${CR} ${CR} 0 0 1 0 ${H - CR}`,
+    `V ${CR}`,
+    `A ${CR} ${CR} 0 0 1 ${CR} 0`,
+    "Z",
+  ].join(" ");
+}
+
+// Iconos en currentColor: el bucle de animación interpola su color entre el
+// gris de la barra y el fondo oscuro conforme el icono entra en la bola.
+const MN_ICON_PATHS = {
+  dashboard: <><rect x="3" y="3" width="7" height="7" rx="2" fill="currentColor" /><rect x="14" y="3" width="7" height="4" rx="2" fill="currentColor" /><rect x="14" y="10" width="7" height="11" rx="2" fill="currentColor" /><rect x="3" y="13" width="7" height="8" rx="2" fill="currentColor" /></>,
+  stats: <><rect x="3" y="12" width="4" height="9" rx="1.5" fill="currentColor" /><rect x="10" y="6" width="4" height="15" rx="1.5" fill="currentColor" /><rect x="17" y="9" width="4" height="12" rx="1.5" fill="currentColor" /></>,
+  trades: <><rect x="4" y="3" width="16" height="18" rx="3" fill="currentColor" opacity="0.35" /><rect x="7" y="7" width="10" height="2" rx="1" fill="currentColor" /><rect x="7" y="11" width="10" height="2" rx="1" fill="currentColor" /><rect x="7" y="15" width="6" height="2" rx="1" fill="currentColor" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="3" fill="currentColor" opacity="0.35" /><rect x="3" y="5" width="18" height="5" rx="2" fill="currentColor" /><rect x="7" y="2" width="2" height="5" rx="1" fill="currentColor" /><rect x="15" y="2" width="2" height="5" rx="1" fill="currentColor" /></>,
+  plan: <><path d="M6 2.6h7.2L19 8.4V21a1.4 1.4 0 0 1-1.4 1.4H6A1.4 1.4 0 0 1 4.6 21V4A1.4 1.4 0 0 1 6 2.6Z" fill="currentColor" opacity="0.35" /><path d="M13 2.8V8a1 1 0 0 0 1 1h5" fill="none" stroke="currentColor" strokeWidth="1.6" /><rect x="7.4" y="12" width="9" height="1.9" rx="0.95" fill="currentColor" /><rect x="7.4" y="16" width="6" height="1.9" rx="0.95" fill="currentColor" /></>,
+  settings: <><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M12 2.4v2.4M12 19.2v2.4M21.6 12h-2.4M4.8 12H2.4M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7M18.8 18.8l-1.7-1.7M6.9 6.9 5.2 5.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>,
+};
+
+function V2MeniscusNav({ active, onChange }) {
+  const svgRef = useRef(null);
+  const pathRef = useRef(null);
+  const beadRef = useRef(null);
+  const beadHitRef = useRef(null);
+  const sheenRef = useRef(null);
+  const iconRefs = useRef([]);
+  const labelRefs = useRef([]);
+
+  const activeIdx = Math.max(0, V2_NAV.findIndex(n => n.id === active));
+  const activeRef = useRef(activeIdx);
+  activeRef.current = activeIdx;
+
+  const st = useRef({
+    x: MN_SLOTS[activeIdx], v: 0, target: MN_SLOTS[activeIdx],
+    settle: 1, settleV: 0, color: MN_ACCENTS[activeIdx].slice(),
+    dragging: false, lastX: 0, lastT: 0, reduced: false,
+  });
+
+  // Un cambio de sección desde fuera (o por tap) mueve el objetivo del muelle
+  useEffect(() => { st.current.target = MN_SLOTS[activeIdx]; }, [activeIdx]);
+
+  const toLocal = useCallback((clientX) => {
+    const rect = svgRef.current.getBoundingClientRect();
+    return MN.VB.x + ((clientX - rect.left) / rect.width) * MN.VB.w;
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    st.current.reduced = mq.matches;
+    const onMq = (e) => { st.current.reduced = e.matches; };
+    mq.addEventListener?.("change", onMq);
+
+    let raf, last = performance.now();
+    const frame = (now) => {
+      const dt = Math.min((now - last) / 1000, 1 / 30);
+      last = now;
+      const s = st.current;
+
+      if (!s.dragging) {
+        if (s.reduced) { s.x += (s.target - s.x) * Math.min(1, dt * 12); s.v = 0; }
+        else { const a = -300 * (s.x - s.target) - 28 * s.v; s.v += a * dt; s.x += s.v * dt; }
+      }
+
+      const parked = !s.dragging && Math.abs(s.x - s.target) < 2 && Math.abs(s.v) < 40;
+      const settleT = parked ? 1 : 0;
+      if (s.reduced) s.settle += (settleT - s.settle) * Math.min(1, dt * 14);
+      else { const aa = -340 * (s.settle - settleT) - 36 * s.settleV; s.settleV += aa * dt; s.settle += s.settleV * dt; }
+      s.settle = mnClamp(s.settle, 0, 1);
+
+      // El color se toma de la POSICIÓN de la bola, no de la pestaña activa
+      const p = mnClamp((s.x - MN_PAD) / MN.PITCH, 0, V2_NAV.length - 1);
+      const i0 = Math.min(Math.floor(p), V2_NAV.length - 2);
+      s.color = mnMix(s.color, mnMix(MN_ACCENTS[i0], MN_ACCENTS[i0 + 1], p - i0), Math.min(1, dt * 14));
+
+      const r = MN.R_DRAG + (MN.R_REST - MN.R_DRAG) * s.settle;
+      const col = mnRgbStr(s.color);
+
+      if (!pathRef.current) { raf = requestAnimationFrame(frame); return; }
+      pathRef.current.setAttribute("d", mnBuildPath(s.x, r));
+      beadRef.current.setAttribute("cx", s.x);
+      beadRef.current.setAttribute("r", r - 1);
+      beadRef.current.setAttribute("fill", col);
+      beadHitRef.current.setAttribute("cx", s.x);
+      sheenRef.current.setAttribute("cx", s.x);
+      sheenRef.current.setAttribute("r", r - 1);
+
+      for (let i = 0; i < V2_NAV.length; i++) {
+        const t = i === activeRef.current ? s.settle : 0;
+        const g = iconRefs.current[i];
+        if (!g) continue;
+        g.setAttribute("transform", `translate(${MN_SLOTS[i]} ${(MN.ICON_Y * (1 - t)).toFixed(2)}) scale(${(1 + 0.06 * t).toFixed(3)})`);
+        const ct = mnSmooth(0.45, 1, t);
+        g.style.color = mnRgbStr(mnMix(MN_ICON_IDLE, mnHexToRgb(V2.bg), ct));
+        g.style.opacity = String(0.5 + 0.5 * ct);
+        const lb = labelRefs.current[i];
+        if (lb) {
+          lb.setAttribute("opacity", i === activeRef.current ? s.settle.toFixed(3) : "0");
+          lb.setAttribute("fill", col);
+        }
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => { cancelAnimationFrame(raf); mq.removeEventListener?.("change", onMq); };
+  }, []);
+
+  const onDown = (e) => {
+    e.preventDefault();
+    const s = st.current;
+    s.dragging = true;
+    s.lastX = toLocal(e.clientX);
+    s.lastT = performance.now();
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e) => {
+    const s = st.current;
+    if (!s.dragging) return;
+    const nx = mnClamp(toLocal(e.clientX), MN_SLOTS[0], MN_SLOTS[MN_SLOTS.length - 1]);
+    const now = performance.now();
+    const dt = Math.max((now - s.lastT) / 1000, 1 / 240);
+    s.v = (nx - s.lastX) / dt;
+    s.x = nx; s.lastX = nx; s.lastT = now;
+  };
+  const onUp = (e) => {
+    const s = st.current;
+    if (!s.dragging) return;
+    s.dragging = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    // flick: proyecta la velocidad antes de buscar el slot más cercano
+    const proj = s.x + mnClamp(s.v, -3000, 3000) * 0.11;
+    let best = 0, bd = Infinity;
+    MN_SLOTS.forEach((sx, i) => { const d = Math.abs(sx - proj); if (d < bd) { bd = d; best = i; } });
+    s.target = MN_SLOTS[best];
+    onChange(V2_NAV[best].id); // el título conmuta AL SOLTAR, no al cruzar
+  };
+
+  const onKeyDown = (e) => {
+    const go = (i) => { e.preventDefault(); onChange(V2_NAV[mnClamp(i, 0, V2_NAV.length - 1)].id); };
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") go(activeIdx + 1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") go(activeIdx - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(V2_NAV.length - 1);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 900,
+      display: "flex", justifyContent: "center",
+      padding: "0 12px calc(8px + env(safe-area-inset-bottom, 0px))",
+      pointerEvents: "none",
+    }}>
+      <svg
+        ref={svgRef}
+        className="mn-nav"
+        viewBox={`${MN.VB.x} ${MN.VB.y} ${MN.VB.w} ${MN.VB.h}`}
+        style={{ width: "100%", maxWidth: 720, aspectRatio: `${MN.VB.w} / ${MN.VB.h}`, touchAction: "none", overflow: "visible" }}
+        role="tablist"
+        aria-label="Secciones"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+      >
+        <defs>
+          <linearGradient id="mn-sheen" x1="0" y1="0" x2="0.35" y2="1">
+            <stop offset="0%" stopColor="#fff" stopOpacity="0.28" />
+            <stop offset="60%" stopColor="#fff" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        <path ref={pathRef} d={mnBuildPath(MN_SLOTS[activeIdx], MN.R_REST)}
+          fill="rgba(12,12,14,0.86)" stroke="rgba(255,255,255,0.13)" strokeWidth="1.6"
+          style={{ pointerEvents: "auto" }} />
+
+        <circle ref={beadRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_REST - 1} fill={V2_NAV[activeIdx].accent} pointerEvents="none" />
+        <circle ref={sheenRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_REST - 1} fill="url(#mn-sheen)" pointerEvents="none" />
+
+        {V2_NAV.map((t, i) => (
+          <rect key={`hit${t.id}`} role="tab" aria-selected={i === activeIdx} aria-label={t.label}
+            x={MN_SLOTS[i] - MN.PITCH / 2} y={0} width={MN.PITCH} height={MN.H}
+            fill="transparent" style={{ cursor: "pointer", pointerEvents: "auto" }}
+            onClick={() => onChange(t.id)} />
+        ))}
+
+        {V2_NAV.map((t, i) => (
+          <g key={`ic${t.id}`} ref={el => (iconRefs.current[i] = el)}
+            transform={`translate(${MN_SLOTS[i]} ${MN.ICON_Y})`}
+            style={{ color: "#fff", opacity: 0.5 }} pointerEvents="none">
+            <svg x={-17} y={-17} width={34} height={34} viewBox="0 0 24 24">{MN_ICON_PATHS[t.id]}</svg>
+          </g>
+        ))}
+
+        {V2_NAV.map((t, i) => (
+          <text key={`lb${t.id}`} ref={el => (labelRefs.current[i] = el)}
+            x={MN_SLOTS[i]} y={MN.LABEL_Y} textAnchor="middle" fontSize="18" fontWeight="700"
+            fill={t.accent} opacity="0" pointerEvents="none">{t.label}</text>
+        ))}
+
+        <circle ref={beadHitRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_DRAG + 14}
+          fill="transparent" style={{ cursor: "grab", touchAction: "none", pointerEvents: "auto" }}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
+      </svg>
+    </div>
+  );
+}
+
+// Mismos valores que la clase .v2-settings de globals.css, en línea para que
+// el recoloreado no dependa de que el navegador tenga el CSS más reciente.
+const V2_SETTINGS_VARS = {
+  colorScheme: "dark",
+  "--color-background-primary": V2.card,
+  "--color-background-secondary": V2.segBg,
+  "--color-text-primary": V2.text,
+  "--color-text-secondary": V2.text2,
+  "--color-text-tertiary": V2.text3,
+  "--color-border-secondary": V2.border,
+  "--color-border-tertiary": V2.border,
+  "--c-green": V2.green,
+  "--c-red": V2.red,
+  "--c-blue": "#5AA9E6",
+  "--c-amber": "#E2B144",
+  "--c-gray": V2.text3,
+  "--c-green-bg": "rgba(78,204,163,0.16)",
+  "--c-red-bg": "rgba(232,83,110,0.16)",
+  "--c-blue-bg": "rgba(90,169,230,0.16)",
+  "--c-green-text": V2.green,
+  "--c-red-text": V2.red,
+  "--c-blue-text": "#5AA9E6",
+};
+
+function DashboardV2({
+  trades, accountsList, onExit, onRefresh, deployId,
+  addingTrade, setAddingTrade, editingTrade, setEditingTrade,
+  deleteConfirm, setDeleteConfirm, saveTrade, deleteTrade,
+  activeAccountsForForm, allAccountsForForm, settingsPanel,
+}) {
+  const [nav, setNav] = useState("dashboard");
+  const [cards, setCards] = useState(V2_CARD_DEFS.map(c => c.id));
+  const [periods, setPeriods] = useState({});
+  const [picker, setPicker] = useState(false);
+  const [acct, setAcct] = useState("all");
+  const [tradePage, setTradePage] = useState(1);
+  useEffect(() => { setTradePage(1); }, [acct]);
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem("tj_v2_cards");
+      if (s) {
+        const p = JSON.parse(s);
+        if (Array.isArray(p)) setCards(p.filter(id => V2_CARD_DEFS.some(c => c.id === id)));
+      }
+    } catch (e) { /* sin preferencia guardada */ }
+  }, []);
+
+  const persist = (next) => {
+    setCards(next);
+    try { localStorage.setItem("tj_v2_cards", JSON.stringify(next)); } catch (e) { /* almacenamiento no disponible */ }
+  };
+  const removeCard = (id) => persist(cards.filter(c => c !== id));
+  const toggleCard = (id) => persist(cards.includes(id) ? cards.filter(c => c !== id) : [...cards, id]);
+  const moveCard = (id, dir) => {
+    const i = cards.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= cards.length) return;
+    const next = [...cards];
+    [next[i], next[j]] = [next[j], next[i]];
+    persist(next);
+  };
+  const periodOf = (id) => periods[id] || "month";
+  // Cambiar de Year/Month/Week/Day vuelve siempre al periodo actual (offset 0)
+  const setPeriod = (id, v) => { setPeriods(p => ({ ...p, [id]: v })); setOffsets(o => ({ ...o, [id]: 0 })); };
+  const [offsets, setOffsets] = useState({});
+  const offsetOf = (id) => offsets[id] || 0;
+  const shiftOffset = (id, dir) => setOffsets(o => ({ ...o, [id]: Math.min(0, (o[id] || 0) + dir) }));
+
+  // Una sola cuenta a la vez (o todas). Los ajustes de bróker no cuentan.
+  const scoped = trades.filter(t => t.instrument !== "Ajuste de Broker" && (acct === "all" || t.account === acct));
+  const days = v2Agg(scoped);
+  const anchor = days.length ? days[days.length - 1][0] : v2LocalIso(new Date());
+
+  const statsFor = (id) => {
+    const period = periodOf(id);
+    const offset = offsetOf(id);
+    const ranges = v2Ranges(period, anchor, offset);
+    return {
+      cur: v2Slice(days, ranges.cur),
+      prev: v2Slice(days, ranges.prev),
+      rangeLabel: v2RangeLabel(period, ranges.cur[0]),
+      onPrevRange: () => shiftOffset(id, -1),
+      onNextRange: () => shiftOffset(id, 1),
+      canNextRange: offset < 0,
+    };
+  };
+
+  // Serie mensual para barras y líneas
+
+  // Al elegir una cuenta, Portfolio y Fase se acotan a ella
+  const liveAccounts = accountsList
+    .filter(a => a.status !== "CLOSED" && a.status !== "BURNED")
+    .filter(a => acct === "all" || a.name === acct);
+  const phases = liveAccounts.map(a => {
+    const { cushion, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+    return { account: a, cushion, basis, phase: getPhase(cushion) };
+  }).filter(p => p.phase);
+  const tightest = phases.length ? phases.reduce((m, p) => (p.cushion < m.cushion ? p : m)) : null;
+
+  // Récords: mejor/peor día operado y rachas máximas de días consecutivos
+  // ganando/perdiendo. Un día en 0 rompe ambas rachas sin extenderlas.
+  const records = (() => {
+    let bestDay = null, worstDay = null;
+    let curW = 0, curL = 0, maxW = 0, maxL = 0;
+    days.forEach(([d, v]) => {
+      if (!bestDay || v.pnl > bestDay.pnl) bestDay = { date: d, pnl: v.pnl };
+      if (!worstDay || v.pnl < worstDay.pnl) worstDay = { date: d, pnl: v.pnl };
+      if (v.pnl > 0) { curW++; curL = 0; }
+      else if (v.pnl < 0) { curL++; curW = 0; }
+      else { curW = 0; curL = 0; }
+      maxW = Math.max(maxW, curW);
+      maxL = Math.max(maxL, curL);
+    });
+    return { bestDay, worstDay, maxWinStreak: maxW, maxLoseStreak: maxL };
+  })();
+
+  const delta = (c, p) => (p ? Math.round(((c - p) / Math.abs(p)) * 100) : null);
+  const periodWord = { year: "año", month: "mes", week: "semana", day: "día" };
+  const periodArticle = { year: "el", month: "el", week: "la", day: "el" }; // "semana" es femenino
+
+  const renderCard = (id) => {
+    const def = V2_CARD_DEFS.find(c => c.id === id);
+    if (!def) return null;
+    const pos = cards.indexOf(id);
+    const common = {
+      title: def.title, subtitle: def.subtitle, info: def.info, tall: def.tall,
+      onRemove: () => removeCard(id), onConfig: () => setPicker(true),
+      onUp: () => moveCard(id, -1), onDown: () => moveCard(id, 1),
+      canUp: pos > 0, canDown: pos >= 0 && pos < cards.length - 1,
+    };
+    const { cur, prev, rangeLabel, onPrevRange, onNextRange, canNextRange } = statsFor(id);
+    const rangeNav = { rangeLabel, onPrevRange, onNextRange, canNextRange };
+    const pw = periodWord[periodOf(id)];
+    const pa = periodArticle[periodOf(id)];
+
+    if (id === "equity") {
+      return (
+        <V2Card key={id} {...common}
+          footer={
+            <div style={{ display: "flex", gap: 16 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.green, display: "inline-block" }} />Zona positiva</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.red, display: "inline-block" }} />Zona negativa</span>
+            </div>
+          }>
+          <V2Equity trades={scoped} accountFilter={acct} accountsList={accountsList} />
+        </V2Card>
+      );
+    }
+
+    if (id === "winRatio") {
+      // Fusiona el donut de acierto con el total de días operados: son la
+      // misma información (ganadores+perdedores=total), separarlas era redundante.
+      const diff = Math.round(cur.wr - prev.wr);
+      const dDays = delta(cur.days, prev.days);
+      return (
+        <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}
+          footer={<>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {pa} {pw} anterior</>}>
+          <div style={{ display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" }}>
+            <V2Donut pct={cur.wr} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <div>
+                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días operados</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 26, fontWeight: 700, color: V2.text }}>{cur.days}</span>
+                  {dDays !== null && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 13, fontWeight: 500, color: dDays >= 0 ? V2.green : V2.red }}>
+                      <IconArrow up={dDays >= 0} c={dDays >= 0 ? V2.green : V2.red} s={12} />{Math.abs(dDays)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días ganadores</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: V2.green }}>{cur.wins}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días perdedores</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: V2.red }}>{cur.losses}</div>
+              </div>
+            </div>
+          </div>
+        </V2Card>
+      );
+    }
+
+
+    if (id === "phase") {
+      const pct = tightest ? Math.min(100, (tightest.cushion / 1000) * 100) : 0;
+      return (
+        <V2Card key={id} {...common}
+          footer={tightest
+            ? <>Cuenta más ajustada: <span style={{ color: V2.text2 }}>{tightest.account.name}</span>{tightest.basis && <> · cierre {tightest.basis}</>}</>
+            : "Sin umbral de liquidación definido"}>
+          <div style={{ display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" }}>
+            <V2Donut pct={pct} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+              <div>
+                <div style={{ fontSize: 15, color: V2.text2, marginBottom: 4 }}>Colchón</div>
+                <div style={{ fontSize: 30, fontWeight: 700, color: V2.text }}>${tightest ? Math.round(tightest.cushion).toLocaleString() : "—"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 15, color: V2.text2, marginBottom: 4 }}>Fase {tightest ? tightest.phase.n : "—"}</div>
+                <div style={{ fontSize: 30, fontWeight: 700, color: tightest ? (tightest.phase.n === 3 ? V2.green : tightest.phase.n === 2 ? "#E2B144" : V2.red) : V2.text }}>
+                  {tightest ? `${tightest.phase.contracts} MNQ` : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </V2Card>
+      );
+    }
+
+    if (id === "records") {
+      const rd = records;
+      const statBlock = (label, day, pos) => (
+        <div style={{ background: pos ? "rgba(78,204,163,0.14)" : "rgba(232,83,110,0.14)", border: `0.5px solid ${pos ? "rgba(78,204,163,0.4)" : "rgba(232,83,110,0.4)"}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, color: pos ? V2.green : V2.red, opacity: 0.85, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px", marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: pos ? V2.green : V2.red, fontVariantNumeric: "tabular-nums" }}>{day ? fmt(Math.round(day.pnl)) : "—"}</div>
+          <div style={{ fontSize: 11, color: V2.text3, marginTop: 2 }}>{day ? day.date : "Sin datos"}</div>
+        </div>
+      );
+      const streakBlock = (label, n, pos) => (
+        <div style={{ background: V2.segBg, border: `0.5px solid ${V2.border}`, borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, color: V2.text2, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".3px", marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: pos ? V2.green : V2.red, fontVariantNumeric: "tabular-nums" }}>{n} {n === 1 ? "día" : "días"}</div>
+        </div>
+      );
+      return (
+        <V2Card key={id} {...common} footer={<>Histórico completo · {days.length} días operados</>}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {statBlock("Mejor día", rd.bestDay, true)}
+            {statBlock("Peor día", rd.worstDay, false)}
+            {streakBlock("Mejor racha ganando", rd.maxWinStreak, true)}
+            {streakBlock("Mejor racha perdiendo", rd.maxLoseStreak, false)}
+          </div>
+        </V2Card>
+      );
+    }
+
+    if (id === "portfolio") {
+      const rows = liveAccounts.map(a => {
+        const { balance, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+        const base = a.startSize ?? a.size;
+        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis };
+      });
+
+      // Una sola cuenta: cifra grande. Varias: lista con nombre y saldo.
+      if (rows.length === 1) {
+        const r = rows[0];
+        const pct = r.base ? Math.round((r.pnl / r.base) * 100) : null;
+        return (
+          <V2Card key={id} {...common}
+            footer={<>Base ${Math.round(r.base).toLocaleString()} · acumulado <span style={{ color: r.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(r.pnl))}</span>{r.basis && <> · cierre {r.basis}</>}</>}>
+            <div style={{ fontSize: 15, color: V2.text2, marginBottom: 8 }}>{r.name}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 42, fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>
+                ${Math.round(r.balance).toLocaleString()}
+              </span>
+              {pct !== null && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 16, fontWeight: 500, color: r.pnl >= 0 ? V2.green : V2.red }}>
+                  <IconArrow up={r.pnl >= 0} c={r.pnl >= 0 ? V2.green : V2.red} />{Math.abs(pct)}%
+                </span>
+              )}
+            </div>
+          </V2Card>
+        );
+      }
+
+      const total = rows.reduce((s, r) => s + r.balance, 0);
+      return (
+        <V2Card key={id} {...common}
+          footer={<>Total <span style={{ color: V2.text2, fontWeight: 600 }}>${Math.round(total).toLocaleString()}</span> en {rows.length} cuentas</>}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {rows.length === 0 && <span style={{ color: V2.text3, fontSize: 14 }}>Sin cuentas activas</span>}
+            {rows.map(r => (
+              <div key={r.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 14, color: V2.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: V2.text, fontVariantNumeric: "tabular-nums" }}>
+                    ${Math.round(r.balance).toLocaleString()}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: r.pnl >= 0 ? V2.green : V2.red, fontVariantNumeric: "tabular-nums" }}>
+                    {fmt(Math.round(r.pnl))}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </V2Card>
+      );
+    }
+
+    if (id === "profitFactor") {
+      const c = isFinite(cur.pf) ? cur.pf : 0, p = isFinite(prev.pf) ? prev.pf : 0;
+      const d = p ? Math.round(((c - p) / p) * 100) : null;
+      return (
+        <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}>
+          <V2Metric value={fmtN(c, 2)} deltaPct={d} up={(d ?? 0) >= 0}
+            compare={<>Frente a profit factor {fmtN(p, 2)} {pa} {pw} anterior</>} />
+        </V2Card>
+      );
+    }
+
+    return null;
+  };
+
+  // Botón de icono de la cabecera (los que antes vivían en la barra lateral)
+  const hdrBtn = (onClick, title, Ico) => (
+    <button onClick={onClick} title={title} aria-label={title}
+      style={{
+        width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center",
+        background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 10, cursor: "pointer",
+      }}>
+      <Ico c={V2.text2} s={19} />
+    </button>
+  );
+
+  return (
+    <div style={{ background: V2.bg, borderRadius: 18, minHeight: "80vh" }}>
+      {/* El contenido se desliza por detrás del menú inferior fijo */}
+      <main style={{ minWidth: 0, padding: "30px 30px 190px" }}>
+        {/* Título + controles, siempre visible */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginBottom: 30 }}>
+          <h1 style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 50, fontWeight: 700, color: V2.text, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
+            <IconBolt s={30} />
+            {nav === "dashboard" ? (
+              <span>Trading Journal <span style={{ color: V2.green }}>v5</span>
+                {deployId && <span style={{ fontSize: 15, fontWeight: 400, color: V2.text3, marginLeft: 8 }}>({deployId})</span>}
+              </span>
+            ) : V2_NAV.find(n => n.id === nav)?.label}
+          </h1>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, background: V2.green, color: "#0A0A0A",
+                border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              + Añadir trade
+            </button>
+            {hdrBtn(() => setPicker(true), "Añadir tarjeta", IconPlus)}
+            {hdrBtn(onRefresh, "Sincronizar y recalcular fases", IconSync)}
+            <button
+              onClick={onExit}
+              title="Volver al dashboard antiguo"
+              style={{
+                fontSize: 12, fontWeight: 600, padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                background: "transparent", color: V2.text3, border: `1px solid ${V2.border}`, whiteSpace: "nowrap",
+              }}
+            >
+              V4 (Old)
+            </button>
+            <span style={{ display: "inline-flex", alignItems: "center" }}><UserButton /></span>
+            <span style={{ fontSize: 13, color: V2.text3 }}>Cuenta</span>
+            <select
+              value={acct}
+              onChange={e => setAcct(e.target.value)}
+              style={{
+                background: V2.card, color: V2.text, border: `1px solid ${V2.border}`,
+                borderRadius: 10, padding: "10px 14px", fontSize: 14, cursor: "pointer", outline: "none", minWidth: 190,
+              }}
+            >
+              <option value="all">Todas las cuentas</option>
+              {accountsList.filter(a => a.status !== "CLOSED" && a.status !== "BURNED").map(a => (
+                <option key={a.id} value={a.name}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
+        {editingTrade && <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} dark />}
+
+        {picker && (
+          <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 20, marginBottom: 22 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontSize: 15, color: V2.text, fontWeight: 500 }}>Tarjetas del panel</span>
+              <button onClick={() => setPicker(false)} style={{ background: "none", border: "none", color: V2.text3, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {V2_CARD_DEFS.map(c => {
+                const on = cards.includes(c.id);
+                return (
+                  <button key={c.id} onClick={() => toggleCard(c.id)}
+                    style={{
+                      fontSize: 13, padding: "7px 14px", borderRadius: 999, cursor: "pointer",
+                      border: `1px solid ${on ? V2.green : V2.border}`,
+                      background: on ? "rgba(78,204,163,0.12)" : "transparent",
+                      color: on ? V2.green : V2.text3,
+                    }}>
+                    {on ? "✓ " : "+ "}{c.title}{c.subtitle ? ` (${c.subtitle})` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {nav === "dashboard" && (
+          cards.length === 0
+            ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ en la barra lateral para añadirlas.</div>
+            : <div className="v2-grid">{cards.map(renderCard)}</div>
+        )}
+
+        {nav === "stats" && (
+          <div className="v2-grid">
+            {["equity", "winRatio", "profitFactor"].map(renderCard)}
+          </div>
+        )}
+
+        {nav === "trades" && (() => {
+          const sortedTrades = [...scoped].sort((a, b) => b.id - a.id);
+          const perPage = 10;
+          const totalPages = Math.max(1, Math.ceil(sortedTrades.length / perPage));
+          const pageSafe = Math.min(tradePage, totalPages);
+          const pageTrades = sortedTrades.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+          return (
+            <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 24 }}>
+              <div style={{ fontSize: 19, fontWeight: 500, color: V2.text, marginBottom: 18 }}>Días operados</div>
+              <div className="v2-scroll-fade" style={{ overflowX: "auto", position: "relative" }}>
+                <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 720 }}>
+                  <thead>
+                    <tr>
+                      {["#", "Fecha", "Cuenta", "PnL", "Comisión", "Balance", "Umbral DD", "Res.", ""].map(h => (
+                        <th key={h} style={{ fontSize: 11, fontWeight: 600, color: V2.text3, textAlign: "left", padding: "6px 8px", borderBottom: `1px solid ${V2.border}`, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageTrades.map(t => (
+                      <tr key={t.id} style={{ borderBottom: `1px solid ${V2.border}` }}>
+                        <td style={{ padding: "8px", color: V2.text3 }}>{t.id}</td>
+                        <td style={{ padding: "8px", color: V2.text, whiteSpace: "nowrap" }}>{t.date}</td>
+                        <td style={{ padding: "8px", color: V2.text2, whiteSpace: "nowrap" }}>{t.account.split(" ")[0]}</td>
+                        <td style={{ padding: "8px", color: t.pnl > 0 ? V2.green : t.pnl < 0 ? V2.red : V2.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(t.pnl)}</td>
+                        <td style={{ padding: "8px", color: V2.red, opacity: 0.75, fontVariantNumeric: "tabular-nums" }}>
+                          {t.commission ? `-$${Math.abs(t.commission).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                        </td>
+                        <td style={{ padding: "8px", color: V2.text, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                          {t.balance !== null && t.balance !== undefined ? `$${t.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                        </td>
+                        <td style={{ padding: "8px", color: V2.text2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                          {t.threshold !== null && t.threshold !== undefined ? `$${t.threshold.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                        </td>
+                        <td style={{ padding: "8px" }}>
+                          <span style={{ fontSize: 11, padding: "1.5px 7px", borderRadius: 4, background: t.result === "Win" ? "rgba(78,204,163,0.16)" : "rgba(232,83,110,0.16)", color: t.result === "Win" ? V2.green : V2.red }}>{t.result}</span>
+                        </td>
+                        <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                          <button onClick={() => { setAddingTrade(false); setEditingTrade(t); }} title="Editar" style={{ fontSize: 12, padding: "3px 7px", marginRight: 4, border: `0.5px solid ${V2.border}`, borderRadius: 4, background: "transparent", cursor: "pointer", color: V2.text2 }}>✏️</button>
+                          <button onClick={() => setDeleteConfirm(t.id)} title="Eliminar" style={{ fontSize: 12, padding: "3px 7px", border: `0.5px solid ${V2.border}`, borderRadius: 4, background: "transparent", cursor: "pointer", color: V2.red }}>✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {deleteConfirm && (
+                <div style={{ padding: "10px 14px", background: "rgba(232,83,110,0.14)", border: "0.5px solid rgba(232,83,110,0.4)", borderRadius: 8, marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, color: V2.red }}>¿Seguro que deseas eliminar el trade #{deleteConfirm}?</span>
+                  <button onClick={() => deleteTrade(deleteConfirm)} style={{ fontSize: 12, padding: "5px 12px", background: V2.red, color: "#0A0A0A", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
+                  <button onClick={() => setDeleteConfirm(null)} style={{ fontSize: 12, padding: "5px 12px", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", color: V2.text2 }}>Cancelar</button>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
+                  <button onClick={() => setTradePage(p => Math.max(1, p - 1))} disabled={pageSafe === 1} style={{ padding: "4px 12px", fontSize: 12, border: `0.5px solid ${V2.border}`, borderRadius: 6, background: "transparent", color: V2.text2, cursor: pageSafe === 1 ? "default" : "pointer", opacity: pageSafe === 1 ? 0.4 : 1 }}>‹</button>
+                  <span style={{ fontSize: 12, color: V2.text2 }}>{pageSafe} / {totalPages}</span>
+                  <button onClick={() => setTradePage(p => Math.min(totalPages, p + 1))} disabled={pageSafe === totalPages} style={{ padding: "4px 12px", fontSize: 12, border: `0.5px solid ${V2.border}`, borderRadius: 6, background: "transparent", color: V2.text2, cursor: pageSafe === totalPages ? "default" : "pointer", opacity: pageSafe === totalPages ? 0.4 : 1 }}>›</button>
+                  <span style={{ fontSize: 12, color: V2.text3, marginLeft: 8 }}>{sortedTrades.length} trades total</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {nav === "calendar" && (
+          <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 24 }}>
+            <V2CalendarWidget trades={scoped} />
+          </div>
+        )}
+
+        {/* Misma hoja de ajustes de siempre: el contenedor redefine sus
+            variables de color para que salga en oscuro. Van en línea además de
+            en la clase porque en dev el chunk CSS conserva el nombre entre
+            builds y el navegador puede servir una copia cacheada. */}
+        {/* Plan de trading. En escritorio va el PDF incrustado; en móvil,
+            la versión nativa, porque iOS solo pinta la primera página de un
+            PDF en iframe y no deja desplazarlo. */}
+        {nav === "plan" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 15, color: V2.text2 }}>Plan de Trading NQ · Sopi Plus</span>
+              <a href="/plan-trading-nq.pdf" target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 13, fontWeight: 700, padding: "8px 14px", borderRadius: 10, background: V2.green, color: "#0A0A0A", textDecoration: "none", whiteSpace: "nowrap" }}>
+                📄 Abrir PDF
+              </a>
+            </div>
+
+            {/* PDF incrustado — solo escritorio */}
+            <div className="plan-embed" style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, overflow: "hidden" }}>
+              <iframe src="/plan-trading-nq.pdf#view=FitH" title="Plan de Trading NQ" style={{ width: "100%", height: "78vh", border: "none", display: "block", background: V2.segBg }} />
+            </div>
+
+            {/* Versión nativa — solo móvil */}
+            <div className="plan-native" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ background: "rgba(232,83,110,0.14)", border: "1px solid rgba(232,83,110,0.4)", borderRadius: 16, padding: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.red, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 6 }}>Regla nº0 · la única que importa</div>
+                <div style={{ fontSize: 14, color: V2.text, lineHeight: 1.6 }}>
+                  Si el trade 1 es <strong>SL o BE</strong>: cierro NinjaTrader. El día ha terminado.
+                  No hay «otro setup». No hay «recuperar».
+                </div>
+              </div>
+
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 4 }}>Fases</div>
+                <div style={{ fontSize: 11, color: V2.text3, marginBottom: 12 }}>Se fija antes de la sesión con el cierre de ayer. Nunca intradía.</div>
+                {PHASES.map(p => (
+                  <div key={p.n} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 0", borderTop: p.n > 1 ? `1px solid ${V2.border}` : "none" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: p.color === "amber" ? "rgba(226,177,68,0.16)" : p.color === "green" ? "rgba(78,204,163,0.16)" : "rgba(232,83,110,0.16)", color: p.color === "amber" ? "#E2B144" : p.color === "green" ? V2.green : V2.red }}>
+                      FASE {p.n}
+                    </span>
+                    <span style={{ fontSize: 13, color: V2.text, fontWeight: 500 }}>{p.name}</span>
+                    <span style={{ fontSize: 12, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>
+                      {p.n === 1 ? "colchón < $500" : p.n === 2 ? "$500–999" : "≥ $1.000"}
+                    </span>
+                    <span style={{ marginLeft: "auto", fontSize: 12, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                      <strong style={{ color: V2.text }}>{p.contracts} MNQ</strong> · <span style={{ color: V2.red }}>SL ${p.sl}</span> · <span style={{ color: V2.green }}>TP ${p.tp}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 10 }}>Flujo del día</div>
+                <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
+                  <div><strong style={{ color: V2.text }}>Trade 1</strong> — al tamaño de mi fase, checklist completa antes de entrar.</div>
+                  <div><strong style={{ color: V2.text }}>Trade 2 opcional</strong> — 1 MNQ, SL máx. $80.</div>
+                  <div><strong style={{ color: V2.text }}>Fin del día</strong> — cerrar NinjaTrader, pase lo que pase.</div>
+                </div>
+              </div>
+
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 10 }}>Reglas</div>
+                <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
+                  <div>· 1 trade al día por cuenta, real y examen.</div>
+                  <div>· 3 días seguidos de SL en la misma cuenta = semana cerrada, no se opera hasta el lunes.</div>
+                  <div>· No opero por recuperar nada, ni de ayer ni de hoy.</div>
+                  <div>· Un trade ganador saltándose las reglas cuenta como incumplimiento: el resultado no valida la decisión.</div>
+                  <div>· No entrar también es una decisión de trading. La paciencia es la ventaja.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {nav === "settings" && (
+          <div className="v2-settings" style={V2_SETTINGS_VARS}>
+            {settingsPanel}
+          </div>
+        )}
+      </main>
+
+      <V2MeniscusNav active={nav} onChange={setNav} />
+    </div>
+  );
+}
+
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [trades, setTrades] = useState([]);
@@ -3019,13 +4568,17 @@ export default function App() {
   const [bulkStrategy, setBulkStrategy] = useState("");
   const [bulkAccount, setBulkAccount] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [currentTab, setCurrentTab] = useState("dashboard");
+  // El dashboard V5 es la vista principal; el clásico queda tras "V4 (Old)".
+  // Se arranca siempre en V5 y en su primera sección, sin recordar la anterior.
+  const [currentTab, setCurrentTab] = useState("v2");
   const [theme, setTheme] = useState("light");
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
   const [selectedTradeImage, setSelectedTradeImage] = useState(null);
   const [imageImportLoading, setImageImportLoading] = useState(false);
   const [deployId, setDeployId] = useState("");
+  // Informe de fases tras pulsar actualizar (null = sin verificación reciente)
+  const [phaseReport, setPhaseReport] = useState(null);
 
   const PER_PAGE = 10;
   const isSettingsLoaded = useRef(false);
@@ -3224,16 +4777,20 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [layout, visibility, theme, selectedAccounts, accountsPanelFilter, aiProvider, aiKey]);
 
+  // Devuelven los datos además de guardarlos: la verificación de fases
+  // necesita leerlos ya, sin esperar al siguiente render.
   const fetchAccounts = async () => {
     try {
       const res = await fetch('/api/accounts');
       if (res.ok) {
         const data = await res.json();
         setAccountsList(data);
+        return data;
       }
     } catch (err) {
       console.error("Error cargando cuentas:", err);
     }
+    return null;
   };
 
   const fetchTrades = async () => {
@@ -3243,12 +4800,39 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setTrades(data);
+        return data;
       }
     } catch (err) {
       console.error("Error cargando trades:", err);
     } finally {
       setLoading(false);
     }
+    return null;
+  };
+
+  // Recalcula la fase de cada cuenta con los datos recién traídos y compara
+  // con la que había, para avisar de los cambios de tamaño de posición.
+  const refreshAndVerifyPhases = async () => {
+    const before = new Map(accountsList.map(a => {
+      const { cushion } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+      return [a.name, getPhase(cushion)?.n ?? null];
+    }));
+
+    const [freshAccts, freshTrades] = await Promise.all([fetchAccounts(), fetchTrades()]);
+    const accts = freshAccts || accountsList;
+    const trs = freshTrades || trades;
+
+    const rows = accts
+      .filter(a => a.status !== "CLOSED" && a.status !== "BURNED")
+      .map(a => {
+        const { cushion, basis } = computeCushion(a, trs.filter(t => t.account === a.name), a.size);
+        const ph = getPhase(cushion);
+        const prev = before.get(a.name);
+        return { name: a.name, phase: ph, cushion, basis, prev, changed: prev != null && ph != null && prev !== ph.n };
+      })
+      .sort((x, y) => (x.phase?.n ?? 9) - (y.phase?.n ?? 9));
+
+    setPhaseReport({ at: new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }), rows });
   };
 
   const saveTrade = async (t) => {
@@ -4391,23 +5975,22 @@ export default function App() {
 
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
+    <div style={currentTab === "v2"
+      ? { fontFamily: "var(--font-sans)" }
+      : { maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <SundayReminder />
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
+      {currentTab !== "v2" && (
       <div className="flex flex-col md:flex-row justify-between gap-4 items-center md:items-center mb-5">
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
             <span>📈 Trading Journal</span>
             <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>
-              v4.1 {deployId && `(${deployId})`}
+              v4.1 (old) {deployId && `(${deployId})`}
             </span>
             <button
-              onClick={async () => {
-                setLoading(true);
-                await Promise.all([fetchAccounts(), fetchTrades()]);
-                setLoading(false);
-              }}
-              title="Sincronizar con Neon"
+              onClick={refreshAndVerifyPhases}
+              title="Sincronizar y recalcular la fase de cada cuenta"
               style={{
                 background: "transparent",
                 border: "none",
@@ -4430,6 +6013,13 @@ export default function App() {
             >
               📄 Plan
             </a>
+            <button
+              onClick={() => setCurrentTab("v2")}
+              title="Volver al dashboard principal"
+              style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, cursor: "pointer", whiteSpace: "nowrap", background: C.blue, color: "#fff", border: `0.5px solid ${C.blue}` }}
+            >
+              ✨ Volver a V5
+            </button>
           </h1>
         </div>
         <div className="flex flex-col md:flex-row items-center gap-2.5 w-full md:w-auto">
@@ -4488,6 +6078,7 @@ export default function App() {
 
         </div>
       </div>
+      )}
       
       {loading ? (
         <div style={{ padding: "60px 0", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12 }}>
@@ -4495,7 +6086,39 @@ export default function App() {
         </div>
       ) : (
         <>
-          {currentTab === "settings" ? (
+          {currentTab === "v2" ? (
+            <DashboardV2
+              trades={trades}
+              accountsList={accountsList}
+              onExit={() => setCurrentTab("dashboard")}
+              onRefresh={refreshAndVerifyPhases}
+              deployId={deployId}
+              addingTrade={addingTrade}
+              setAddingTrade={setAddingTrade}
+              editingTrade={editingTrade}
+              setEditingTrade={setEditingTrade}
+              deleteConfirm={deleteConfirm}
+              setDeleteConfirm={setDeleteConfirm}
+              saveTrade={saveTrade}
+              deleteTrade={deleteTrade}
+              activeAccountsForForm={activeAccountsForForm}
+              allAccountsForForm={allAccountsForForm}
+              settingsPanel={
+                <SettingsPanel
+                  accountsList={accountsList}
+                  fetchAccounts={fetchAccounts}
+                  fetchTrades={fetchTrades}
+                  theme={theme}
+                  onChangeTheme={onChangeTheme}
+                  aiProvider={aiProvider}
+                  setAiProvider={setAiProvider}
+                  aiKey={aiKey}
+                  setAiKey={setAiKey}
+                  trades={trades}
+                />
+              }
+            />
+          ) : currentTab === "settings" ? (
             <SettingsPanel
               accountsList={accountsList}
               fetchAccounts={fetchAccounts}
@@ -4515,6 +6138,45 @@ export default function App() {
                   Modo edición activo — reordena módulos con ↑↓ y actívalos o desactívalos
                 </div>
               )}
+
+              {/* Verificación de fases tras pulsar actualizar */}
+              {phaseReport && (
+                <div style={{ background: "var(--color-background-primary)", border: `0.5px solid ${phaseReport.rows.some(r => r.changed) ? C.amber : "var(--color-border-secondary)"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".7px" }}>
+                      Fases recalculadas · {phaseReport.at}
+                    </span>
+                    <button onClick={() => setPhaseReport(null)} aria-label="Cerrar" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+                  </div>
+                  {phaseReport.rows.some(r => r.changed) && (
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#8A5A0B", background: "#FDF3E2", borderRadius: 6, padding: "5px 8px", marginBottom: 8 }}>
+                      ⚠ Cambio de fase: ajusta el tamaño de posición
+                    </div>
+                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {phaseReport.rows.map(r => (
+                      <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
+                        <span style={{ minWidth: 150, color: "var(--color-text-secondary)", fontWeight: r.changed ? 600 : 400 }}>{r.name}</span>
+                        {r.phase ? (
+                          <>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1.5px 6px", borderRadius: 4, background: r.phase.color === "amber" ? "#FDF3E2" : C[r.phase.color + "Bg"], color: r.phase.color === "amber" ? "#8A5A0B" : C[r.phase.color + "Text"] }}>
+                              FASE {r.phase.n} · {r.phase.contracts} MNQ
+                            </span>
+                            <span style={{ color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>
+                              colchón ${Math.round(r.cushion).toLocaleString()}
+                              {r.basis && ` · cierre ${r.basis}`}
+                            </span>
+                            {r.changed && <span style={{ color: "#8A5A0B", fontWeight: 600 }}>antes fase {r.prev}</span>}
+                          </>
+                        ) : (
+                          <span style={{ color: "var(--color-text-tertiary)" }}>sin umbral definido</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {orderedModules.map((mod, idx) => renderModule(mod, idx))}
             </>
           )}
