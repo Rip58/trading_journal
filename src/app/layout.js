@@ -4,15 +4,26 @@ import "./globals.css";
 export const metadata = {
   title: "Diario de Trading",
   description: "Registro y analíticas de mis trades en futuros",
+  // Instalada en la pantalla de inicio se ejecuta sin barra de Safari.
+  // La barra de estado translúcida deja que el fondo negro llegue hasta
+  // arriba; el contenido reserva su hueco con env(safe-area-inset-top).
+  appleWebApp: {
+    capable: true,
+    title: "Trading Journal",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 // maximumScale: 1 evita el auto-zoom de iOS al enfocar inputs (el pellizco
 // manual sigue funcionando en iOS, que lo ignora para gestos del usuario).
+// La app arranca en el dashboard V5, que es oscuro: themeColor tiñe de negro
+// la franja de estado en iOS desde el primer pintado, sin esperar a hidratar.
 export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  themeColor: "#0A0A0A",
 };
 
 export default function RootLayout({ children }) {

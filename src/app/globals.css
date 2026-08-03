@@ -211,7 +211,7 @@ button:active {
 /* Dashboard V2 — rejilla en mosaico: las tarjetas altas ocupan dos filas */
 .v2-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: minmax(0, auto);
   gap: 22px;
   align-items: start;
@@ -303,19 +303,19 @@ button:active {
    Uso real: 80% iPhone. Escala tipográfica modular 11/12/14/16/20/26 y ritmo
    de espaciado de 4/8px. Zonas táctiles ≥44px y ≥8px de separación. */
 
-.v5-main { padding: 26px 26px 190px; }
+.v5-main { padding: calc(26px + env(safe-area-inset-top, 0px)) 26px 190px; }
 .v5-title { font-size: clamp(22px, 5vw, 42px); }
 
 /* Rejilla: 3 columnas en escritorio, 2 en tablet, y en móvil 2 columnas donde
    las tarjetas anchas (gráficos y donuts) ocupan las dos. */
 .v2-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: minmax(0, auto);
   gap: 20px;
   align-items: stretch;   /* dos tarjetas contiguas comparten altura */
 }
-@media (max-width: 1180px) { .v2-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1180px) { .v2-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .v2-card { padding: 20px; }
 .v2-card-hd { margin-bottom: 14px; }
@@ -354,10 +354,12 @@ button:active {
 
 @media (max-width: 640px) {
   /* Márgenes al mínimo razonable: el contenido gana ~28px de ancho útil */
-  .v5-main { padding: 12px 10px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .v5-main {
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(96px + env(safe-area-inset-bottom, 0px));
+  }
   .v5-hash { display: none; }
 
-  .v2-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .v2-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .v2-grid > * { grid-row: span 1 !important; }
   .v2-grid > .v2-wide { grid-column: 1 / -1; }
 
@@ -403,3 +405,9 @@ button:active {
   .v2-metric { font-size: 26px; }
   .v2-wide .v2-metric { font-size: 32px; }
 }
+
+/* Nada debe poder ensanchar el documento: en móvil un desborde hace que
+   Safari reduzca la escala y la app arranque empequeñecida. */
+html, body { max-width: 100%; overflow-x: hidden; }
+.v5-main, .v2-grid, .v2-card { min-width: 0; max-width: 100%; }
+.v2-card { overflow: hidden; }

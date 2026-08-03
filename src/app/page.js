@@ -4628,13 +4628,35 @@ export default function App() {
   // Se arranca siempre en V5 y en su primera sección, sin recordar la anterior.
   const [currentTab, setCurrentTab] = useState("v2");
 
-  // En V5 el fondo del documento pasa a negro: si no, se ve blanco al hacer
-  // overscroll o cuando el contenido no llega a llenar la ventana.
+  // En V5 el documento entero pasa a negro. Hay que tocar html y body: body
+  // lleva su propio fondo claro y unos degradados que, si no, asoman por la
+  // franja de estado y al hacer overscroll. También la meta theme-color, que
+  // es la que tiñe la barra de estado en iOS.
   useEffect(() => {
-    const el = document.documentElement;
-    const prev = el.style.background;
-    el.style.background = currentTab === "v2" ? V2.bg : "";
-    return () => { el.style.background = prev; };
+    const dark = currentTab === "v2";
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = { html: html.style.background, bg: body.style.backgroundColor, img: body.style.backgroundImage };
+
+    html.style.background = dark ? V2.bg : "";
+    body.style.backgroundColor = dark ? V2.bg : "";
+    body.style.backgroundImage = dark ? "none" : "";
+
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    const prevTheme = meta.getAttribute("content");
+    meta.setAttribute("content", dark ? V2.bg : "#ffffff");
+
+    return () => {
+      html.style.background = prev.html;
+      body.style.backgroundColor = prev.bg;
+      body.style.backgroundImage = prev.img;
+      if (prevTheme !== null) meta.setAttribute("content", prevTheme);
+    };
   }, [currentTab]);
   const [theme, setTheme] = useState("light");
   const [aiProvider, setAiProvider] = useState("gemini");
