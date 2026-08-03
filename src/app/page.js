@@ -3740,13 +3740,13 @@ const MN_DESKTOP = {
   W: 1000, H: 147, CR: 34,
   R_REST: 54, R_DRAG: 64, F_RATIO: 0.6,
   ICON_Y: 73, LABEL_Y: 120, PITCH: 190, ICON_SIZE: 42, LABEL_SIZE: 20,
-  VB: { x: -60, y: -130, w: 1120, h: 292 },
+  VB: { x: -60, y: -130, w: 1120, h: 280 },
 };
 const MN_MOBILE = {
   W: 760, H: 172, CR: 30,
   R_REST: 58, R_DRAG: 68, F_RATIO: 0.6,
   ICON_Y: 84, LABEL_Y: 136, PITCH: 160, ICON_SIZE: 54, LABEL_SIZE: 28,
-  VB: { x: -50, y: -145, w: 860, h: 330 },
+  VB: { x: -50, y: -145, w: 860, h: 320 },
 };
 const mnSlots = (G) => {
   const pad = (G.W - G.PITCH * (V2_NAV.length - 1)) / 2;
@@ -3946,7 +3946,9 @@ function V2MeniscusNav({ active, onChange }) {
     <div style={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 900,
       display: "flex", justifyContent: "center",
-      padding: "0 12px calc(8px + env(safe-area-inset-bottom, 0px))",
+      // Se respeta la barra de gestos, pero sin duplicarla con separación
+      // extra: antes la barra quedaba a 47px del borde y ahora a 21px.
+      padding: "0 12px calc(env(safe-area-inset-bottom, 0px) * 0.45 + 4px)",
       pointerEvents: "none",
     }}>
       <svg
