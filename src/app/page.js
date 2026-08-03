@@ -3177,19 +3177,21 @@ function v2Slice(days, [from, to]) {
 }
 
 // ── Piezas visuales ──────────────────────────────────────────────────────────
-function V2Donut({ pct, size = 168, stroke = 15 }) {
+// El tamaño lo fija la clase .v2-donut (responsive); el SVG escala por viewBox.
+function V2Donut({ pct, stroke = 15 }) {
+  const size = 168;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const val = Math.max(0, Math.min(100, pct || 0));
   return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+    <div className="v2-donut" style={{ position: "relative", flexShrink: 0 }}>
+      <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: "100%", display: "block", transform: "rotate(-90deg)" }}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={V2.track} strokeWidth={stroke} strokeLinecap="round" />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={V2.green} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${(c * val) / 100} ${c}`} />
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: 40, fontWeight: 700, color: V2.text, letterSpacing: "-0.02em" }}>{Math.round(val)}</span>
-        <span style={{ fontSize: 20, fontWeight: 500, color: V2.text2, marginLeft: 2, marginTop: 8 }}>%</span>
+        <span className="v2-donut-num" style={{ fontWeight: 700, color: V2.text, letterSpacing: "-0.02em" }}>{Math.round(val)}</span>
+        <span className="v2-donut-pct" style={{ fontWeight: 500, color: V2.text2, marginLeft: 2 }}>%</span>
       </div>
     </div>
   );
@@ -3234,7 +3236,7 @@ function V2Equity({ trades, accountFilter, accountsList }) {
 
   if (pts.length < 2) return <div style={{ padding: "20px 0", color: V2.text3, fontSize: 13 }}>Sin datos suficientes</div>;
 
-  const W = width || 620, H = 210, PAD = 45;
+  const W = width || 620, H = 150, PAD = 38;  // más bajo: la tarjeta no debe comerse la pantalla
   const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
   const range = max - min || 1;
   const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
@@ -3264,11 +3266,11 @@ function V2Equity({ trades, accountFilter, accountsList }) {
   };
 
   return (
-    <div ref={containerRef} style={{ width: "100%", minHeight: H }}>
+    <div ref={containerRef} className="v2-eq" style={{ width: "100%" }}>
       {width > 0 && (
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          style={{ width: "100%", height: H, cursor: "crosshair", overflow: "visible", display: "block" }}
+          style={{ width: "100%", height: "100%", cursor: "crosshair", overflow: "visible", display: "block" }}
           role="img"
           aria-label="Equity curve acumulada"
           onMouseMove={e => pointFromEvent(e.clientX)}
@@ -3640,12 +3642,12 @@ const IconDown = ({ s = 15, c }) => (
 
 function V2Card({ title, subtitle, info, tall, onRemove, onConfig, onUp, onDown, canUp, canDown, period, onPeriod, rangeLabel, onPrevRange, onNextRange, canNextRange, footer, children }) {
   return (
-    <div style={{
-      background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16,
-      padding: 24, display: "flex", flexDirection: "column",
+    <div className={`v2-card${tall ? " v2-wide" : ""}`} style={{
+      background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14,
+      display: "flex", flexDirection: "column",
       gridRow: tall ? "span 2" : "span 1",
     }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 18 }}>
+      <div className="v2-card-hd" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <span
           title={typeof title === "string" ? title : undefined}
           style={{
@@ -3694,7 +3696,7 @@ function V2Metric({ value, deltaPct, up, compare }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 42, fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</span>
+        <span className="v2-metric" style={{ fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</span>
         {deltaPct !== null && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 16, fontWeight: 500, color: up ? V2.green : V2.red }}>
             <IconArrow up={up} c={up ? V2.green : V2.red} />{Math.abs(deltaPct)}%
@@ -3715,6 +3717,13 @@ const V2_CARD_DEFS = [
   { id: "phase", title: "Fase del plan", tall: true, info: "Colchón hasta el umbral de liquidación de la cuenta más ajustada." },
   { id: "records", title: "Récords", tall: true, info: "Mejor y peor día operado, y las mayores rachas de días consecutivos ganando y perdiendo." },
 ];
+
+// Composición inicial de cada hoja. A partir de aquí manda lo que el usuario
+// haya ordenado, que se guarda en el navegador.
+const V2_DEFAULT_LAYOUT = {
+  dashboard: V2_CARD_DEFS.map(c => c.id),
+  stats: ["equity", "winRatio", "profitFactor", "records"],
+};
 
 // Barrido continuo menta → lima → ámbar → carmín: empieza en el verde de acento
 // de la app y acaba en su rojo, así los tonos intermedios del arrastre no
@@ -4005,7 +4014,15 @@ function DashboardV2({
   activeAccountsForForm, allAccountsForForm, settingsPanel,
 }) {
   const [nav, setNav] = useState("dashboard");
-  const [cards, setCards] = useState(V2_CARD_DEFS.map(c => c.id));
+  // El plan no es una sección más: se abre encima. Guardamos de dónde venía
+  // para que la ✕ devuelva justo ahí.
+  const prevNavRef = useRef("dashboard");
+  useEffect(() => { if (nav !== "plan") prevNavRef.current = nav; }, [nav]);
+  const closePlan = () => setNav(prevNavRef.current === "plan" ? "dashboard" : prevNavRef.current);
+  // Cada hoja guarda su propio orden de tarjetas. `seen` registra los tipos ya
+  // conocidos: así una tarjeta nueva de la app aparece sola, pero una que el
+  // usuario quitó a mano no reaparece en el siguiente arranque.
+  const [layout, setLayout] = useState(V2_DEFAULT_LAYOUT);
   const [periods, setPeriods] = useState({});
   const [picker, setPicker] = useState(false);
   const [acct, setAcct] = useState("all");
@@ -4014,27 +4031,43 @@ function DashboardV2({
 
   useEffect(() => {
     try {
-      const s = localStorage.getItem("tj_v2_cards");
-      if (s) {
-        const p = JSON.parse(s);
-        if (Array.isArray(p)) setCards(p.filter(id => V2_CARD_DEFS.some(c => c.id === id)));
-      }
+      const raw = localStorage.getItem("tj_v2_layout");
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved || typeof saved !== "object") return;
+      const seen = Array.isArray(saved.seen) ? saved.seen : [];
+      const nuevas = V2_CARD_DEFS.filter(c => !seen.includes(c.id)).map(c => c.id);
+      const next = {};
+      Object.keys(V2_DEFAULT_LAYOUT).forEach(sec => {
+        const guardado = Array.isArray(saved.layout?.[sec])
+          ? saved.layout[sec].filter(id => V2_CARD_DEFS.some(c => c.id === id))
+          : V2_DEFAULT_LAYOUT[sec];
+        // Las tarjetas que la app ha añadido desde la última visita se suman
+        const añadir = nuevas.filter(id => V2_DEFAULT_LAYOUT[sec].includes(id) && !guardado.includes(id));
+        next[sec] = [...guardado, ...añadir];
+      });
+      setLayout(next);
     } catch (e) { /* sin preferencia guardada */ }
   }, []);
 
-  const persist = (next) => {
-    setCards(next);
-    try { localStorage.setItem("tj_v2_cards", JSON.stringify(next)); } catch (e) { /* almacenamiento no disponible */ }
+  const persist = (sec, lista) => {
+    const next = { ...layout, [sec]: lista };
+    setLayout(next);
+    try {
+      localStorage.setItem("tj_v2_layout", JSON.stringify({ layout: next, seen: V2_CARD_DEFS.map(c => c.id) }));
+    } catch (e) { /* almacenamiento no disponible */ }
   };
-  const removeCard = (id) => persist(cards.filter(c => c !== id));
-  const toggleCard = (id) => persist(cards.includes(id) ? cards.filter(c => c !== id) : [...cards, id]);
-  const moveCard = (id, dir) => {
-    const i = cards.indexOf(id);
+  const cardsOf = (sec) => layout[sec] || [];
+  const removeCard = (sec, id) => persist(sec, cardsOf(sec).filter(c => c !== id));
+  const toggleCard = (sec, id) => persist(sec, cardsOf(sec).includes(id) ? cardsOf(sec).filter(c => c !== id) : [...cardsOf(sec), id]);
+  const moveCard = (sec, id, dir) => {
+    const lista = cardsOf(sec);
+    const i = lista.indexOf(id);
     const j = i + dir;
-    if (i < 0 || j < 0 || j >= cards.length) return;
-    const next = [...cards];
+    if (i < 0 || j < 0 || j >= lista.length) return;
+    const next = [...lista];
     [next[i], next[j]] = [next[j], next[i]];
-    persist(next);
+    persist(sec, next);
   };
   const periodOf = (id) => periods[id] || "month";
   // Cambiar de Year/Month/Week/Day vuelve siempre al periodo actual (offset 0)
@@ -4095,15 +4128,17 @@ function DashboardV2({
   const periodWord = { year: "año", month: "mes", week: "semana", day: "día" };
   const periodArticle = { year: "el", month: "el", week: "la", day: "el" }; // "semana" es femenino
 
-  const renderCard = (id) => {
+  // `sec` es la hoja en la que se pinta: cada una guarda su propio orden
+  const renderCard = (id, sec = "dashboard") => {
     const def = V2_CARD_DEFS.find(c => c.id === id);
     if (!def) return null;
-    const pos = cards.indexOf(id);
+    const lista = cardsOf(sec);
+    const pos = lista.indexOf(id);
     const common = {
       title: def.title, subtitle: def.subtitle, info: def.info, tall: def.tall,
-      onRemove: () => removeCard(id), onConfig: () => setPicker(true),
-      onUp: () => moveCard(id, -1), onDown: () => moveCard(id, 1),
-      canUp: pos > 0, canDown: pos >= 0 && pos < cards.length - 1,
+      onRemove: () => removeCard(sec, id), onConfig: () => setPicker(true),
+      onUp: () => moveCard(sec, id, -1), onDown: () => moveCard(sec, id, 1),
+      canUp: pos > 0, canDown: pos >= 0 && pos < lista.length - 1,
     };
     const { cur, prev, rangeLabel, onPrevRange, onNextRange, canNextRange } = statsFor(id);
     const rangeNav = { rangeLabel, onPrevRange, onNextRange, canNextRange };
@@ -4132,28 +4167,24 @@ function DashboardV2({
       return (
         <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}
           footer={<>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {pa} {pw} anterior</>}>
-          <div style={{ display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" }}>
+          {/* Donut a la izquierda y datos a la derecha, en filas compactas:
+              la tarjeta ocupa la mitad de alto que apilándolos. */}
+          <div className="v2-split">
             <V2Donut pct={cur.wr} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              <div>
-                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días operados</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 26, fontWeight: 700, color: V2.text }}>{cur.days}</span>
+            <div className="v2-rows">
+              <div className="v2-row">
+                <span>Días operados</span>
+                <b style={{ color: V2.text }}>
+                  {cur.days}
                   {dDays !== null && (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 13, fontWeight: 500, color: dDays >= 0 ? V2.green : V2.red }}>
-                      <IconArrow up={dDays >= 0} c={dDays >= 0 ? V2.green : V2.red} s={12} />{Math.abs(dDays)}%
+                    <span style={{ fontSize: 12, fontWeight: 500, marginLeft: 6, color: dDays >= 0 ? V2.green : V2.red }}>
+                      {dDays >= 0 ? "↗" : "↘"}{Math.abs(dDays)}%
                     </span>
                   )}
-                </div>
+                </b>
               </div>
-              <div>
-                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días ganadores</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: V2.green }}>{cur.wins}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 14, color: V2.text2, marginBottom: 4 }}>Días perdedores</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: V2.red }}>{cur.losses}</div>
-              </div>
+              <div className="v2-row"><span>Ganadores</span><b style={{ color: V2.green }}>{cur.wins}</b></div>
+              <div className="v2-row"><span>Perdedores</span><b style={{ color: V2.red }}>{cur.losses}</b></div>
             </div>
           </div>
         </V2Card>
@@ -4168,19 +4199,19 @@ function DashboardV2({
           footer={tightest
             ? <>Cuenta más ajustada: <span style={{ color: V2.text2 }}>{tightest.account.name}</span>{tightest.basis && <> · cierre {tightest.basis}</>}</>
             : "Sin umbral de liquidación definido"}>
-          <div style={{ display: "flex", alignItems: "center", gap: 26, flexWrap: "wrap" }}>
+          <div className="v2-split">
             <V2Donut pct={pct} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div>
-                <div style={{ fontSize: 15, color: V2.text2, marginBottom: 4 }}>Colchón</div>
-                <div style={{ fontSize: 30, fontWeight: 700, color: V2.text }}>${tightest ? Math.round(tightest.cushion).toLocaleString() : "—"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 15, color: V2.text2, marginBottom: 4 }}>Fase {tightest ? tightest.phase.n : "—"}</div>
-                <div style={{ fontSize: 30, fontWeight: 700, color: tightest ? (tightest.phase.n === 3 ? V2.green : tightest.phase.n === 2 ? "#E2B144" : V2.red) : V2.text }}>
+            <div className="v2-rows">
+              <div className="v2-row"><span>Colchón</span><b style={{ color: V2.text }}>${tightest ? Math.round(tightest.cushion).toLocaleString() : "—"}</b></div>
+              <div className="v2-row">
+                <span>Fase {tightest ? tightest.phase.n : "—"}</span>
+                <b style={{ color: tightest ? (tightest.phase.n === 3 ? V2.green : tightest.phase.n === 2 ? "#E2B144" : V2.red) : V2.text }}>
                   {tightest ? `${tightest.phase.contracts} MNQ` : "—"}
-                </div>
+                </b>
               </div>
+              {tightest && (
+                <div className="v2-row"><span>SL / TP</span><b style={{ color: V2.text2, fontSize: "0.85em" }}>${tightest.phase.sl} / ${tightest.phase.tp}</b></div>
+              )}
             </div>
           </div>
         </V2Card>
@@ -4230,7 +4261,7 @@ function DashboardV2({
             footer={<>Base ${Math.round(r.base).toLocaleString()} · acumulado <span style={{ color: r.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(r.pnl))}</span>{r.basis && <> · cierre {r.basis}</>}</>}>
             <div style={{ fontSize: 15, color: V2.text2, marginBottom: 8 }}>{r.name}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 42, fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>
+              <span className="v2-metric" style={{ fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>
                 ${Math.round(r.balance).toLocaleString()}
               </span>
               {pct !== null && (
@@ -4293,74 +4324,80 @@ function DashboardV2({
   );
 
   return (
-    <div style={{ background: V2.bg, borderRadius: 18, minHeight: "80vh" }}>
+    <div style={{ background: V2.bg, minHeight: "100vh" }}>
       {/* El contenido se desliza por detrás del menú inferior fijo */}
-      <main style={{ minWidth: 0, padding: "30px 30px 190px" }}>
-        {/* Título + controles, siempre visible */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginBottom: 30 }}>
-          <h1 style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 50, fontWeight: 700, color: V2.text, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-            <IconBolt s={30} />
+      <main className="v5-main" style={{ minWidth: 0 }}>
+        {/* Fila 1: título a la izquierda y cuenta de usuario arriba a la derecha */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+          <h1 className="v5-title" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, color: V2.text, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.15, minWidth: 0 }}>
+            <IconBolt s={26} />
             {nav === "dashboard" ? (
-              <span>Trading Journal <span style={{ color: V2.green }}>v5</span>
-                {deployId && <span style={{ fontSize: 15, fontWeight: 400, color: V2.text3, marginLeft: 8 }}>({deployId})</span>}
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                Trading Journal <span style={{ color: V2.green }}>v5</span>
+                {deployId && <span className="v5-hash" style={{ fontSize: 13, fontWeight: 400, color: V2.text3, marginLeft: 8 }}>({deployId})</span>}
               </span>
-            ) : V2_NAV.find(n => n.id === nav)?.label}
+            ) : <span style={{ whiteSpace: "nowrap" }}>{V2_NAV.find(n => n.id === nav)?.label}</span>}
           </h1>
+          <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}><UserButton /></span>
+        </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, background: V2.green, color: "#0A0A0A",
-                border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer",
-              }}
-            >
-              + Añadir trade
-            </button>
-            {hdrBtn(() => setPicker(true), "Añadir tarjeta", IconPlus)}
-            {hdrBtn(onRefresh, "Sincronizar y recalcular fases", IconSync)}
-            <button
-              onClick={onExit}
-              title="Volver al dashboard antiguo"
-              style={{
-                fontSize: 12, fontWeight: 600, padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                background: "transparent", color: V2.text3, border: `1px solid ${V2.border}`, whiteSpace: "nowrap",
-              }}
-            >
-              V4 (Old)
-            </button>
-            <span style={{ display: "inline-flex", alignItems: "center" }}><UserButton /></span>
-            <span style={{ fontSize: 13, color: V2.text3 }}>Cuenta</span>
-            <select
-              value={acct}
-              onChange={e => setAcct(e.target.value)}
-              style={{
-                background: V2.card, color: V2.text, border: `1px solid ${V2.border}`,
-                borderRadius: 10, padding: "10px 14px", fontSize: 14, cursor: "pointer", outline: "none", minWidth: 190,
-              }}
-            >
-              <option value="all">Todas las cuentas</option>
-              {accountsList.filter(a => a.status !== "CLOSED" && a.status !== "BURNED").map(a => (
-                <option key={a.id} value={a.name}>{a.name}</option>
-              ))}
-            </select>
-          </div>
+        {/* Fila 2: controles y selector de cuenta */}
+        <div className="v5-toolbar">
+          <button
+            onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, background: V2.green, color: "#0A0A0A",
+              border: "none", borderRadius: 10, padding: "0 16px", height: 42, fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            + Añadir trade
+          </button>
+          {hdrBtn(() => setPicker(true), "Añadir tarjeta", IconPlus)}
+          {hdrBtn(onRefresh, "Sincronizar y recalcular fases", IconSync)}
+          <button
+            onClick={onExit}
+            title="Volver al dashboard antiguo"
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "0 12px", height: 42, borderRadius: 10, cursor: "pointer",
+              background: "transparent", color: V2.text3, border: `1px solid ${V2.border}`, whiteSpace: "nowrap",
+            }}
+          >
+            V4 (Old)
+          </button>
+          <select
+            className="v5-acct"
+            value={acct}
+            onChange={e => setAcct(e.target.value)}
+            aria-label="Cuenta"
+            style={{
+              background: V2.card, color: V2.text, border: `1px solid ${V2.border}`,
+              borderRadius: 10, padding: "0 12px", height: 42, fontSize: 14, cursor: "pointer", outline: "none",
+            }}
+          >
+            <option value="all">Todas las cuentas</option>
+            {accountsList.filter(a => a.status !== "CLOSED" && a.status !== "BURNED").map(a => (
+              <option key={a.id} value={a.name}>{a.name}</option>
+            ))}
+          </select>
         </div>
 
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
         {editingTrade && <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} dark />}
 
-        {picker && (
+        {/* El selector actúa sobre la hoja en la que estás */}
+        {picker && (nav === "dashboard" || nav === "stats") && (
           <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 20, marginBottom: 22 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <span style={{ fontSize: 15, color: V2.text, fontWeight: 500 }}>Tarjetas del panel</span>
+              <span style={{ fontSize: 15, color: V2.text, fontWeight: 500 }}>
+                Tarjetas de {nav === "stats" ? "Estadísticas" : "Dashboard"}
+              </span>
               <button onClick={() => setPicker(false)} style={{ background: "none", border: "none", color: V2.text3, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {V2_CARD_DEFS.map(c => {
-                const on = cards.includes(c.id);
+                const on = cardsOf(nav).includes(c.id);
                 return (
-                  <button key={c.id} onClick={() => toggleCard(c.id)}
+                  <button key={c.id} onClick={() => toggleCard(nav, c.id)}
                     style={{
                       fontSize: 13, padding: "7px 14px", borderRadius: 999, cursor: "pointer",
                       border: `1px solid ${on ? V2.green : V2.border}`,
@@ -4372,19 +4409,22 @@ function DashboardV2({
                 );
               })}
             </div>
+            <div style={{ fontSize: 11, color: V2.text3, marginTop: 12 }}>
+              Cada hoja guarda su propia selección y su propio orden.
+            </div>
           </div>
         )}
 
         {nav === "dashboard" && (
-          cards.length === 0
-            ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ en la barra lateral para añadirlas.</div>
-            : <div className="v2-grid">{cards.map(renderCard)}</div>
+          cardsOf("dashboard").length === 0
+            ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
+            : <div className="v2-grid">{cardsOf("dashboard").map(id => renderCard(id, "dashboard"))}</div>
         )}
 
         {nav === "stats" && (
-          <div className="v2-grid">
-            {["equity", "winRatio", "profitFactor"].map(renderCard)}
-          </div>
+          cardsOf("stats").length === 0
+            ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
+            : <div className="v2-grid">{cardsOf("stats").map(id => renderCard(id, "stats"))}</div>
         )}
 
         {nav === "trades" && (() => {
@@ -4467,24 +4507,45 @@ function DashboardV2({
         {/* Plan de trading. En escritorio va el PDF incrustado; en móvil,
             la versión nativa, porque iOS solo pinta la primera página de un
             PDF en iframe y no deja desplazarlo. */}
-        {nav === "plan" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 15, color: V2.text2 }}>Plan de Trading NQ · Sopi Plus</span>
+        {nav === "settings" && (
+          <div className="v2-settings" style={V2_SETTINGS_VARS}>
+            {settingsPanel}
+          </div>
+        )}
+      </main>
+
+      {/* El plan se abre a pantalla completa sobre la app, por encima del
+          menú, y la ✕ devuelve a la sección en la que estabas. */}
+      {nav === "plan" && createPortal(
+        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: V2.bg, display: "flex", flexDirection: "column" }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+            padding: "calc(12px + env(safe-area-inset-top, 0px)) 14px 12px",
+            borderBottom: `1px solid ${V2.border}`, flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: V2.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Plan de Trading NQ · Sopi Plus
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <a href="/plan-trading-nq.pdf" target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 13, fontWeight: 700, padding: "8px 14px", borderRadius: 10, background: V2.green, color: "#0A0A0A", textDecoration: "none", whiteSpace: "nowrap" }}>
-                📄 Abrir PDF
+                style={{ fontSize: 12, fontWeight: 700, padding: "7px 12px", borderRadius: 9, background: V2.green, color: "#0A0A0A", textDecoration: "none", whiteSpace: "nowrap" }}>
+                📄 PDF
               </a>
-            </div>
+              <button onClick={closePlan} aria-label="Cerrar el plan"
+                style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, lineHeight: 1, background: V2.card, color: V2.text, border: `1px solid ${V2.border}`, borderRadius: 10, cursor: "pointer" }}>
+                ✕
+              </button>
+            </span>
+          </div>
 
-            {/* PDF incrustado — solo escritorio */}
-            <div className="plan-embed" style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, overflow: "hidden" }}>
-              <iframe src="/plan-trading-nq.pdf#view=FitH" title="Plan de Trading NQ" style={{ width: "100%", height: "78vh", border: "none", display: "block", background: V2.segBg }} />
-            </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+            {/* Escritorio: PDF incrustado. Móvil: versión nativa, porque iOS
+                solo pinta la primera página de un PDF en iframe. */}
+            <iframe className="plan-embed" src="/plan-trading-nq.pdf#view=FitH" title="Plan de Trading NQ"
+              style={{ width: "100%", height: "100%", border: "none", display: "block", background: V2.segBg }} />
 
-            {/* Versión nativa — solo móvil */}
-            <div className="plan-native" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ background: "rgba(232,83,110,0.14)", border: "1px solid rgba(232,83,110,0.4)", borderRadius: 16, padding: 16 }}>
+            <div className="plan-native" style={{ flexDirection: "column", gap: 12, padding: "14px 14px calc(20px + env(safe-area-inset-bottom, 0px))" }}>
+              <div style={{ background: "rgba(232,83,110,0.14)", border: "1px solid rgba(232,83,110,0.4)", borderRadius: 14, padding: 15 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: V2.red, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 6 }}>Regla nº0 · la única que importa</div>
                 <div style={{ fontSize: 14, color: V2.text, lineHeight: 1.6 }}>
                   Si el trade 1 es <strong>SL o BE</strong>: cierro NinjaTrader. El día ha terminado.
@@ -4492,11 +4553,11 @@ function DashboardV2({
                 </div>
               </div>
 
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 4 }}>Fases</div>
-                <div style={{ fontSize: 11, color: V2.text3, marginBottom: 12 }}>Se fija antes de la sesión con el cierre de ayer. Nunca intradía.</div>
+                <div style={{ fontSize: 11, color: V2.text3, marginBottom: 10 }}>Se fija antes de la sesión con el cierre de ayer. Nunca intradía.</div>
                 {PHASES.map(p => (
-                  <div key={p.n} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "9px 0", borderTop: p.n > 1 ? `1px solid ${V2.border}` : "none" }}>
+                  <div key={p.n} style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", padding: "9px 0", borderTop: p.n > 1 ? `1px solid ${V2.border}` : "none" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: p.color === "amber" ? "rgba(226,177,68,0.16)" : p.color === "green" ? "rgba(78,204,163,0.16)" : "rgba(232,83,110,0.16)", color: p.color === "amber" ? "#E2B144" : p.color === "green" ? V2.green : V2.red }}>
                       FASE {p.n}
                     </span>
@@ -4504,15 +4565,15 @@ function DashboardV2({
                     <span style={{ fontSize: 12, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>
                       {p.n === 1 ? "colchón < $500" : p.n === 2 ? "$500–999" : "≥ $1.000"}
                     </span>
-                    <span style={{ marginLeft: "auto", fontSize: 12, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    <span style={{ width: "100%", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
                       <strong style={{ color: V2.text }}>{p.contracts} MNQ</strong> · <span style={{ color: V2.red }}>SL ${p.sl}</span> · <span style={{ color: V2.green }}>TP ${p.tp}</span>
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 10 }}>Flujo del día</div>
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 8 }}>Flujo del día</div>
                 <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
                   <div><strong style={{ color: V2.text }}>Trade 1</strong> — al tamaño de mi fase, checklist completa antes de entrar.</div>
                   <div><strong style={{ color: V2.text }}>Trade 2 opcional</strong> — 1 MNQ, SL máx. $80.</div>
@@ -4520,8 +4581,8 @@ function DashboardV2({
                 </div>
               </div>
 
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 10 }}>Reglas</div>
+              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 8 }}>Reglas</div>
                 <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
                   <div>· 1 trade al día por cuenta, real y examen.</div>
                   <div>· 3 días seguidos de SL en la misma cuenta = semana cerrada, no se opera hasta el lunes.</div>
@@ -4532,14 +4593,9 @@ function DashboardV2({
               </div>
             </div>
           </div>
-        )}
-
-        {nav === "settings" && (
-          <div className="v2-settings" style={V2_SETTINGS_VARS}>
-            {settingsPanel}
-          </div>
-        )}
-      </main>
+        </div>,
+        document.body
+      )}
 
       <V2MeniscusNav active={nav} onChange={setNav} />
     </div>
@@ -4571,6 +4627,15 @@ export default function App() {
   // El dashboard V5 es la vista principal; el clásico queda tras "V4 (Old)".
   // Se arranca siempre en V5 y en su primera sección, sin recordar la anterior.
   const [currentTab, setCurrentTab] = useState("v2");
+
+  // En V5 el fondo del documento pasa a negro: si no, se ve blanco al hacer
+  // overscroll o cuando el contenido no llega a llenar la ventana.
+  useEffect(() => {
+    const el = document.documentElement;
+    const prev = el.style.background;
+    el.style.background = currentTab === "v2" ? V2.bg : "";
+    return () => { el.style.background = prev; };
+  }, [currentTab]);
   const [theme, setTheme] = useState("light");
   const [aiProvider, setAiProvider] = useState("gemini");
   const [aiKey, setAiKey] = useState("");
