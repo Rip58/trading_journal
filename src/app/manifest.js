@@ -11,9 +11,11 @@ export default function manifest() {
     orientation: "portrait",
     background_color: "#0A0A0A",
     theme_color: "#0A0A0A",
+    // Solo "any": el icono va a sangre completa, y como "maskable" Android lo
+    // recortaría en círculo comiéndose las puntas de las flechas.
     icons: [
-      { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png", purpose: "any" },
-      { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/apple-touch-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
     ],
   };
 }

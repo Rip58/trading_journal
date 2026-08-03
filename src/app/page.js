@@ -3060,9 +3060,6 @@ const V2_PERIODS = [
 ];
 
 // ── Iconos SVG ───────────────────────────────────────────────────────────────
-const IconBolt = ({ s = 22, c = V2.green }) => (
-  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M14 2 4 14h6l-1 8 10-12h-6l1-8Z" fill={c} /></svg>
-);
 const IconGrid = ({ s = 18, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" fill={c} /><rect x="14" y="3" width="7" height="4" rx="2" fill={c} /><rect x="14" y="10" width="7" height="11" rx="2" fill={c} /><rect x="3" y="13" width="7" height="8" rx="2" fill={c} /></svg>
 );
@@ -4347,7 +4344,7 @@ function DashboardV2({
         {/* Fila 1: título a la izquierda y cuenta de usuario arriba a la derecha */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
           <h1 className="v5-title" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, color: V2.text, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.15, minWidth: 0 }}>
-            <IconBolt s={26} />
+            <img src="/icon.png" alt="" width={30} height={30} style={{ borderRadius: 8, flexShrink: 0 }} />
             {nav === "dashboard" ? (
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 Trading Journal <span style={{ color: V2.green }}>v5</span>
@@ -6019,7 +6016,9 @@ export default function App() {
       <div className="flex flex-col md:flex-row justify-between gap-4 items-center md:items-center mb-5">
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
-            <span>📈 Trading Journal</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <img src="/icon.png" alt="" width={20} height={20} style={{ borderRadius: 5 }} />Trading Journal
+            </span>
             <span style={{ fontSize: 10, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", padding: "2px 6px", borderRadius: 6, color: "var(--color-text-secondary)", fontWeight: 500 }}>
               v4.1 (old) {deployId && `(${deployId})`}
             </span>
