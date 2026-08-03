@@ -3066,9 +3066,6 @@ const IconBolt = ({ s = 22, c = V2.green }) => (
 const IconGrid = ({ s = 18, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" fill={c} /><rect x="14" y="3" width="7" height="4" rx="2" fill={c} /><rect x="14" y="10" width="7" height="11" rx="2" fill={c} /><rect x="3" y="13" width="7" height="8" rx="2" fill={c} /></svg>
 );
-const IconChart = ({ s = 18, c }) => (
-  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="9" rx="1.5" fill={c} /><rect x="10" y="6" width="4" height="15" rx="1.5" fill={c} /><rect x="17" y="9" width="4" height="12" rx="1.5" fill={c} /></svg>
-);
 const IconDoc = ({ s = 18, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="3" fill={c} opacity="0.35" /><rect x="7" y="7" width="10" height="2" rx="1" fill={c} /><rect x="7" y="11" width="10" height="2" rx="1" fill={c} /><rect x="7" y="15" width="6" height="2" rx="1" fill={c} /></svg>
 );
@@ -3722,7 +3719,6 @@ const V2_CARD_DEFS = [
 // haya ordenado, que se guarda en el navegador.
 const V2_DEFAULT_LAYOUT = {
   dashboard: V2_CARD_DEFS.map(c => c.id),
-  stats: ["equity", "winRatio", "profitFactor", "records"],
 };
 
 // Barrido continuo menta → lima → ámbar → carmín: empieza en el verde de acento
@@ -3730,10 +3726,8 @@ const V2_DEFAULT_LAYOUT = {
 // pasan por ningún gris sucio.
 const V2_NAV = [
   { id: "dashboard", label: "Dashboard", Icon: IconGrid, accent: "#4ECCA3" },
-  { id: "stats", label: "Estadísticas", Icon: IconChart, accent: "#A8D95A" },
   { id: "trades", label: "Trades", Icon: IconDoc, accent: "#E2B144" },
   { id: "calendar", label: "Calendario", Icon: IconCal, accent: "#E8536E" },
-  { id: "plan", label: "Plan", Icon: IconDoc, accent: "#E86FA8" },
   { id: "settings", label: "Ajustes", Icon: IconGear, accent: "#A78BFA" },
 ];
 
@@ -3741,16 +3735,26 @@ const V2_NAV = [
 // La bola vive SOBRE el borde superior de la barra: barra y bola son un único
 // path y la superficie sube a buscarla con un filete cóncavo (el menisco).
 // Toda la animación va por refs + rAF, fuera del ciclo de render de React.
-const MN = {
+// El SVG escala con el ancho de pantalla, así que una barra muy alargada se
+// encoge demasiado en el móvil: con la geometría de escritorio los iconos
+// quedaban a 13px y las etiquetas a 6px. En móvil se usa una barra más corta
+// y proporcionalmente más alta para que todo se lea.
+const MN_DESKTOP = {
   W: 1000, H: 147, CR: 34,
-  R_REST: 52, R_DRAG: 62, F_RATIO: 0.6,
-  // PITCH acotado para que el filete del menisco en los slots extremos no
-  // invada las esquinas redondeadas de la barra ni siquiera al arrastrar.
-  ICON_Y: 73, LABEL_Y: 118, PITCH: 140,
+  R_REST: 54, R_DRAG: 64, F_RATIO: 0.6,
+  ICON_Y: 73, LABEL_Y: 120, PITCH: 190, ICON_SIZE: 42, LABEL_SIZE: 20,
   VB: { x: -60, y: -130, w: 1120, h: 292 },
 };
-const MN_PAD = (MN.W - MN.PITCH * (V2_NAV.length - 1)) / 2;
-const MN_SLOTS = V2_NAV.map((_, i) => MN_PAD + i * MN.PITCH);
+const MN_MOBILE = {
+  W: 760, H: 172, CR: 30,
+  R_REST: 58, R_DRAG: 68, F_RATIO: 0.6,
+  ICON_Y: 84, LABEL_Y: 136, PITCH: 160, ICON_SIZE: 54, LABEL_SIZE: 28,
+  VB: { x: -50, y: -145, w: 860, h: 330 },
+};
+const mnSlots = (G) => {
+  const pad = (G.W - G.PITCH * (V2_NAV.length - 1)) / 2;
+  return V2_NAV.map((_, i) => pad + i * G.PITCH);
+};
 
 const mnHexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 const mnRgbStr = (c) => `rgb(${c[0] | 0}, ${c[1] | 0}, ${c[2] | 0})`;
@@ -3761,8 +3765,8 @@ const MN_ACCENTS = V2_NAV.map(t => mnHexToRgb(t.accent));
 const MN_ICON_IDLE = [255, 255, 255];
 
 // Silueta única: barra + filete cóncavo + lomo de la bola
-function mnBuildPath(cx, r) {
-  const { W, H, CR, F_RATIO } = MN;
+function mnBuildPath(cx, r, G) {
+  const { W, H, CR, F_RATIO } = G;
   const f = F_RATIO * r;
   const dx = Math.sqrt(r * r + 2 * r * f);
   const tx = dx * (r / (r + f));
@@ -3791,10 +3795,8 @@ function mnBuildPath(cx, r) {
 // gris de la barra y el fondo oscuro conforme el icono entra en la bola.
 const MN_ICON_PATHS = {
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="2" fill="currentColor" /><rect x="14" y="3" width="7" height="4" rx="2" fill="currentColor" /><rect x="14" y="10" width="7" height="11" rx="2" fill="currentColor" /><rect x="3" y="13" width="7" height="8" rx="2" fill="currentColor" /></>,
-  stats: <><rect x="3" y="12" width="4" height="9" rx="1.5" fill="currentColor" /><rect x="10" y="6" width="4" height="15" rx="1.5" fill="currentColor" /><rect x="17" y="9" width="4" height="12" rx="1.5" fill="currentColor" /></>,
   trades: <><rect x="4" y="3" width="16" height="18" rx="3" fill="currentColor" opacity="0.35" /><rect x="7" y="7" width="10" height="2" rx="1" fill="currentColor" /><rect x="7" y="11" width="10" height="2" rx="1" fill="currentColor" /><rect x="7" y="15" width="6" height="2" rx="1" fill="currentColor" /></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="3" fill="currentColor" opacity="0.35" /><rect x="3" y="5" width="18" height="5" rx="2" fill="currentColor" /><rect x="7" y="2" width="2" height="5" rx="1" fill="currentColor" /><rect x="15" y="2" width="2" height="5" rx="1" fill="currentColor" /></>,
-  plan: <><path d="M6 2.6h7.2L19 8.4V21a1.4 1.4 0 0 1-1.4 1.4H6A1.4 1.4 0 0 1 4.6 21V4A1.4 1.4 0 0 1 6 2.6Z" fill="currentColor" opacity="0.35" /><path d="M13 2.8V8a1 1 0 0 0 1 1h5" fill="none" stroke="currentColor" strokeWidth="1.6" /><rect x="7.4" y="12" width="9" height="1.9" rx="0.95" fill="currentColor" /><rect x="7.4" y="16" width="6" height="1.9" rx="0.95" fill="currentColor" /></>,
   settings: <><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M12 2.4v2.4M12 19.2v2.4M21.6 12h-2.4M4.8 12H2.4M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7M18.8 18.8l-1.7-1.7M6.9 6.9 5.2 5.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></>,
 };
 
@@ -3807,22 +3809,40 @@ function V2MeniscusNav({ active, onChange }) {
   const iconRefs = useRef([]);
   const labelRefs = useRef([]);
 
+  // Geometría según el ancho: el bucle de animación la lee por ref para no
+  // recrearse en cada cambio.
+  const [G, setG] = useState(MN_DESKTOP);
+  const gRef = useRef(MN_DESKTOP);
+  gRef.current = G;
+  const SLOTS = mnSlots(G);
+  const slotsRef = useRef(SLOTS);
+  slotsRef.current = SLOTS;
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const apply = () => setG(mq.matches ? MN_MOBILE : MN_DESKTOP);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
   const activeIdx = Math.max(0, V2_NAV.findIndex(n => n.id === active));
   const activeRef = useRef(activeIdx);
   activeRef.current = activeIdx;
 
   const st = useRef({
-    x: MN_SLOTS[activeIdx], v: 0, target: MN_SLOTS[activeIdx],
+    x: mnSlots(MN_DESKTOP)[activeIdx], v: 0, target: mnSlots(MN_DESKTOP)[activeIdx],
     settle: 1, settleV: 0, color: MN_ACCENTS[activeIdx].slice(),
     dragging: false, lastX: 0, lastT: 0, reduced: false,
   });
 
   // Un cambio de sección desde fuera (o por tap) mueve el objetivo del muelle
-  useEffect(() => { st.current.target = MN_SLOTS[activeIdx]; }, [activeIdx]);
+  useEffect(() => { st.current.target = slotsRef.current[activeIdx]; }, [activeIdx, G]);
 
   const toLocal = useCallback((clientX) => {
     const rect = svgRef.current.getBoundingClientRect();
-    return MN.VB.x + ((clientX - rect.left) / rect.width) * MN.VB.w;
+    const g = gRef.current;
+    return g.VB.x + ((clientX - rect.left) / rect.width) * g.VB.w;
   }, []);
 
   useEffect(() => {
@@ -3849,15 +3869,16 @@ function V2MeniscusNav({ active, onChange }) {
       s.settle = mnClamp(s.settle, 0, 1);
 
       // El color se toma de la POSICIÓN de la bola, no de la pestaña activa
-      const p = mnClamp((s.x - MN_PAD) / MN.PITCH, 0, V2_NAV.length - 1);
+      const g = gRef.current, sl = slotsRef.current;
+      const p = mnClamp((s.x - sl[0]) / g.PITCH, 0, V2_NAV.length - 1);
       const i0 = Math.min(Math.floor(p), V2_NAV.length - 2);
       s.color = mnMix(s.color, mnMix(MN_ACCENTS[i0], MN_ACCENTS[i0 + 1], p - i0), Math.min(1, dt * 14));
 
-      const r = MN.R_DRAG + (MN.R_REST - MN.R_DRAG) * s.settle;
+      const r = g.R_DRAG + (g.R_REST - g.R_DRAG) * s.settle;
       const col = mnRgbStr(s.color);
 
       if (!pathRef.current) { raf = requestAnimationFrame(frame); return; }
-      pathRef.current.setAttribute("d", mnBuildPath(s.x, r));
+      pathRef.current.setAttribute("d", mnBuildPath(s.x, r, g));
       beadRef.current.setAttribute("cx", s.x);
       beadRef.current.setAttribute("r", r - 1);
       beadRef.current.setAttribute("fill", col);
@@ -3867,12 +3888,12 @@ function V2MeniscusNav({ active, onChange }) {
 
       for (let i = 0; i < V2_NAV.length; i++) {
         const t = i === activeRef.current ? s.settle : 0;
-        const g = iconRefs.current[i];
-        if (!g) continue;
-        g.setAttribute("transform", `translate(${MN_SLOTS[i]} ${(MN.ICON_Y * (1 - t)).toFixed(2)}) scale(${(1 + 0.06 * t).toFixed(3)})`);
+        const el = iconRefs.current[i];
+        if (!el) continue;
+        el.setAttribute("transform", `translate(${sl[i]} ${(g.ICON_Y * (1 - t)).toFixed(2)}) scale(${(1 + 0.06 * t).toFixed(3)})`);
         const ct = mnSmooth(0.45, 1, t);
-        g.style.color = mnRgbStr(mnMix(MN_ICON_IDLE, mnHexToRgb(V2.bg), ct));
-        g.style.opacity = String(0.5 + 0.5 * ct);
+        el.style.color = mnRgbStr(mnMix(MN_ICON_IDLE, mnHexToRgb(V2.bg), ct));
+        el.style.opacity = String(0.5 + 0.5 * ct);
         const lb = labelRefs.current[i];
         if (lb) {
           lb.setAttribute("opacity", i === activeRef.current ? s.settle.toFixed(3) : "0");
@@ -3896,7 +3917,8 @@ function V2MeniscusNav({ active, onChange }) {
   const onMove = (e) => {
     const s = st.current;
     if (!s.dragging) return;
-    const nx = mnClamp(toLocal(e.clientX), MN_SLOTS[0], MN_SLOTS[MN_SLOTS.length - 1]);
+    const sl = slotsRef.current;
+    const nx = mnClamp(toLocal(e.clientX), sl[0], sl[sl.length - 1]);
     const now = performance.now();
     const dt = Math.max((now - s.lastT) / 1000, 1 / 240);
     s.v = (nx - s.lastX) / dt;
@@ -3910,8 +3932,8 @@ function V2MeniscusNav({ active, onChange }) {
     // flick: proyecta la velocidad antes de buscar el slot más cercano
     const proj = s.x + mnClamp(s.v, -3000, 3000) * 0.11;
     let best = 0, bd = Infinity;
-    MN_SLOTS.forEach((sx, i) => { const d = Math.abs(sx - proj); if (d < bd) { bd = d; best = i; } });
-    s.target = MN_SLOTS[best];
+    slotsRef.current.forEach((sx, i) => { const d = Math.abs(sx - proj); if (d < bd) { bd = d; best = i; } });
+    s.target = slotsRef.current[best];
     onChange(V2_NAV[best].id); // el título conmuta AL SOLTAR, no al cruzar
   };
 
@@ -3933,8 +3955,8 @@ function V2MeniscusNav({ active, onChange }) {
       <svg
         ref={svgRef}
         className="mn-nav"
-        viewBox={`${MN.VB.x} ${MN.VB.y} ${MN.VB.w} ${MN.VB.h}`}
-        style={{ width: "100%", maxWidth: 720, aspectRatio: `${MN.VB.w} / ${MN.VB.h}`, touchAction: "none", overflow: "visible" }}
+        viewBox={`${G.VB.x} ${G.VB.y} ${G.VB.w} ${G.VB.h}`}
+        style={{ width: "100%", maxWidth: 720, aspectRatio: `${G.VB.w} / ${G.VB.h}`, touchAction: "none", overflow: "visible" }}
         role="tablist"
         aria-label="Secciones"
         tabIndex={0}
@@ -3947,35 +3969,35 @@ function V2MeniscusNav({ active, onChange }) {
           </linearGradient>
         </defs>
 
-        <path ref={pathRef} d={mnBuildPath(MN_SLOTS[activeIdx], MN.R_REST)}
+        <path ref={pathRef} d={mnBuildPath(SLOTS[activeIdx], G.R_REST, G)}
           fill="rgba(12,12,14,0.86)" stroke="rgba(255,255,255,0.13)" strokeWidth="1.6"
           style={{ pointerEvents: "auto" }} />
 
-        <circle ref={beadRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_REST - 1} fill={V2_NAV[activeIdx].accent} pointerEvents="none" />
-        <circle ref={sheenRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_REST - 1} fill="url(#mn-sheen)" pointerEvents="none" />
+        <circle ref={beadRef} cx={SLOTS[activeIdx]} cy={0} r={G.R_REST - 1} fill={V2_NAV[activeIdx].accent} pointerEvents="none" />
+        <circle ref={sheenRef} cx={SLOTS[activeIdx]} cy={0} r={G.R_REST - 1} fill="url(#mn-sheen)" pointerEvents="none" />
 
         {V2_NAV.map((t, i) => (
           <rect key={`hit${t.id}`} role="tab" aria-selected={i === activeIdx} aria-label={t.label}
-            x={MN_SLOTS[i] - MN.PITCH / 2} y={0} width={MN.PITCH} height={MN.H}
+            x={SLOTS[i] - G.PITCH / 2} y={0} width={G.PITCH} height={G.H}
             fill="transparent" style={{ cursor: "pointer", pointerEvents: "auto" }}
             onClick={() => onChange(t.id)} />
         ))}
 
         {V2_NAV.map((t, i) => (
           <g key={`ic${t.id}`} ref={el => (iconRefs.current[i] = el)}
-            transform={`translate(${MN_SLOTS[i]} ${MN.ICON_Y})`}
+            transform={`translate(${SLOTS[i]} ${G.ICON_Y})`}
             style={{ color: "#fff", opacity: 0.5 }} pointerEvents="none">
-            <svg x={-17} y={-17} width={34} height={34} viewBox="0 0 24 24">{MN_ICON_PATHS[t.id]}</svg>
+            <svg x={-G.ICON_SIZE / 2} y={-G.ICON_SIZE / 2} width={G.ICON_SIZE} height={G.ICON_SIZE} viewBox="0 0 24 24">{MN_ICON_PATHS[t.id]}</svg>
           </g>
         ))}
 
         {V2_NAV.map((t, i) => (
           <text key={`lb${t.id}`} ref={el => (labelRefs.current[i] = el)}
-            x={MN_SLOTS[i]} y={MN.LABEL_Y} textAnchor="middle" fontSize="18" fontWeight="700"
+            x={SLOTS[i]} y={G.LABEL_Y} textAnchor="middle" fontSize={G.LABEL_SIZE} fontWeight="700"
             fill={t.accent} opacity="0" pointerEvents="none">{t.label}</text>
         ))}
 
-        <circle ref={beadHitRef} cx={MN_SLOTS[activeIdx]} cy={0} r={MN.R_DRAG + 14}
+        <circle ref={beadHitRef} cx={SLOTS[activeIdx]} cy={0} r={G.R_DRAG + 14}
           fill="transparent" style={{ cursor: "grab", touchAction: "none", pointerEvents: "auto" }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
       </svg>
@@ -4014,11 +4036,6 @@ function DashboardV2({
   activeAccountsForForm, allAccountsForForm, settingsPanel,
 }) {
   const [nav, setNav] = useState("dashboard");
-  // El plan no es una sección más: se abre encima. Guardamos de dónde venía
-  // para que la ✕ devuelva justo ahí.
-  const prevNavRef = useRef("dashboard");
-  useEffect(() => { if (nav !== "plan") prevNavRef.current = nav; }, [nav]);
-  const closePlan = () => setNav(prevNavRef.current === "plan" ? "dashboard" : prevNavRef.current);
   // Cada hoja guarda su propio orden de tarjetas. `seen` registra los tipos ya
   // conocidos: así una tarjeta nueva de la app aparece sola, pero una que el
   // usuario quitó a mano no reaparece en el siguiente arranque.
@@ -4338,7 +4355,25 @@ function DashboardV2({
               </span>
             ) : <span style={{ whiteSpace: "nowrap" }}>{V2_NAV.find(n => n.id === nav)?.label}</span>}
           </h1>
-          <span style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}><UserButton /></span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {/* El plan solo en la principal: abre el PDF en el visor del sistema */}
+            {nav === "dashboard" && (
+              <a
+                href="/plan-trading-nq.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir el plan de trading"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 12px",
+                  borderRadius: 10, background: V2.card, border: `1px solid ${V2.border}`,
+                  color: V2.text2, fontSize: 13, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap",
+                }}
+              >
+                📄 Plan
+              </a>
+            )}
+            <UserButton />
+          </span>
         </div>
 
         {/* Fila 2: controles y selector de cuenta */}
@@ -4385,11 +4420,11 @@ function DashboardV2({
         {editingTrade && <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} dark />}
 
         {/* El selector actúa sobre la hoja en la que estás */}
-        {picker && (nav === "dashboard" || nav === "stats") && (
+        {picker && nav === "dashboard" && (
           <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 20, marginBottom: 22 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <span style={{ fontSize: 15, color: V2.text, fontWeight: 500 }}>
-                Tarjetas de {nav === "stats" ? "Estadísticas" : "Dashboard"}
+                Tarjetas del panel
               </span>
               <button onClick={() => setPicker(false)} style={{ background: "none", border: "none", color: V2.text3, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
@@ -4419,12 +4454,6 @@ function DashboardV2({
           cardsOf("dashboard").length === 0
             ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
             : <div className="v2-grid">{cardsOf("dashboard").map(id => renderCard(id, "dashboard"))}</div>
-        )}
-
-        {nav === "stats" && (
-          cardsOf("stats").length === 0
-            ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
-            : <div className="v2-grid">{cardsOf("stats").map(id => renderCard(id, "stats"))}</div>
         )}
 
         {nav === "trades" && (() => {
@@ -4516,87 +4545,6 @@ function DashboardV2({
 
       {/* El plan se abre a pantalla completa sobre la app, por encima del
           menú, y la ✕ devuelve a la sección en la que estabas. */}
-      {nav === "plan" && createPortal(
-        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: V2.bg, display: "flex", flexDirection: "column" }}>
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-            padding: "calc(12px + env(safe-area-inset-top, 0px)) 14px 12px",
-            borderBottom: `1px solid ${V2.border}`, flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: V2.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              Plan de Trading NQ · Sopi Plus
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              <a href="/plan-trading-nq.pdf" target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 12, fontWeight: 700, padding: "7px 12px", borderRadius: 9, background: V2.green, color: "#0A0A0A", textDecoration: "none", whiteSpace: "nowrap" }}>
-                📄 PDF
-              </a>
-              <button onClick={closePlan} aria-label="Cerrar el plan"
-                style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, lineHeight: 1, background: V2.card, color: V2.text, border: `1px solid ${V2.border}`, borderRadius: 10, cursor: "pointer" }}>
-                ✕
-              </button>
-            </span>
-          </div>
-
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-            {/* Escritorio: PDF incrustado. Móvil: versión nativa, porque iOS
-                solo pinta la primera página de un PDF en iframe. */}
-            <iframe className="plan-embed" src="/plan-trading-nq.pdf#view=FitH" title="Plan de Trading NQ"
-              style={{ width: "100%", height: "100%", border: "none", display: "block", background: V2.segBg }} />
-
-            <div className="plan-native" style={{ flexDirection: "column", gap: 12, padding: "14px 14px calc(20px + env(safe-area-inset-bottom, 0px))" }}>
-              <div style={{ background: "rgba(232,83,110,0.14)", border: "1px solid rgba(232,83,110,0.4)", borderRadius: 14, padding: 15 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.red, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 6 }}>Regla nº0 · la única que importa</div>
-                <div style={{ fontSize: 14, color: V2.text, lineHeight: 1.6 }}>
-                  Si el trade 1 es <strong>SL o BE</strong>: cierro NinjaTrader. El día ha terminado.
-                  No hay «otro setup». No hay «recuperar».
-                </div>
-              </div>
-
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 4 }}>Fases</div>
-                <div style={{ fontSize: 11, color: V2.text3, marginBottom: 10 }}>Se fija antes de la sesión con el cierre de ayer. Nunca intradía.</div>
-                {PHASES.map(p => (
-                  <div key={p.n} style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", padding: "9px 0", borderTop: p.n > 1 ? `1px solid ${V2.border}` : "none" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: p.color === "amber" ? "rgba(226,177,68,0.16)" : p.color === "green" ? "rgba(78,204,163,0.16)" : "rgba(232,83,110,0.16)", color: p.color === "amber" ? "#E2B144" : p.color === "green" ? V2.green : V2.red }}>
-                      FASE {p.n}
-                    </span>
-                    <span style={{ fontSize: 13, color: V2.text, fontWeight: 500 }}>{p.name}</span>
-                    <span style={{ fontSize: 12, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>
-                      {p.n === 1 ? "colchón < $500" : p.n === 2 ? "$500–999" : "≥ $1.000"}
-                    </span>
-                    <span style={{ width: "100%", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
-                      <strong style={{ color: V2.text }}>{p.contracts} MNQ</strong> · <span style={{ color: V2.red }}>SL ${p.sl}</span> · <span style={{ color: V2.green }}>TP ${p.tp}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 8 }}>Flujo del día</div>
-                <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
-                  <div><strong style={{ color: V2.text }}>Trade 1</strong> — al tamaño de mi fase, checklist completa antes de entrar.</div>
-                  <div><strong style={{ color: V2.text }}>Trade 2 opcional</strong> — 1 MNQ, SL máx. $80.</div>
-                  <div><strong style={{ color: V2.text }}>Fin del día</strong> — cerrar NinjaTrader, pase lo que pase.</div>
-                </div>
-              </div>
-
-              <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14, padding: 15 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: V2.text3, textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 8 }}>Reglas</div>
-                <div style={{ fontSize: 13, color: V2.text2, lineHeight: 1.9 }}>
-                  <div>· 1 trade al día por cuenta, real y examen.</div>
-                  <div>· 3 días seguidos de SL en la misma cuenta = semana cerrada, no se opera hasta el lunes.</div>
-                  <div>· No opero por recuperar nada, ni de ayer ni de hoy.</div>
-                  <div>· Un trade ganador saltándose las reglas cuenta como incumplimiento: el resultado no valida la decisión.</div>
-                  <div>· No entrar también es una decisión de trading. La paciencia es la ventaja.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
       <V2MeniscusNav active={nav} onChange={setNav} />
     </div>
   );

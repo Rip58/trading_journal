@@ -18,10 +18,12 @@ export const metadata = {
 // manual sigue funcionando en iOS, que lo ignora para gestos del usuario).
 // La app arranca en el dashboard V5, que es oscuro: themeColor tiñe de negro
 // la franja de estado en iOS desde el primer pintado, sin esperar a hidratar.
+// Sin maximumScale: bloquearlo impedía el pellizco en toda la app (y en el
+// PDF), y es una barrera de accesibilidad. El auto-zoom de iOS al enfocar
+// campos ya se evita subiendo los controles de formulario a 16px en globals.css.
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#0A0A0A",
 };

@@ -291,13 +291,6 @@ button:active {
 .mn-nav:focus { outline: none; }
 .mn-nav:focus-visible { outline: 2px solid var(--c-green); outline-offset: 4px; border-radius: 18px; }
 
-/* Plan: PDF incrustado en escritorio, versión nativa en móvil (iOS solo pinta
-   la primera página de un PDF en iframe y no permite desplazarlo). */
-.plan-native { display: none; }
-@media (max-width: 900px) {
-  .plan-embed { display: none; }
-  .plan-native { display: flex !important; }
-}
 
 /* ─── Dashboard V5 · densidad móvil ────────────────────────────────────────
    Uso real: 80% iPhone. Escala tipográfica modular 11/12/14/16/20/26 y ritmo
@@ -377,13 +370,6 @@ button:active {
   .v2-eq { height: 150px; }
 }
 
-/* Plan: PDF incrustado en escritorio, versión nativa en móvil (iOS solo pinta
-   la primera página de un PDF en iframe y no permite desplazarlo). */
-.plan-native { display: none; }
-@media (max-width: 900px) {
-  .plan-embed { display: none; }
-  .plan-native { display: flex !important; }
-}
 
 /* Barra de controles bajo el título: todo a 42px de alto para alinear */
 .v5-toolbar {
