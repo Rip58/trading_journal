@@ -1758,6 +1758,7 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
 
   // Signo del PnL: se elige con el selector Win/Loss en vez de escribir el menos
   const [isLoss, setIsLoss] = useState(() => (parseLocaleFloat(trade?.pnl) || 0) < 0);
+  const [aviso, setAviso] = useState("");
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -1768,11 +1769,14 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
     setForm(f => ({ ...f, pnl: cleaned.replace(/-/g, "") }));
   };
 
-  const renderField = (label, field, type = "text", opts, placeholder) => (
+  const renderField = (label, field, type = "text", opts, placeholder) => {
+    const malo = aviso && vacio(form[field]);
+    const borde = malo ? t.red : t.border;
+    return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <label style={{ fontSize: 10, color: t.text2, textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
+      <label style={{ fontSize: 10, color: malo ? t.red : t.text2, textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
       {opts ? (
-        <select value={form[field] || ""} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text }}>
+        <select value={form[field] || ""} onChange={e => set(field, e.target.value)} style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${borde}`, background: t.inputBg, color: t.text }}>
           {opts.map(o => {
             const val = typeof o === "object" ? o.value : o;
             const lbl = typeof o === "object" ? o.label : o;
@@ -1793,11 +1797,12 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
               set(field, val);
             }
           }}
-          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text }}
+          style={{ fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${borde}`, background: t.inputBg, color: t.text }}
         />
       )}
     </div>
-  );
+    );
+  };
 
   const accountOpts = accounts.some(a => a.value === form.account)
     ? accounts
@@ -1810,7 +1815,25 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
   const pnlPreview = signedPnl;
   const commPreview = Math.abs(parseLocaleFloat(form.commission) || 0);
 
+  // Todos los campos son obligatorios salvo las notas. Se avisa en el propio
+  // popup en vez de guardar un registro incompleto que luego rompe los
+  // cálculos de colchón y fase.
+  const vacio = (v) => v === "" || v === null || v === undefined;
+  const faltan = [
+    ["date", "Fecha"],
+    ["account", "Cuenta"],
+    ["pnl", "PnL neto"],
+    ["commission", "Comisión"],
+    ["balance", "Balance cierre"],
+    ["threshold", "Umbral autoliq."],
+  ].filter(([k]) => vacio(form[k])).map(([, etiqueta]) => etiqueta);
+
   const handleSave = () => {
+    if (faltan.length) {
+      setAviso(`Falta rellenar: ${faltan.join(", ")}.`);
+      return;
+    }
+    setAviso("");
     const pnlNum = signedPnl;
     // La comisión SIEMPRE se guarda negativa
     const commNum = -Math.abs(parseLocaleFloat(form.commission) || 0);
@@ -1928,6 +1951,16 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
         <label style={{ fontSize: 10, color: t.text2, textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>Notas (opcional)</label>
         <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Si lo dejas vacío se generan notas automáticas con balance y umbral" style={{ width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${t.border}`, background: t.inputBg, color: t.text, resize: "vertical" }} />
       </div>
+
+      {aviso && (
+        <div role="alert" style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px",
+          borderRadius: 8, fontSize: 12, fontWeight: 600,
+          background: t.redBg, color: t.redText, border: `0.5px solid ${t.red}`,
+        }}>
+          <span aria-hidden="true">⚠</span>{aviso}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: t.green, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Guardar</button>
@@ -3072,6 +3105,9 @@ const IconCal = ({ s = 18, c }) => (
 const IconPlus = ({ s = 18, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6" /><path d="M12 8v8M8 12h8" stroke={c} strokeWidth="1.6" strokeLinecap="round" /></svg>
 );
+const IconFlame = ({ s = 16, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 2.5s5.2 4 5.2 8.6a5.2 5.2 0 0 1-10.4 0C6.8 8.6 9 7 9 7s.4 1.9 1.6 2.6c0-2.4.6-5.4 1.4-7.1Z" fill={c} opacity="0.9" /><path d="M12 21.5a3 3 0 0 1-3-3c0-1.9 3-4 3-4s3 2.1 3 4a3 3 0 0 1-3 3Z" fill={c} opacity="0.45" /></svg>
+);
 const IconSync = ({ s = 18, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 0 1-13.7 5.6M4 12a8 8 0 0 1 13.7-5.6" stroke={c} strokeWidth="1.6" strokeLinecap="round" /><path d="M4 20v-4h4M20 4v4h-4" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
@@ -4042,6 +4078,7 @@ function DashboardV2({
   const [periods, setPeriods] = useState({});
   const [picker, setPicker] = useState(false);
   const [acct, setAcct] = useState("all");
+  const [showClosed, setShowClosed] = useState(false);
   const [tradePage, setTradePage] = useState(1);
   useEffect(() => { setTradePage(1); }, [acct]);
 
@@ -4093,7 +4130,18 @@ function DashboardV2({
   const shiftOffset = (id, dir) => setOffsets(o => ({ ...o, [id]: Math.min(0, (o[id] || 0) + dir) }));
 
   // Una sola cuenta a la vez (o todas). Los ajustes de bróker no cuentan.
-  const scoped = trades.filter(t => t.instrument !== "Ajuste de Broker" && (acct === "all" || t.account === acct));
+  // Las cuentas cerradas o quemadas quedan fuera salvo que se activen con el
+  // botón de la llama. Antes se ocultaban del selector pero sus trades seguían
+  // sumando en el agregado de "Todas las cuentas".
+  const isRetired = (a) => a.status === "CLOSED" || a.status === "BURNED";
+  const visibleAccounts = accountsList.filter(a => showClosed || !isRetired(a));
+  const visibleNames = new Set(visibleAccounts.map(a => a.name));
+  const retiredCount = accountsList.filter(isRetired).length;
+
+  const scoped = trades.filter(t =>
+    t.instrument !== "Ajuste de Broker" &&
+    (acct === "all" ? visibleNames.has(t.account) : t.account === acct)
+  );
   const days = v2Agg(scoped);
   const anchor = days.length ? days[days.length - 1][0] : v2LocalIso(new Date());
 
@@ -4114,9 +4162,7 @@ function DashboardV2({
   // Serie mensual para barras y líneas
 
   // Al elegir una cuenta, Portfolio y Fase se acotan a ella
-  const liveAccounts = accountsList
-    .filter(a => a.status !== "CLOSED" && a.status !== "BURNED")
-    .filter(a => acct === "all" || a.name === acct);
+  const liveAccounts = visibleAccounts.filter(a => acct === "all" || a.name === acct);
   const phases = liveAccounts.map(a => {
     const { cushion, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
     return { account: a, cushion, basis, phase: getPhase(cushion) };
@@ -4409,10 +4455,37 @@ function DashboardV2({
             }}
           >
             <option value="all">Todas las cuentas</option>
-            {accountsList.filter(a => a.status !== "CLOSED" && a.status !== "BURNED").map(a => (
-              <option key={a.id} value={a.name}>{a.name}</option>
+            {visibleAccounts.map(a => (
+              <option key={a.id} value={a.name}>
+                {a.name}{isRetired(a) ? (a.status === "BURNED" ? " · quemada" : " · cerrada") : ""}
+              </option>
             ))}
           </select>
+
+          {/* Cuentas retiradas: ocultas por defecto, se recuperan para consultar
+              sus estadísticas. Si se ocultan estando seleccionada una, se vuelve
+              a "Todas" para no quedarse en una cuenta invisible. */}
+          {retiredCount > 0 && (
+            <button
+              onClick={() => {
+                const next = !showClosed;
+                setShowClosed(next);
+                if (!next && acct !== "all" && accountsList.some(a => a.name === acct && isRetired(a))) setAcct("all");
+              }}
+              aria-pressed={showClosed}
+              title={showClosed ? "Ocultar cuentas cerradas y quemadas" : `Mostrar ${retiredCount} cuenta${retiredCount > 1 ? "s" : ""} cerrada o quemada`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6, height: 42, padding: "0 12px",
+                borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap", fontSize: 13, fontWeight: 600,
+                background: showClosed ? "rgba(232,83,110,0.16)" : V2.card,
+                border: `1px solid ${showClosed ? V2.red : V2.border}`,
+                color: showClosed ? V2.red : V2.text3,
+              }}
+            >
+              <IconFlame c={showClosed ? V2.red : V2.text3} />
+              {retiredCount}
+            </button>
+          )}
         </div>
 
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
