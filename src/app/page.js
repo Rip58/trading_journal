@@ -3663,6 +3663,12 @@ function V2Seg({ value, onChange }) {
   );
 }
 
+const IconWide = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M9 7 4.5 12 9 17M15 7l4.5 5-4.5 5" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M4.5 12h15" stroke={c} strokeWidth="2" strokeLinecap="round" /></svg>
+);
+const IconHalf = ({ s = 15, c }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M6.5 7 11 12l-4.5 5M17.5 7 13 12l4.5 5" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M12 4v16" stroke={c} strokeWidth="2" strokeLinecap="round" opacity="0.5" /></svg>
+);
 const IconUp = ({ s = 15, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 19V6M6 12l6-6 6 6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
@@ -3670,12 +3676,11 @@ const IconDown = ({ s = 15, c }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 5v13M6 12l6 6 6-6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
 
-function V2Card({ title, subtitle, info, tall, onRemove, onConfig, onUp, onDown, canUp, canDown, period, onPeriod, rangeLabel, onPrevRange, onNextRange, canNextRange, footer, children }) {
+function V2Card({ title, subtitle, info, wide, onRemove, onToggleWide, onUp, onDown, canUp, canDown, period, onPeriod, rangeLabel, onPrevRange, onNextRange, canNextRange, footer, children }) {
   return (
-    <div className={`v2-card${tall ? " v2-wide" : ""}`} style={{
+    <div className={`v2-card${wide ? " v2-wide" : ""}`} style={{
       background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 14,
       display: "flex", flexDirection: "column",
-      gridRow: tall ? "span 2" : "span 1",
     }}>
       <div className="v2-card-hd" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <span
@@ -3691,7 +3696,7 @@ function V2Card({ title, subtitle, info, tall, onRemove, onConfig, onUp, onDown,
           <button onClick={onUp} disabled={!canUp} title="Subir" style={{ background: "none", border: "none", padding: 0, cursor: canUp ? "pointer" : "default", opacity: canUp ? 1 : 0.28, display: "flex" }}><IconUp c={V2.text3} /></button>
           <button onClick={onDown} disabled={!canDown} title="Bajar" style={{ background: "none", border: "none", padding: 0, cursor: canDown ? "pointer" : "default", opacity: canDown ? 1 : 0.28, display: "flex" }}><IconDown c={V2.text3} /></button>
           <span title={info} style={{ cursor: "help", display: "flex" }}><IconInfo c={V2.text3} /></span>
-          <button onClick={onConfig} title="Configurar tarjetas" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}><IconGear c={V2.text3} /></button>
+          <button onClick={onToggleWide} title={wide ? "Media anchura" : "Anchura completa"} aria-pressed={wide} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}>{wide ? <IconHalf c={V2.text3} /> : <IconWide c={V2.text3} />}</button>
           <button onClick={onRemove} title="Quitar tarjeta" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}><IconTrash c={V2.text3} /></button>
         </div>
       </div>
@@ -4075,6 +4080,7 @@ function DashboardV2({
   // conocidos: así una tarjeta nueva de la app aparece sola, pero una que el
   // usuario quitó a mano no reaparece en el siguiente arranque.
   const [layout, setLayout] = useState(V2_DEFAULT_LAYOUT);
+  const [widths, setWidths] = useState({});
   const [periods, setPeriods] = useState({});
   const [picker, setPicker] = useState(false);
   const [acct, setAcct] = useState("all");
@@ -4100,17 +4106,37 @@ function DashboardV2({
         next[sec] = [...guardado, ...añadir];
       });
       setLayout(next);
+      if (saved.widths && typeof saved.widths === "object") setWidths(saved.widths);
     } catch (e) { /* sin preferencia guardada */ }
   }, []);
 
-  const persist = (sec, lista) => {
-    const next = { ...layout, [sec]: lista };
-    setLayout(next);
+  const guardar = (nextLayout, nextWidths) => {
+    setLayout(nextLayout); setWidths(nextWidths);
     try {
-      localStorage.setItem("tj_v2_layout", JSON.stringify({ layout: next, seen: V2_CARD_DEFS.map(c => c.id) }));
+      localStorage.setItem("tj_v2_layout", JSON.stringify({
+        layout: nextLayout, widths: nextWidths, seen: V2_CARD_DEFS.map(c => c.id),
+      }));
     } catch (e) { /* almacenamiento no disponible */ }
   };
+  const persist = (sec, lista) => guardar({ ...layout, [sec]: lista }, widths);
   const cardsOf = (sec) => layout[sec] || [];
+
+  // Ancho elegido por tarjeta. Por defecto, gráficos y donuts a fila completa
+  // y las de una sola cifra a media.
+  const anchoDe = (id) => widths[id] ?? (V2_CARD_DEFS.find(c => c.id === id)?.tall ? "full" : "half");
+  const toggleAncho = (id) => guardar(layout, { ...widths, [id]: anchoDe(id) === "full" ? "half" : "full" });
+
+  // Una tarjeta a media anchura sin pareja detrás se estira a fila completa,
+  // para no dejar medio hueco vacío.
+  const anchosEfectivos = (lista) => {
+    const out = []; let i = 0;
+    while (i < lista.length) {
+      if (anchoDe(lista[i]) === "full") { out[i] = true; i++; continue; }
+      if (i + 1 < lista.length && anchoDe(lista[i + 1]) !== "full") { out[i] = false; out[i + 1] = false; i += 2; }
+      else { out[i] = true; i++; }
+    }
+    return out;
+  };
   const removeCard = (sec, id) => persist(sec, cardsOf(sec).filter(c => c !== id));
   const toggleCard = (sec, id) => persist(sec, cardsOf(sec).includes(id) ? cardsOf(sec).filter(c => c !== id) : [...cardsOf(sec), id]);
   const moveCard = (sec, id, dir) => {
@@ -4191,14 +4217,15 @@ function DashboardV2({
   const periodArticle = { year: "el", month: "el", week: "la", day: "el" }; // "semana" es femenino
 
   // `sec` es la hoja en la que se pinta: cada una guarda su propio orden
-  const renderCard = (id, sec = "dashboard") => {
+  const renderCard = (id, sec = "dashboard", wide) => {
     const def = V2_CARD_DEFS.find(c => c.id === id);
     if (!def) return null;
     const lista = cardsOf(sec);
     const pos = lista.indexOf(id);
     const common = {
-      title: def.title, subtitle: def.subtitle, info: def.info, tall: def.tall,
-      onRemove: () => removeCard(sec, id), onConfig: () => setPicker(true),
+      title: def.title, subtitle: def.subtitle, info: def.info,
+      wide: wide ?? (anchoDe(id) === "full"),
+      onRemove: () => removeCard(sec, id), onToggleWide: () => toggleAncho(id),
       onUp: () => moveCard(sec, id, -1), onDown: () => moveCard(sec, id, 1),
       canUp: pos > 0, canDown: pos >= 0 && pos < lista.length - 1,
     };
@@ -4525,7 +4552,11 @@ function DashboardV2({
         {nav === "dashboard" && (
           cardsOf("dashboard").length === 0
             ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
-            : <div className="v2-grid">{cardsOf("dashboard").map(id => renderCard(id, "dashboard"))}</div>
+            : (() => {
+                const lista = cardsOf("dashboard");
+                const anchos = anchosEfectivos(lista);
+                return <div className="v2-grid">{lista.map((id, i) => renderCard(id, "dashboard", anchos[i]))}</div>;
+              })()
         )}
 
         {nav === "trades" && (() => {
