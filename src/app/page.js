@@ -4430,7 +4430,7 @@ function DashboardV2({
               border: "none", borderRadius: 10, padding: "0 16px", height: 42, fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
             }}
           >
-            + Añadir trade
+            + <span className="v5-lbl-full">Añadir trade</span><span className="v5-lbl-short">Trade</span>
           </button>
           {hdrBtn(() => setPicker(true), "Añadir tarjeta", IconPlus)}
           {hdrBtn(onRefresh, "Sincronizar y recalcular fases", IconSync)}
@@ -4444,23 +4444,6 @@ function DashboardV2({
           >
             V4 (Old)
           </button>
-          <select
-            className="v5-acct"
-            value={acct}
-            onChange={e => setAcct(e.target.value)}
-            aria-label="Cuenta"
-            style={{
-              background: V2.card, color: V2.text, border: `1px solid ${V2.border}`,
-              borderRadius: 10, padding: "0 12px", height: 42, fontSize: 14, cursor: "pointer", outline: "none",
-            }}
-          >
-            <option value="all">Todas las cuentas</option>
-            {visibleAccounts.map(a => (
-              <option key={a.id} value={a.name}>
-                {a.name}{isRetired(a) ? (a.status === "BURNED" ? " · quemada" : " · cerrada") : ""}
-              </option>
-            ))}
-          </select>
 
           {/* Cuentas retiradas: ocultas por defecto, se recuperan para consultar
               sus estadísticas. Si se ocultan estando seleccionada una, se vuelve
@@ -4486,6 +4469,23 @@ function DashboardV2({
               {retiredCount}
             </button>
           )}
+          <select
+            className="v5-acct"
+            value={acct}
+            onChange={e => setAcct(e.target.value)}
+            aria-label="Cuenta"
+            style={{
+              background: V2.card, color: V2.text, border: `1px solid ${V2.border}`,
+              borderRadius: 10, padding: "0 12px", height: 42, fontSize: 14, cursor: "pointer", outline: "none",
+            }}
+          >
+            <option value="all">Todas las cuentas</option>
+            {visibleAccounts.map(a => (
+              <option key={a.id} value={a.name}>
+                {a.name}{isRetired(a) ? (a.status === "BURNED" ? " · quemada" : " · cerrada") : ""}
+              </option>
+            ))}
+          </select>
         </div>
 
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}

@@ -397,3 +397,11 @@ button:active {
 html, body { max-width: 100%; overflow-x: hidden; }
 .v5-main, .v2-grid, .v2-card { min-width: 0; max-width: 100%; }
 .v2-card { overflow: hidden; }
+
+/* En iPhone la fila de controles no cabe entera con el botón de cuentas
+   retiradas, así que la acción principal acorta su etiqueta. */
+.v5-lbl-short { display: none; }
+@media (max-width: 640px) {
+  .v5-lbl-full { display: none; }
+  .v5-lbl-short { display: inline; }
+}
