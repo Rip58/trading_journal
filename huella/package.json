@@ -9,7 +9,10 @@
     "start": "next start",
     "lint": "eslint",
     "catalogs": "node scripts/fetch-catalogs.mjs",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "test": "node scripts/probar-deteccion.mjs",
+    "medir:precision": "node scripts/medir-precision.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

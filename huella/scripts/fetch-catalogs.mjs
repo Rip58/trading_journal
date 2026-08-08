@@ -200,8 +200,15 @@ async function main() {
   let descartadosProteccion = 0;
   let descartadosSensibles = 0;
 
+  let descartadosInvalidos = 0;
+
   const sitios = [];
   for (const s of wmn.sites) {
+    // El dataset marca así las entradas cuya detección está rota.
+    if (s.valid === false) {
+      descartadosInvalidos++;
+      continue;
+    }
     // Sitios tras captcha o Cloudflare: desde un datacenter solo dan ruido.
     const bloqueantes = (s.protection ?? []).filter(
       (p) => !PROTECCIONES_TOLERABLES.has(p)
@@ -229,6 +236,10 @@ async function main() {
       mCode: s.m_code,
       mString: s.m_string,
       stripBadChar: s.strip_bad_char || null,
+      // Imprescindibles: sin esto GitHub, Discord y VK no se pueden comprobar.
+      // GitHub necesita User-Agent de navegador; Discord y AniList son POST.
+      cabeceras: s.headers || null,
+      cuerpoPost: s.post_body || null,
       // Usuarios reales verificados: nuestro banco de pruebas para medir precisión.
       conocidos: s.known ?? [],
       baja: idxBaja ?? null,
@@ -261,6 +272,7 @@ async function main() {
 Detección (sitios.json)
   ${sitios.length} sitios escaneables
   ${descartadosProteccion} descartados por captcha/Cloudflare
+  ${descartadosInvalidos} descartados por venir marcados como no válidos
   ${descartadosSensibles} marcados como sensibles (NSFW/dating, desactivados por defecto)
   ${gratis.size} en el nivel gratis
 
