@@ -11,7 +11,7 @@
     "catalogs": "node scripts/fetch-catalogs.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
-    "test": "node scripts/probar-deteccion.mjs",
+    "test": "node scripts/probar-deteccion.mjs && node scripts/probar-cartas.mjs",
     "medir:precision": "node scripts/medir-precision.mjs"
   },
   "dependencies": {

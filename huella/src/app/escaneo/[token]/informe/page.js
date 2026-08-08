@@ -65,6 +65,15 @@ export default async function Informe({ params }) {
         <Metrica valor={noConcluyentes.length} etiqueta="sin poder comprobar" />
       </div>
 
+      {encontrados.length > 0 && (
+        <Link
+          href={`/escaneo/${token}/limpieza`}
+          className="mt-6 inline-block rounded-lg bg-(--color-acento) px-6 py-3 font-medium text-(--color-fondo) transition-opacity hover:opacity-90"
+        >
+          Empezar a darme de baja
+        </Link>
+      )}
+
       {encontrados.length === 0 ? (
         <p className="mt-10 rounded-xl border border-(--color-borde) bg-(--color-superficie) p-6 text-sm leading-relaxed text-(--color-texto-suave)">
           No se encontró ninguna cuenta con los alias que diste. Eso es buena
