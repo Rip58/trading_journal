@@ -1,3 +1,6 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateEnum
 CREATE TYPE "TipoIdentificador" AS ENUM ('EMAIL', 'ALIAS', 'NOMBRE', 'TELEFONO', 'DOMINIO');
 
