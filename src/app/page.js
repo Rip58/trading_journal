@@ -3382,7 +3382,15 @@ function V2Equity({ trades, accountFilter, accountsList }) {
   const zeroY = toY(0);
   const areaGreenPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.min(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
   const areaRedPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.max(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
+  // La marca más próxima a cero se clava en cero: con el suelo de liquidación el
+  // eje ya no arranca en 0, y sin esto la etiqueta de al lado de la línea de cero
+  // dice otra cosa (un "-$80" pegado al cero, por ejemplo).
   const ticks = Array.from({ length: 5 }, (_, i) => min + (i / 4) * range);
+  if (min < 0 && max > 0) {
+    let nearest = 0;
+    ticks.forEach((v, i) => { if (Math.abs(v) < Math.abs(ticks[nearest])) nearest = i; });
+    ticks[nearest] = 0;
+  }
 
   const formatTick = (v) => {
     const abs = Math.abs(Math.round(v));
@@ -3404,7 +3412,10 @@ function V2Equity({ trades, accountFilter, accountsList }) {
   };
 
   // El umbral solo cambia al cerrar el día: se dibuja en escalones, no interpolado.
-  let liqPath = "";
+  // Es el borde superior de la zona de liquidación, rellena hasta el suelo del
+  // gráfico: el hueco entre la curva y esa zona es el colchón que queda.
+  const plotBottom = H - PAD / 2;
+  let liqPath = "", liqArea = "";
   if (hasLiq) {
     let prev = null;
     liq.forEach((v, i) => {
@@ -3415,6 +3426,7 @@ function V2Equity({ trades, accountFilter, accountsList }) {
       else liqPath += `L${x},${y}`;
       prev = v;
     });
+    liqArea = `${liqPath}L${toX(pts.length - 1)},${plotBottom}L${toX(0)},${plotBottom}Z`;
   }
 
   return (
@@ -3439,6 +3451,13 @@ function V2Equity({ trades, accountFilter, accountsList }) {
               <stop offset="0%" stopColor={V2.red} stopOpacity="0.02" />
               <stop offset="100%" stopColor={V2.red} stopOpacity="0.30" />
             </linearGradient>
+            {/* Zona de liquidación: lavado plano. Un degradado se referencia a la caja
+                del trazado, así que con el umbral en escalones se apagaba justo donde
+                más bajo está el suelo, que es donde peor pinta la cosa. */}
+            <linearGradient id="v2liqZone" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={V2.red} stopOpacity="0.11" />
+              <stop offset="100%" stopColor={V2.red} stopOpacity="0.11" />
+            </linearGradient>
           </defs>
           {ticks.map((v, i) => {
             const y = toY(v);
@@ -3460,8 +3479,14 @@ function V2Equity({ trades, accountFilter, accountsList }) {
           <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
           {hasLiq && (
             <>
-              <path d={liqPath} fill="none" stroke={V2.red} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.9} strokeLinejoin="round" pointerEvents="none" />
-              <text x={W - 10} y={toY(liqVals[liqVals.length - 1]) - 5} textAnchor="end" fontSize={9} fontWeight="600" fill={V2.red} opacity={0.9} pointerEvents="none">Liquidación</text>
+              <path d={liqArea} fill="url(#v2liqZone)" pointerEvents="none" />
+              <path d={liqPath} fill="none" stroke={V2.red} strokeWidth={1.5} strokeLinejoin="round" pointerEvents="none" />
+              {/* Dentro de la zona, salvo que sea tan fina que la etiqueta se salga del gráfico */}
+              <text
+                x={W - 10}
+                y={plotBottom - toY(liqVals[liqVals.length - 1]) >= 16 ? toY(liqVals[liqVals.length - 1]) + 13 : toY(liqVals[liqVals.length - 1]) - 5}
+                textAnchor="end" fontSize={9} fontWeight="600" fill={V2.red} opacity={0.75} pointerEvents="none"
+              >Liquidación</text>
             </>
           )}
           <circle cx={toX(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3.5} fill={pts[pts.length - 1] >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} pointerEvents="none" />
@@ -3490,7 +3515,7 @@ function V2Equity({ trades, accountFilter, accountsList }) {
                 <text x={tx + tooltipW / 2} y={ty + 15} textAnchor="middle" fontSize={11} fontWeight="700" fill={val >= 0 ? V2.green : V2.red}>{txt}</text>
                 <text x={tx + tooltipW / 2} y={ty + 28} textAnchor="middle" fontSize={9} fill={V2.text3}>{dateStr}</text>
                 {cushion !== null && (
-                  <text x={tx + tooltipW / 2} y={ty + 41} textAnchor="middle" fontSize={9} fontWeight="600" fill={cushion > 0 ? V2.text2 : V2.red}>
+                  <text x={tx + tooltipW / 2} y={ty + 41} textAnchor="middle" fontSize={9} fontWeight="700" fill={V2.red}>
                     Colchón {cushion < 0 ? "-" : ""}${Math.abs(Math.round(cushion)).toLocaleString()}
                   </text>
                 )}
@@ -4375,10 +4400,12 @@ function DashboardV2({
       return (
         <V2Card key={id} {...common}
           footer={
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            // Las tres claves caben en una sola línea a 12px: con la del footer
+            // (14px) la de liquidación se caía a una segunda fila en móvil.
+            <div style={{ display: "flex", gap: 12, flexWrap: "nowrap", fontSize: 12, whiteSpace: "nowrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.green, display: "inline-block" }} />Zona positiva</span>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.red, display: "inline-block" }} />Zona negativa</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 0, borderTop: `2px dashed ${V2.red}`, display: "inline-block" }} />Umbral de liquidación</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "rgba(232,83,110,0.16)", borderTop: `2px solid ${V2.red}`, display: "inline-block" }} />Liquidación</span>
             </div>
           }>
           <V2Equity trades={scoped} accountFilter={acct} accountsList={accountsList} />
