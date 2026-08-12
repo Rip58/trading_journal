@@ -453,7 +453,25 @@ function buildAccountHistories(trades, accountsList) {
     const balances = new Array(n);
     let originalStartSize = startSize;
 
-    if (syncTime && n > 0) {
+    // El resumen diario trae el balance de cierre del bróker: esa es la fuente
+    // buena, la misma que lee la tarjeta Balance. Reconstruir sumando PnL daba
+    // otra cifra en cuanto un día descuadraba, había un ajuste de bróker o
+    // faltaba un registro, y las dos tarjetas se contradecían.
+    // Los días sin balance registrado (datos antiguos) siguen por PnL desde el
+    // último punto conocido, y la base es la misma que usa la tarjeta Balance.
+    const tieneBalance = (t) => t.balance !== null && t.balance !== undefined && !isNaN(t.balance);
+
+    if (n > 0 && sorted.some(tieneBalance)) {
+      const base = (acc.startSize !== null && acc.startSize !== undefined && !isNaN(acc.startSize))
+        ? Number(acc.startSize)
+        : startSize;
+      let currentBal = base;
+      for (let i = 0; i < n; i++) {
+        currentBal = tieneBalance(sorted[i]) ? Number(sorted[i].balance) : currentBal + sorted[i].pnl;
+        balances[i] = currentBal;
+      }
+      originalStartSize = base;
+    } else if (syncTime && n > 0) {
       let firstAfterIdx = n;
       for (let i = 0; i < n; i++) {
         const tradeTime = sorted[i].createdAt ? new Date(sorted[i].createdAt).getTime() : null;
@@ -800,8 +818,11 @@ function getPhase(cushion) {
 // Colchón de una cuenta a partir del cierre del último día operado.
 // Única fuente de verdad: la usan la ficha de cuenta y la verificación de fases.
 function computeCushion(account, accountTrades, fallbackBalance) {
+  // Ordenar por la fecha normalizada, como el resto de la app: con el string
+  // crudo, una fecha guardada en otro formato se colaba fuera de sitio y podía
+  // dar como "último día" uno que no lo era.
   const lastDay = [...accountTrades]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .sort((a, b) => normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date)))
     .filter(t => t.balance !== null && t.balance !== undefined && !isNaN(t.balance))
     .pop();
   const balance = lastDay ? Number(lastDay.balance) : (account.balance ?? fallbackBalance);
