@@ -390,9 +390,40 @@ function calcAccountDD(trades, rules) {
   return { netPnl, peak: relativePeak, maxDD: -maxDD, ddRemaining: 0, finalBalance };
 }
 
-function calcReconstructedPnlHistory(trades, filter, accountsList) {
-  if (!trades || trades.length === 0) return [];
+// Umbral de autoliquidación operación a operación de una cuenta.
+// El umbral vive en los "Resumen diario" (t.threshold): manda el último registro
+// de cada día y se arrastra hasta que llega otro. Antes del primer registro se usa
+// el umbral de la ficha de cuenta; si el primer día registrado trae uno más bajo
+// se toma ese, porque el trailing DD nunca baja.
+function buildThresholdSeries(acc, sortedTrades, originalStartSize) {
+  const byDate = new Map();
+  sortedTrades.forEach(t => {
+    if (t.threshold === null || t.threshold === undefined || isNaN(t.threshold)) return;
+    byDate.set(normalizeDateToYYYYMMDD(t.date), Number(t.threshold));
+  });
 
+  const acctThreshold = (acc.threshold !== null && acc.threshold !== undefined && !isNaN(acc.threshold))
+    ? Number(acc.threshold)
+    : (acc.dd_limit !== null && acc.dd_limit !== undefined && !isNaN(acc.dd_limit)
+      ? originalStartSize - Number(acc.dd_limit)
+      : null);
+
+  const firstRecorded = byDate.size ? byDate.values().next().value : null;
+  let current = acctThreshold === null
+    ? firstRecorded
+    : (firstRecorded === null ? acctThreshold : Math.min(acctThreshold, firstRecorded));
+
+  return sortedTrades.map(t => {
+    const d = normalizeDateToYYYYMMDD(t.date);
+    if (byDate.has(d)) current = byDate.get(d);
+    return current;
+  });
+}
+
+// Reconstruye cuenta por cuenta el balance tras cada operación, anclado al saldo
+// sincronizado con el bróker, y el umbral de liquidación vigente en cada punto.
+// Base común de la curva de equity y de la línea de liquidación.
+function buildAccountHistories(trades, accountsList) {
   // Group trades by account
   const tradesByAccount = {};
   trades.forEach(t => {
@@ -458,8 +489,17 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
       sortedTrades: sorted,
       balances,
       originalStartSize,
+      thresholds: buildThresholdSeries(acc, sorted, originalStartSize),
     };
   });
+
+  return accountHistories;
+}
+
+function calcReconstructedPnlHistory(trades, filter, accountsList) {
+  if (!trades || trades.length === 0) return [];
+
+  const accountHistories = buildAccountHistories(trades, accountsList);
 
   if (filter !== "all") {
     const hist = accountHistories[filter];
@@ -499,6 +539,69 @@ function calcReconstructedPnlHistory(trades, filter, accountsList) {
   });
 
   return portfolioHistory;
+}
+
+// Umbral de liquidación en la MISMA escala que calcReconstructedPnlHistory: la
+// curva verde es balance - saldo inicial, así que el umbral se dibuja como
+// umbral - saldo inicial (normalmente negativo, por debajo de la verde).
+// Devuelve un array alineado índice a índice con el de la curva de equity, con
+// null en los puntos sin umbral conocido, o [] si no hay ninguno.
+function calcLiquidationHistory(trades, filter, accountsList) {
+  if (!trades || trades.length === 0) return [];
+
+  const accountHistories = buildAccountHistories(trades, accountsList);
+
+  if (filter !== "all") {
+    const hist = accountHistories[filter];
+    if (!hist) return [];
+    const series = hist.thresholds.map(v => (v === null || v === undefined ? null : v - hist.originalStartSize));
+    return series.some(v => v !== null) ? series : [];
+  }
+
+  // Con todas las cuentas se suman los umbrales relativos de cada una, igual que
+  // se suman sus PnL. Las cuentas sin umbral conocido quedan fuera de la suma.
+  const sortedAllTrades = [...trades].sort((a, b) => {
+    const dateDiff = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date));
+    if (dateDiff !== 0) return dateDiff;
+    const timeA = parseTimeToSeconds(a.entry_time) || 0;
+    const timeB = parseTimeToSeconds(b.entry_time) || 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return a.id - b.id;
+  });
+
+  const offsets = {};
+  accountsList.forEach(acc => {
+    const hist = accountHistories[acc.name];
+    if (!hist || hist.sortedTrades.length === 0) return;
+    const first = hist.thresholds[0];
+    if (first === null || first === undefined) return;
+    offsets[acc.name] = first - hist.originalStartSize;
+  });
+  if (Object.keys(offsets).length === 0) return [];
+
+  const tradeIndexCounters = {};
+  accountsList.forEach(acc => { tradeIndexCounters[acc.name] = 0; });
+
+  const portfolioThresholds = [];
+  sortedAllTrades.forEach(t => {
+    const accName = t.account;
+    const hist = accountHistories[accName];
+    if (hist && hist.sortedTrades.length > 0) {
+      const idx = tradeIndexCounters[accName];
+      if (idx < hist.thresholds.length) {
+        const v = hist.thresholds[idx];
+        if (v !== null && v !== undefined && offsets[accName] !== undefined) {
+          offsets[accName] = v - hist.originalStartSize;
+        }
+        tradeIndexCounters[accName] = idx + 1;
+      }
+    }
+    let total = 0;
+    Object.keys(offsets).forEach(name => { total += offsets[name]; });
+    portfolioThresholds.push(total);
+  });
+
+  return portfolioThresholds;
 }
 
 
@@ -3263,11 +3366,16 @@ function V2Equity({ trades, accountFilter, accountsList }) {
   }, [trades]);
 
   const pts = useMemo(() => calcReconstructedPnlHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
+  // Umbral de autoliquidación en la misma escala relativa que la curva verde
+  const liq = useMemo(() => calcLiquidationHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
 
   if (pts.length < 2) return <div style={{ padding: "20px 0", color: V2.text3, fontSize: 13 }}>Sin datos suficientes</div>;
 
+  const hasLiq = liq.length === pts.length && liq.some(v => v !== null && v !== undefined);
+  const liqVals = hasLiq ? liq.filter(v => v !== null && v !== undefined) : [];
+
   const W = width || 620, H = 150, PAD = 38;  // más bajo: la tarjeta no debe comerse la pantalla
-  const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
+  const min = Math.min(0, ...pts, ...liqVals), max = Math.max(0, ...pts, ...liqVals);
   const range = max - min || 1;
   const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
   const toY = v => H - PAD / 2 - ((v - min) / range) * (H - PAD);
@@ -3294,6 +3402,20 @@ function V2Equity({ trades, accountFilter, accountsList }) {
     }
     setHoverIdx(closestIdx);
   };
+
+  // El umbral solo cambia al cerrar el día: se dibuja en escalones, no interpolado.
+  let liqPath = "";
+  if (hasLiq) {
+    let prev = null;
+    liq.forEach((v, i) => {
+      if (v === null || v === undefined) { prev = null; return; }
+      const x = toX(i), y = toY(v);
+      if (prev === null) liqPath += `M${x},${y}`;
+      else if (prev !== v) liqPath += `L${x},${toY(prev)}L${x},${y}`;
+      else liqPath += `L${x},${y}`;
+      prev = v;
+    });
+  }
 
   return (
     <div ref={containerRef} className="v2-eq" style={{ width: "100%" }}>
@@ -3336,6 +3458,12 @@ function V2Equity({ trades, accountFilter, accountsList }) {
             return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? V2.green : V2.red} strokeWidth={2} strokeLinecap="round" />;
           })}
           <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
+          {hasLiq && (
+            <>
+              <path d={liqPath} fill="none" stroke={V2.red} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.9} strokeLinejoin="round" pointerEvents="none" />
+              <text x={W - 10} y={toY(liqVals[liqVals.length - 1]) - 5} textAnchor="end" fontSize={9} fontWeight="600" fill={V2.red} opacity={0.9} pointerEvents="none">Liquidación</text>
+            </>
+          )}
           <circle cx={toX(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3.5} fill={pts[pts.length - 1] >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} pointerEvents="none" />
 
           {hoverIdx !== null && (() => {
@@ -3343,7 +3471,10 @@ function V2Equity({ trades, accountFilter, accountsList }) {
             const trade = sorted[hoverIdx];
             const txt = fmt(val);
             const dateStr = trade?.date ? normalizeDateToYYYYMMDD(trade.date) : "";
-            const tooltipW = 84, tooltipH = 36;
+            const liqVal = hasLiq ? liq[hoverIdx] : null;
+            // Colchón = distancia de la cuenta al umbral de liquidación
+            const cushion = (liqVal === null || liqVal === undefined) ? null : val - liqVal;
+            const tooltipW = 92, tooltipH = cushion === null ? 36 : 49;
             let tx = x - tooltipW / 2;
             if (tx < 5) tx = 5;
             if (tx + tooltipW > W - 5) tx = W - tooltipW - 5;
@@ -3352,11 +3483,17 @@ function V2Equity({ trades, accountFilter, accountsList }) {
             return (
               <g pointerEvents="none">
                 <line x1={x} y1={PAD / 2} x2={x} y2={H - PAD / 2} stroke={V2.border} strokeWidth={1} strokeDasharray="3,3" />
+                {cushion !== null && <circle cx={x} cy={toY(liqVal)} r={3} fill={V2.red} stroke={V2.card} strokeWidth={1.5} />}
                 <circle cx={x} cy={y} r={6} fill={val >= 0 ? V2.green : V2.red} opacity={0.3} />
                 <circle cx={x} cy={y} r={3.5} fill={val >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} />
                 <rect x={tx} y={ty} width={tooltipW} height={tooltipH} rx={7} fill={V2.segActive} stroke={V2.border} strokeWidth={1} />
                 <text x={tx + tooltipW / 2} y={ty + 15} textAnchor="middle" fontSize={11} fontWeight="700" fill={val >= 0 ? V2.green : V2.red}>{txt}</text>
                 <text x={tx + tooltipW / 2} y={ty + 28} textAnchor="middle" fontSize={9} fill={V2.text3}>{dateStr}</text>
+                {cushion !== null && (
+                  <text x={tx + tooltipW / 2} y={ty + 41} textAnchor="middle" fontSize={9} fontWeight="600" fill={cushion > 0 ? V2.text2 : V2.red}>
+                    Colchón {cushion < 0 ? "-" : ""}${Math.abs(Math.round(cushion)).toLocaleString()}
+                  </text>
+                )}
               </g>
             );
           })()}
@@ -4238,9 +4375,10 @@ function DashboardV2({
       return (
         <V2Card key={id} {...common}
           footer={
-            <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.green, display: "inline-block" }} />Zona positiva</span>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.red, display: "inline-block" }} />Zona negativa</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 0, borderTop: `2px dashed ${V2.red}`, display: "inline-block" }} />Umbral de liquidación</span>
             </div>
           }>
           <V2Equity trades={scoped} accountFilter={acct} accountsList={accountsList} />
