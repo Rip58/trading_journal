@@ -2275,6 +2275,51 @@ function SettingsPanel({
     }
   };
 
+  // Forzar actualización de verdad. Un window.location.reload() vuelve a servir
+  // los mismos chunks desde la caché de la PWA, así que la app se quedaba en la
+  // versión vieja por mucho que se recargara. Aquí se pregunta la versión al
+  // servidor sin caché, se vacía el almacén de cachés y se dan de baja los
+  // service workers, y se recarga con el commit en la URL para que ni el
+  // navegador ni el bfcache puedan devolver la página anterior.
+  const [forceState, setForceState] = useState("");
+  const forceUpdate = async () => {
+    setForceState("working");
+    let target = "";
+    try {
+      const res = await fetch(`/api/version?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setServerVersion({ commitSha: data.commitSha, deploymentId: data.deploymentId });
+        target = (data.commitSha && data.commitSha !== "development") ? data.commitSha : data.deploymentId;
+      }
+    } catch (e) {
+      // Sin red no se puede saber la versión, pero limpiar y recargar sigue siendo útil
+      console.error(e);
+    }
+
+    try {
+      if (typeof caches !== "undefined") {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("v", (target && target !== "local") ? target : String(Date.now()));
+    window.location.replace(nextUrl.toString());
+  };
+
   useEffect(() => {
     checkVercelVersion(true); // Silent check on mount
   }, []);
@@ -3014,26 +3059,30 @@ function SettingsPanel({
             >
               Buscar actualizaciones
             </button>
+            {/* Sin confirm(): algunos navegadores lo bloquean en la app instalada
+                y el botón se quedaba sin hacer nada. */}
             <button
-              onClick={() => {
-                if (confirm("¿Estás seguro de que deseas recargar la aplicación para forzar la actualización?")) {
-                  window.location.reload();
-                }
-              }}
+              onClick={forceUpdate}
+              disabled={forceState === "working"}
               style={{
                 flex: 1,
                 padding: "8px 16px",
                 borderRadius: 8,
-                border: "0.5px solid var(--color-border-secondary)",
-                background: "var(--color-background-secondary)",
-                color: "var(--color-text-secondary)",
+                border: `0.5px solid ${C.green}`,
+                background: C.greenBg,
+                color: C.greenText,
                 fontSize: 12,
-                fontWeight: 500,
-                cursor: "pointer",
+                fontWeight: 600,
+                cursor: forceState === "working" ? "not-allowed" : "pointer",
               }}
             >
-              Actualizar manualmente
+              {forceState === "working" ? "Actualizando…" : "Forzar actualización"}
             </button>
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+            Forzar actualización consulta la versión a Vercel, vacía la caché de la
+            aplicación, da de baja los service workers y vuelve a cargar apuntando al
+            último despliegue. Úsalo si la app se queda en una versión antigua.
           </div>
         </div>
       </div>
