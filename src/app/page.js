@@ -3641,7 +3641,7 @@ function V2CalendarWidget({ trades }) {
     return abs >= 1000 ? (v < 0 ? "-" : "+") + "$" + (abs / 1000).toFixed(1) + "k" : (v < 0 ? "-" : "+") + "$" + abs;
   };
 
-  const dayLabels = ["L", "M", "X", "J", "V", "S", "D", "SEMANA"];
+  const dayLabels = ["L", "M", "X", "J", "V", "S", "D"];
   const selStyle = { padding: "4px 8px", borderRadius: 6, border: `0.5px solid ${V2.border}`, background: V2.card, color: V2.text, fontSize: 12, cursor: "pointer", outline: "none", fontWeight: 500 };
   const navBtnStyle = { padding: "4px 10px", borderRadius: 6, border: `0.5px solid ${V2.border}`, background: V2.card, color: V2.text2, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", fontWeight: 600, outline: "none" };
 
@@ -3660,14 +3660,13 @@ function V2CalendarWidget({ trades }) {
         <button onClick={handleNextMonth} style={navBtnStyle} title="Mes siguiente">▶</button>
       </div>
 
-      <div className="v2-scroll-fade" style={{ overflowX: "auto", paddingBottom: 4, position: "relative" }}>
-        <div style={{ minWidth: 440 }}>
-          <div className="cal-grid" style={{ marginBottom: 4 }}>
+      <div>
+          <div className="v2-cal-grid" style={{ marginBottom: 4 }}>
             {dayLabels.map((d, i) => (
-              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: (d === "D" || d === "SEMANA") ? V2_AMBER : V2.text3, padding: "2px 0" }}>{d}</div>
+              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? V2_AMBER : V2.text3, padding: "2px 0" }}>{d}</div>
             ))}
           </div>
-          <div className="cal-grid">
+          <div className="v2-cal-grid">
             {weeks.map((week, wIdx) => {
               let weekPnl = 0, weekTrades = 0, weekDays = 0;
               week.forEach(day => {
@@ -3691,29 +3690,28 @@ function V2CalendarWidget({ trades }) {
                     const col = info ? (info.pnl > 0 ? V2.green : info.pnl < 0 ? V2.red : V2.text2) : V2.text3;
                     const border = info ? (info.pnl > 0 ? "rgba(78,204,163,0.4)" : info.pnl < 0 ? "rgba(232,83,110,0.4)" : V2.border) : V2.border;
                     return (
-                      <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
+                      <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50, overflow: "hidden" }}>
                         <div style={{ fontSize: 10, color: V2.text2, fontWeight: 500 }}>{c.d}</div>
-                        {info && <div style={{ fontSize: 11, fontWeight: 500, color: col }}>{fmtPnl(info.pnl)}</div>}
-                        {info && <div style={{ fontSize: 9, color: V2.text3 }}>{info.count}t</div>}
+                        {info && <div className="v2-cal-pnl" style={{ fontWeight: 600, color: col, whiteSpace: "nowrap" }}>{fmtPnl(info.pnl)}</div>}
+                        {info && info.count > 1 && <div style={{ fontSize: 9, color: V2.text3 }}>{info.count}t</div>}
                       </div>
                     );
                   })}
-                  <div key={`w-${wIdx}`} style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 5, padding: "4px 3px", minHeight: 50 }}>
-                    <div style={{ fontSize: 9, color: V2_AMBER, textTransform: "uppercase", letterSpacing: ".2px", fontWeight: 500 }}>Semana</div>
-                    {hasData ? (
-                      <>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: weekCol }}>{fmtPnl(weekPnl)}</div>
-                        <div style={{ fontSize: 9, color: V2.text3 }}>{weekTrades}t · {weekDays}d</div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 10, color: V2.text3, marginTop: 4 }}>—</div>
-                    )}
-                  </div>
+                  {/* Total de la semana a todo lo ancho. Las semanas sin operar no
+                      lo pintan: solo añadían filas vacías al alto de la tarjeta. */}
+                  {hasData && (
+                    <div key={`w-${wIdx}`} className="v2-cal-week" style={{ background: weekBg, border: `0.5px solid ${weekBorder}`, borderRadius: 6, padding: "7px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: V2.text2, fontWeight: 500 }}>Total semana</span>
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 9, color: V2.text3 }}>{weekTrades}t · {weekDays}d</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: weekCol, fontVariantNumeric: "tabular-nums" }}>{fmtPnl(weekPnl)}</span>
+                      </span>
+                    </div>
+                  )}
                 </Fragment>
               );
             })}
           </div>
-        </div>
       </div>
 
       <div style={{ marginTop: 16 }}>
