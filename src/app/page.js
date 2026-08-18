@@ -3662,8 +3662,11 @@ function V2CalendarWidget({ trades }) {
 
       <div>
           <div className="v2-cal-grid" style={{ marginBottom: 4 }}>
+            {/* S y D también atenuados: la cabecera no puede gritar más que las
+                celdas que etiqueta. El ámbar del domingo venía de cuando había una
+                columna SEMANA que marcar, y ya no existe. */}
             {dayLabels.map((d, i) => (
-              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: d === "D" ? V2_AMBER : V2.text3, padding: "2px 0" }}>{d}</div>
+              <div key={i} style={{ textAlign: "center", fontSize: 10, fontWeight: 500, color: V2.text3, opacity: i >= 5 ? 0.55 : 1, padding: "2px 0" }}>{d}</div>
             ))}
           </div>
           <div className="v2-cal-grid">
@@ -3686,12 +3689,17 @@ function V2CalendarWidget({ trades }) {
                   {week.map((c, dIdx) => {
                     if (c.type === "empty") return <div key={`e-${wIdx}-${dIdx}`} style={{ background: "transparent", minHeight: 50 }} />;
                     const { info } = c;
-                    const bg = info ? (info.pnl > 0 ? "rgba(78,204,163,0.16)" : info.pnl < 0 ? "rgba(232,83,110,0.16)" : V2.segBg) : V2.segBg;
+                    // Sábado y domingo sin operativa se hunden en vez de teñirse: el
+                    // verde y el rojo son del PnL, y un cuarto color en celdas que no
+                    // dicen nada competiría con lo único que hay que leer. Si un fin
+                    // de semana llegara a tener registro, manda el dato.
+                    const finde = c.dow >= 5 && !info;
+                    const bg = info ? (info.pnl > 0 ? "rgba(78,204,163,0.16)" : info.pnl < 0 ? "rgba(232,83,110,0.16)" : V2.segBg) : (finde ? V2.bg : V2.segBg);
                     const col = info ? (info.pnl > 0 ? V2.green : info.pnl < 0 ? V2.red : V2.text2) : V2.text3;
-                    const border = info ? (info.pnl > 0 ? "rgba(78,204,163,0.4)" : info.pnl < 0 ? "rgba(232,83,110,0.4)" : V2.border) : V2.border;
+                    const border = info ? (info.pnl > 0 ? "rgba(78,204,163,0.4)" : info.pnl < 0 ? "rgba(232,83,110,0.4)" : V2.border) : (finde ? "#1B1B1B" : V2.border);
                     return (
                       <div key={`d-${c.d}`} style={{ background: bg, border: `0.5px solid ${border}`, borderRadius: 5, padding: "4px 3px", minHeight: 50, overflow: "hidden" }}>
-                        <div style={{ fontSize: 10, color: V2.text2, fontWeight: 500 }}>{c.d}</div>
+                        <div style={{ fontSize: 10, color: finde ? V2.text3 : V2.text2, fontWeight: 500, opacity: finde ? 0.55 : 1 }}>{c.d}</div>
                         {info && <div className="v2-cal-pnl" style={{ fontWeight: 600, color: col, whiteSpace: "nowrap" }}>{fmtPnl(info.pnl)}</div>}
                         {info && info.count > 1 && <div style={{ fontSize: 9, color: V2.text3 }}>{info.count}t</div>}
                       </div>
