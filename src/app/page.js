@@ -4798,7 +4798,9 @@ function DashboardV2({
           </span>
         </div>
 
-        {/* Fila 2: controles y selector de cuenta */}
+        {/* Fila 2: controles y selector de cuenta. En Ajustes no pinta nada:
+            ni se añaden trades ni se filtra por cuenta desde ahí. */}
+        {nav !== "settings" && (
         <div className="v5-toolbar">
           <button
             onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
@@ -4864,6 +4866,7 @@ function DashboardV2({
             ))}
           </select>
         </div>
+        )}
 
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
         {editingTrade && <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} dark />}
