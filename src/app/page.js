@@ -4530,7 +4530,7 @@ function DashboardV2({
       const rows = liveAccounts.map(a => {
         const { balance, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
         const base = a.startSize ?? a.size;
-        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis };
+        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status };
       });
 
       // Una sola cuenta: cifra grande. Varias: lista con nombre y saldo.
@@ -4561,9 +4561,21 @@ function DashboardV2({
           footer={<>Total <span style={{ color: V2.text2, fontWeight: 600 }}>${Math.round(total).toLocaleString()}</span> en {rows.length} cuentas</>}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {rows.length === 0 && <span style={{ color: V2.text3, fontSize: 14 }}>Sin cuentas activas</span>}
-            {rows.map(r => (
+            {rows.map(r => {
+              // Cerradas y quemadas en el mismo rojo que el botón de la llama que
+              // las hace aparecer, y con su estado escrito al lado: por el color
+              // solo no se distingue una cerrada de una quemada.
+              const retirada = r.status === "CLOSED" || r.status === "BURNED";
+              return (
               <div key={r.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-                <span style={{ fontSize: 14, color: V2.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+                  <span style={{ fontSize: 14, color: retirada ? V2.red : V2.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                  {retirada && (
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, letterSpacing: ".3px", color: V2.red, background: "rgba(232,83,110,0.16)", border: `0.5px solid rgba(232,83,110,0.45)`, borderRadius: 4, padding: "1px 4px" }}>
+                      {r.status === "BURNED" ? "QUEMADA" : "CERRADA"}
+                    </span>
+                  )}
+                </span>
                 <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
                   <span style={{ fontSize: 22, fontWeight: 700, color: V2.text, fontVariantNumeric: "tabular-nums" }}>
                     ${Math.round(r.balance).toLocaleString()}
@@ -4573,7 +4585,8 @@ function DashboardV2({
                   </span>
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </V2Card>
       );
