@@ -844,10 +844,17 @@ function computeCushion(account, accountTrades, fallbackBalance) {
 // safetyReserve = saldo mínimo que debe quedar para poder retirar.
 const PROPFIRM_PLANS = {
   Bulenox: [
-    { id: "bx-t-25", label: "25K · Opción 1 (Trailing DD)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%" },
-    { id: "bx-t-50", label: "50K · Opción 1 (Trailing DD)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%" },
-    { id: "bx-e-25", label: "25K · Opción 2 (EOD + límite diario)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%", daily_limit: 500 },
-    { id: "bx-e-50", label: "50K · Opción 2 (EOD + límite diario)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%", daily_limit: 1100 },
+    // Momentum Qualification: al aprobar se pasa directo a fondeada sin volver a
+    // pagar el examen. Trae un trailing DD más corto que la Opción 1 de siempre
+    // ($1.000 en vez de $1.500), así que el umbral arranca en $24.000, no en
+    // $23.500. Datos tomados del panel de Bulenox del propio usuario.
+    // Reserva safety y consistencia se dejan sin poner: no venían en la ficha y
+    // son editables al crear la cuenta.
+    { id: "bx-m-25", label: "25K · Momentum Qualification (Opción 1) · DD $1.000", size: 25000, target: 1500, dd_limit: 1000, threshold: 24000, maxContracts: 3 },
+    { id: "bx-t-25", label: "25K · Opción 1 (Trailing DD $1.500)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%" },
+    { id: "bx-t-50", label: "50K · Opción 1 (Trailing DD $2.500)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%" },
+    { id: "bx-e-25", label: "25K · Opción 2 (EOD + DLL $500)", size: 25000, target: 1500, dd_limit: 1500, threshold: 23500, safetyReserve: 26600, maxContracts: 3, consistency: "40%", daily_limit: 500 },
+    { id: "bx-e-50", label: "50K · Opción 2 (EOD + DLL $1.100)", size: 50000, target: 3000, dd_limit: 2500, threshold: 47500, safetyReserve: 52600, maxContracts: 7, consistency: "40%", daily_limit: 1100 },
   ],
   Lucid: [
     { id: "lp-25", label: "25K · LucidPro", size: 25000, target: 1250, dd_limit: 1000, threshold: 24000, safetyReserve: 26100, maxContracts: 2, consistency: "40%" },
