@@ -2198,6 +2198,35 @@ function SettingsPanel({
   const [editingAcctId, setEditingAcctId] = useState(null);
   const [editAcct, setEditAcct] = useState(null);
   const [acctError, setAcctError] = useState("");
+
+  // Listado de cuentas: filtro por estado y paginación por propfirm. Arranca en
+  // "Activas" porque las cerradas y quemadas solo estorban al gestionar; siguen
+  // a un toque de distancia.
+  const ACCT_PAGE = 5;
+  const [acctStatusF, setAcctStatusF] = useState("ACTIVE");
+  const [acctPages, setAcctPages] = useState({});
+  const ACCT_STATUS_TABS = [
+    { id: "ACTIVE", label: "Activas" },
+    { id: "CLOSED", label: "Cerradas" },
+    { id: "BURNED", label: "Quemadas" },
+    { id: "ALL", label: "Todas" },
+  ];
+  const acctGroups = useMemo(() => {
+    const filtradas = accountsList.filter(a => acctStatusF === "ALL" || (a.status || "ACTIVE") === acctStatusF);
+    const grupos = [];
+    filtradas.forEach(a => {
+      const pf = a.propfirm || "Sin propfirm";
+      let g = grupos.find(x => x.pf === pf);
+      if (!g) { g = { pf, items: [] }; grupos.push(g); }
+      g.items.push(a);
+    });
+    return grupos;
+  }, [accountsList, acctStatusF]);
+  const acctCounts = useMemo(() => {
+    const c = { ACTIVE: 0, CLOSED: 0, BURNED: 0, ALL: accountsList.length };
+    accountsList.forEach(a => { const s = a.status || "ACTIVE"; if (c[s] !== undefined) c[s]++; });
+    return c;
+  }, [accountsList]);
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
   const [wipeModal, setWipeModal] = useState(false);
@@ -2621,8 +2650,172 @@ function SettingsPanel({
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-          {accountsList.map((a) => (
+        {/* Alta de cuenta como módulo propio y por encima del listado: es la acción,
+            no un apéndice de la lista. Con un borderTop se leía como el pie de lo
+            anterior. */}
+        <div style={{ background: "var(--color-background-secondary)", border: `0.5px solid ${C.blue}`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 6, color: C.blueText }}>
+            <span>➕</span> Nueva Cuenta
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+            {/* Nombre */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
+              <input type="text" placeholder="Ej: BX101840-14" value={newAcct.name ?? ""} onChange={e => setNewAcct({ ...newAcct, name: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+            </div>
+            {/* Tipo */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Tipo de Cuenta</label>
+              <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({ ...newAcct, type: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                <option value="EXAMEN">Examen 📝</option>
+                <option value="REAL">Real 💼</option>
+              </select>
+            </div>
+            {/* Propfirm */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Propfirm</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                <select
+                  value={newPfCustom ? "__custom__" : (newAcct.propfirm || "Bulenox")}
+                  onChange={e => {
+                    if (e.target.value === "__custom__") { setNewPfCustom(true); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: "" }); }
+                    else { setNewPfCustom(false); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: e.target.value }); }
+                  }}
+                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                >
+                  {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+                  <option value="__custom__">➕ Otra…</option>
+                </select>
+                {newPfCustom && (
+                  <input type="text" placeholder="Nombre de la propfirm" value={newAcct.propfirm ?? ""} onChange={e => setNewAcct({ ...newAcct, propfirm: e.target.value })} autoFocus style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
+                )}
+              </div>
+            </div>
+            {/* Plan: rellena solo los parámetros de riesgo */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Plan / Tamaño</label>
+              <select
+                value={newPlanId}
+                onChange={e => { setNewPlanId(e.target.value); applyPlan(e.target.value, newAcct.propfirm, newAcct, setNewAcct); }}
+                disabled={!(PROPFIRM_PLANS[newAcct.propfirm] || []).length}
+                style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${newPlanId ? C.blue : "var(--color-border-secondary)"}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", opacity: (PROPFIRM_PLANS[newAcct.propfirm] || []).length ? 1 : 0.5 }}
+              >
+                <option value="">{(PROPFIRM_PLANS[newAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes para esta propfirm"}</option>
+                {(PROPFIRM_PLANS[newAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Parámetros aplicados por el plan — editables si hace falta */}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              onClick={() => setShowNewPlanDetails(v => !v)}
+              style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+            >
+              {showNewPlanDetails ? "▾" : "▸"} Parámetros del plan
+            </button>
+            {!showNewPlanDetails && (
+              <span style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginLeft: 8 }}>
+                Obj ${(newAcct.target || 0).toLocaleString()} · DD ${(newAcct.dd_limit || 0).toLocaleString()} · Umbral ${(newAcct.threshold || 0).toLocaleString()}
+              </span>
+            )}
+            {showNewPlanDetails && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                {[
+                  ["Objetivo ($)", "target", "number"],
+                  ["DD máximo ($)", "dd_limit", "number"],
+                  ["Umbral inicial ($)", "threshold", "number"],
+                  ["Reserva safety ($)", "safetyReserve", "number"],
+                  ["Max. contratos", "maxContracts", "int"],
+                  ["Consistencia", "consistency", "text"],
+                ].map(([label, field, kind]) => (
+                  <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>{label}</label>
+                    <input
+                      type={kind === "text" ? "text" : "number"}
+                      value={newAcct[field] ?? ""}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (kind === "text") setNewAcct({ ...newAcct, [field]: v });
+                        else if (kind === "int") setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseInt(v) });
+                        else setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseFloat(v) });
+                      }}
+                      style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginBottom: 8 }}>
+            Balance, días operados y mejor día se calculan solos a partir de los trades que vayas registrando.
+          </div>
+          <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
+            + Crear Cuenta
+          </button>
+        </div>
+
+        {/* Filtro por estado */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {ACCT_STATUS_TABS.map(t => {
+            const on = acctStatusF === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setAcctStatusF(t.id); setAcctPages({}); }}
+                style={{
+                  fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 999, cursor: "pointer",
+                  border: `0.5px solid ${on ? C.blue : "var(--color-border-secondary)"}`,
+                  background: on ? C.blueBg : "var(--color-background-secondary)",
+                  color: on ? C.blueText : "var(--color-text-secondary)",
+                }}
+              >
+                {t.label} <span style={{ opacity: 0.65 }}>{acctCounts[t.id] ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {acctGroups.length === 0 && (
+          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>
+            No hay cuentas en este estado.
+          </div>
+        )}
+
+        {/* Un bloque por propfirm, de cinco en cinco */}
+        {acctGroups.map(g => {
+          const paginas = Math.max(1, Math.ceil(g.items.length / ACCT_PAGE));
+          const pag = Math.min(acctPages[g.pf] || 0, paginas - 1);
+          const visibles = g.items.slice(pag * ACCT_PAGE, pag * ACCT_PAGE + ACCT_PAGE);
+          const irA = (d) => setAcctPages(p => ({ ...p, [g.pf]: Math.max(0, Math.min(paginas - 1, pag + d)) }));
+          const flecha = (dir, activo) => (
+            <button
+              onClick={() => irA(dir === "prev" ? -1 : 1)}
+              disabled={!activo}
+              aria-label={dir === "prev" ? "Cuentas anteriores" : "Más cuentas"}
+              style={{
+                width: 22, height: 22, lineHeight: 1, borderRadius: 6, cursor: activo ? "pointer" : "default",
+                border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-secondary)",
+                color: "var(--color-text-secondary)", opacity: activo ? 1 : 0.3, fontSize: 11, padding: 0,
+              }}
+            >{dir === "prev" ? "‹" : "›"}</button>
+          );
+          return (
+        <div key={g.pf} style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".5px" }}>
+              {g.pf} <span style={{ opacity: 0.7 }}>· {g.items.length}</span>
+            </span>
+            {paginas > 1 && (
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                {flecha("prev", pag > 0)}
+                <span style={{ fontSize: 10, color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums" }}>{pag + 1}/{paginas}</span>
+                {flecha("next", pag < paginas - 1)}
+              </span>
+            )}
+          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {visibles.map((a) => (
             <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", flexWrap: "wrap", gap: 8 }}>
               {editingAcctId === a.id ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 w-full">
@@ -2730,106 +2923,10 @@ function SettingsPanel({
             </div>
           ))}
         </div>
-
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 12, marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Nueva Cuenta</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-            {/* Nombre */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Nombre de Cuenta</label>
-              <input type="text" placeholder="Ej: BX101840-14" value={newAcct.name ?? ""} onChange={e => setNewAcct({ ...newAcct, name: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-            </div>
-            {/* Tipo */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Tipo de Cuenta</label>
-              <select value={newAcct.type || "EXAMEN"} onChange={e => setNewAcct({ ...newAcct, type: e.target.value })} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                <option value="EXAMEN">Examen 📝</option>
-                <option value="REAL">Real 💼</option>
-              </select>
-            </div>
-            {/* Propfirm */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Propfirm</label>
-              <div style={{ display: "flex", gap: 4 }}>
-                <select
-                  value={newPfCustom ? "__custom__" : (newAcct.propfirm || "Bulenox")}
-                  onChange={e => {
-                    if (e.target.value === "__custom__") { setNewPfCustom(true); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: "" }); }
-                    else { setNewPfCustom(false); setNewPlanId(""); setNewAcct({ ...newAcct, propfirm: e.target.value }); }
-                  }}
-                  style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
-                >
-                  {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
-                  <option value="__custom__">➕ Otra…</option>
-                </select>
-                {newPfCustom && (
-                  <input type="text" placeholder="Nombre de la propfirm" value={newAcct.propfirm ?? ""} onChange={e => setNewAcct({ ...newAcct, propfirm: e.target.value })} autoFocus style={{ flex: 1, fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} />
-                )}
-              </div>
-            </div>
-            {/* Plan: rellena solo los parámetros de riesgo */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>Plan / Tamaño</label>
-              <select
-                value={newPlanId}
-                onChange={e => { setNewPlanId(e.target.value); applyPlan(e.target.value, newAcct.propfirm, newAcct, setNewAcct); }}
-                disabled={!(PROPFIRM_PLANS[newAcct.propfirm] || []).length}
-                style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: `0.5px solid ${newPlanId ? C.blue : "var(--color-border-secondary)"}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", opacity: (PROPFIRM_PLANS[newAcct.propfirm] || []).length ? 1 : 0.5 }}
-              >
-                <option value="">{(PROPFIRM_PLANS[newAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes para esta propfirm"}</option>
-                {(PROPFIRM_PLANS[newAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Parámetros aplicados por el plan — editables si hace falta */}
-          <div style={{ marginBottom: 8 }}>
-            <button
-              onClick={() => setShowNewPlanDetails(v => !v)}
-              style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
-            >
-              {showNewPlanDetails ? "▾" : "▸"} Parámetros del plan
-            </button>
-            {!showNewPlanDetails && (
-              <span style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginLeft: 8 }}>
-                Obj ${(newAcct.target || 0).toLocaleString()} · DD ${(newAcct.dd_limit || 0).toLocaleString()} · Umbral ${(newAcct.threshold || 0).toLocaleString()}
-              </span>
-            )}
-            {showNewPlanDetails && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-                {[
-                  ["Objetivo ($)", "target", "number"],
-                  ["DD máximo ($)", "dd_limit", "number"],
-                  ["Umbral inicial ($)", "threshold", "number"],
-                  ["Reserva safety ($)", "safetyReserve", "number"],
-                  ["Max. contratos", "maxContracts", "int"],
-                  ["Consistencia", "consistency", "text"],
-                ].map(([label, field, kind]) => (
-                  <div key={field} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <label style={{ fontSize: 9, color: "var(--color-text-secondary)" }}>{label}</label>
-                    <input
-                      type={kind === "text" ? "text" : "number"}
-                      value={newAcct[field] ?? ""}
-                      onChange={e => {
-                        const v = e.target.value;
-                        if (kind === "text") setNewAcct({ ...newAcct, [field]: v });
-                        else if (kind === "int") setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseInt(v) });
-                        else setNewAcct({ ...newAcct, [field]: v === "" ? "" : parseFloat(v) });
-                      }}
-                      style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div style={{ fontSize: 9, color: "var(--color-text-tertiary)", marginBottom: 8 }}>
-            Balance, días operados y mejor día se calculan solos a partir de los trades que vayas registrando.
-          </div>
-          <button onClick={handleAddAccount} style={{ width: "100%", padding: "6px 12px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 500 }}>
-            + Crear Cuenta
-          </button>
         </div>
+          );
+        })}
+
       </div>
 
       {/* 4. Database Structure & Integrity */}
