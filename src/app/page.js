@@ -40,8 +40,7 @@ function AccountFilterA({ accountsList, selectedAccounts, onChange }) {
   const groups = useMemo(() => [
     { label: "Activas Examen 📝", status: "ACTIVE_EXAMEN", accounts: accountsList.filter(a => (a.status === "ACTIVE" || !a.status) && a.type === "EXAMEN") },
     { label: "Activas Reales 💼", status: "ACTIVE_REAL", accounts: accountsList.filter(a => (a.status === "ACTIVE" || !a.status) && a.type === "REAL") },
-    { label: "Quemadas 🔥", status: "BURNED", accounts: accountsList.filter(a => a.status === "BURNED") },
-    { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => a.status === "CLOSED") },
+    { label: "Cerradas 🔒", status: "CLOSED", accounts: accountsList.filter(a => isClosedAcct(a)) },
   ].filter(g => g.accounts.length > 0), [accountsList]);
 
   const toggleDraft = (name) => {
@@ -241,6 +240,12 @@ const C = {
   greenBg: "var(--c-green-bg)", redBg: "var(--c-red-bg)", blueBg: "var(--c-blue-bg)",
   greenText: "var(--c-green-text)", redText: "var(--c-red-text)", blueText: "var(--c-blue-text)",
 };
+
+// Una cuenta solo está activa o cerrada: quemada y cerrada acaban en lo mismo,
+// la cuenta ya no opera. Se guarda CLOSED, pero los registros antiguos con
+// BURNED se siguen leyendo como cerradas para no tener que migrar nada.
+const normStatus = (s) => (s === "BURNED" ? "CLOSED" : (s || "ACTIVE"));
+const isClosedAcct = (a) => normStatus(a?.status) === "CLOSED";
 
 const fmt = (v) => (v >= 0 ? "+$" : "-$") + Math.abs(Math.round(v)).toLocaleString();
 const fmtN = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
@@ -894,8 +899,7 @@ function AccountCard({ account, rules, trades }) {
   const [expanded, setExpanded] = useState(false);
   
   const activeRules = rules || { size: 50000, target: 3000, dd_limit: 2500, daily_limit: 1100, status: "ACTIVE" };
-  const isClosed = activeRules.status === "CLOSED";
-  const isBurned = activeRules.status === "BURNED";
+  const isClosed = isClosedAcct(activeRules);
 
   const { netPnl, maxDD, peak, finalBalance } = calcAccountDD(trades, activeRules);
   // sessionPnl = total gain since account creation = finalBalance - original starting balance.
@@ -1022,7 +1026,6 @@ function AccountCard({ account, rules, trades }) {
                 </span>
               )}
               {isClosed && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada 🔒</span>}
-              {isBurned && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
             </div>
           </div>
           
@@ -2200,7 +2203,7 @@ function SettingsPanel({
   const [acctError, setAcctError] = useState("");
 
   // Listado de cuentas: filtro por estado y paginación por propfirm. Arranca en
-  // "Activas" porque las cerradas y quemadas solo estorban al gestionar; siguen
+  // "Activas" porque las cerradas solo estorban al gestionar; siguen
   // a un toque de distancia.
   const ACCT_PAGE = 5;
   const [acctStatusF, setAcctStatusF] = useState("ACTIVE");
@@ -2208,11 +2211,10 @@ function SettingsPanel({
   const ACCT_STATUS_TABS = [
     { id: "ACTIVE", label: "Activas" },
     { id: "CLOSED", label: "Cerradas" },
-    { id: "BURNED", label: "Quemadas" },
     { id: "ALL", label: "Todas" },
   ];
   const acctGroups = useMemo(() => {
-    const filtradas = accountsList.filter(a => acctStatusF === "ALL" || (a.status || "ACTIVE") === acctStatusF);
+    const filtradas = accountsList.filter(a => acctStatusF === "ALL" || normStatus(a.status) === acctStatusF);
     const grupos = [];
     filtradas.forEach(a => {
       const pf = a.propfirm || "Sin propfirm";
@@ -2223,8 +2225,8 @@ function SettingsPanel({
     return grupos;
   }, [accountsList, acctStatusF]);
   const acctCounts = useMemo(() => {
-    const c = { ACTIVE: 0, CLOSED: 0, BURNED: 0, ALL: accountsList.length };
-    accountsList.forEach(a => { const s = a.status || "ACTIVE"; if (c[s] !== undefined) c[s]++; });
+    const c = { ACTIVE: 0, CLOSED: 0, ALL: accountsList.length };
+    accountsList.forEach(a => { const s = normStatus(a.status); if (c[s] !== undefined) c[s]++; });
     return c;
   }, [accountsList]);
   const [saveKeySuccess, setSaveKeySuccess] = useState(false);
@@ -2824,10 +2826,9 @@ function SettingsPanel({
                     <option value="EXAMEN">Examen 📝</option>
                     <option value="REAL">Real 💼</option>
                   </select>
-                  <select value={editAcct.status || "ACTIVE"} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
+                  <select value={normStatus(editAcct.status)} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
                     <option value="ACTIVE">Activa</option>
                     <option value="CLOSED">Cerrada</option>
-                    <option value="BURNED">Quemada 🔥</option>
                   </select>
                   <div style={{ display: "flex", gap: 4 }}>
                     <select
@@ -2907,8 +2908,7 @@ function SettingsPanel({
                       ) : (
                         <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 500 }}>Examen 📝</span>
                       )}
-                      {a.status === "CLOSED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
-                      {a.status === "BURNED" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.redBg, color: C.redText, fontWeight: 500 }}>Quemada 🔥</span>}
+                      {isClosedAcct(a) && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
                       {a.propfirm ? `${a.propfirm} · ` : ""}Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}
@@ -4491,10 +4491,10 @@ function DashboardV2({
   const shiftOffset = (id, dir) => setOffsets(o => ({ ...o, [id]: Math.min(0, (o[id] || 0) + dir) }));
 
   // Una sola cuenta a la vez (o todas). Los ajustes de bróker no cuentan.
-  // Las cuentas cerradas o quemadas quedan fuera salvo que se activen con el
+  // Las cuentas cerradas quedan fuera salvo que se activen con el
   // botón de la llama. Antes se ocultaban del selector pero sus trades seguían
   // sumando en el agregado de "Todas las cuentas".
-  const isRetired = (a) => a.status === "CLOSED" || a.status === "BURNED";
+  const isRetired = (a) => isClosedAcct(a);
   const visibleAccounts = accountsList.filter(a => showClosed || !isRetired(a));
   const visibleNames = new Set(visibleAccounts.map(a => a.name));
   const retiredCount = accountsList.filter(isRetired).length;
@@ -4708,17 +4708,16 @@ function DashboardV2({
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {rows.length === 0 && <span style={{ color: V2.text3, fontSize: 14 }}>Sin cuentas activas</span>}
             {rows.map(r => {
-              // Cerradas y quemadas en el mismo rojo que el botón de la llama que
-              // las hace aparecer, y con su estado escrito al lado: por el color
-              // solo no se distingue una cerrada de una quemada.
-              const retirada = r.status === "CLOSED" || r.status === "BURNED";
+              // Cerradas en el mismo rojo que el botón de la llama que las hace
+              // aparecer, y con la palabra al lado para no depender del color.
+              const retirada = normStatus(r.status) === "CLOSED";
               return (
               <div key={r.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
                   <span style={{ fontSize: 14, color: retirada ? V2.red : V2.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
                   {retirada && (
                     <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, letterSpacing: ".3px", color: V2.red, background: "rgba(232,83,110,0.16)", border: `0.5px solid rgba(232,83,110,0.45)`, borderRadius: 4, padding: "1px 4px" }}>
-                      {r.status === "BURNED" ? "QUEMADA" : "CERRADA"}
+                      CERRADA
                     </span>
                   )}
                 </span>
@@ -4834,7 +4833,7 @@ function DashboardV2({
                 if (!next && acct !== "all" && accountsList.some(a => a.name === acct && isRetired(a))) setAcct("all");
               }}
               aria-pressed={showClosed}
-              title={showClosed ? "Ocultar cuentas cerradas y quemadas" : `Mostrar ${retiredCount} cuenta${retiredCount > 1 ? "s" : ""} cerrada o quemada`}
+              title={showClosed ? "Ocultar cuentas cerradas" : `Mostrar ${retiredCount} cuenta${retiredCount > 1 ? "s cerradas" : " cerrada"}`}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6, height: 42, padding: "0 12px",
                 borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap", fontSize: 13, fontWeight: 600,
@@ -4860,7 +4859,7 @@ function DashboardV2({
             <option value="all">Todas las cuentas</option>
             {visibleAccounts.map(a => (
               <option key={a.id} value={a.name}>
-                {a.name}{isRetired(a) ? (a.status === "BURNED" ? " · quemada" : " · cerrada") : ""}
+                {a.name}{isRetired(a) ? " · cerrada" : ""}
               </option>
             ))}
           </select>
@@ -5312,7 +5311,7 @@ export default function App() {
     const trs = freshTrades || trades;
 
     const rows = accts
-      .filter(a => a.status !== "CLOSED" && a.status !== "BURNED")
+      .filter(a => !isClosedAcct(a))
       .map(a => {
         const { cushion, basis } = computeCushion(a, trs.filter(t => t.account === a.name), a.size);
         const ph = getPhase(cushion);
@@ -6119,8 +6118,7 @@ export default function App() {
   const allAccountsForForm = useMemo(() => {
     return accountsList.map(a => {
       let label = a.name;
-      if (a.status === "CLOSED") label += " (Cerrada)";
-      else if (a.status === "BURNED") label += " (Quemada 🔥)";
+      if (isClosedAcct(a)) label += " (Cerrada)";
       return { value: a.name, label };
     });
   }, [accountsList]);
