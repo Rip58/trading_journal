@@ -4110,7 +4110,8 @@ const V2_CARD_DEFS = [
   { id: "equity", title: "Equity curve", tall: true, info: "Evolución acumulada del PnL, día a día, de la cuenta seleccionada." },
   { id: "winRatio", title: "% de acierto", tall: true, info: "Porcentaje de días ganadores sobre días operados." },
   { id: "portfolio", title: "Balance", tall: false, info: "Saldo actual según el cierre del último día registrado." },
-  { id: "profitFactor", title: "Profit factor", tall: false, info: "Ganancia bruta dividida entre pérdida bruta." },
+  { id: "pnlPeriodo", title: "PnL del periodo", tall: false, info: "Resultado del periodo en curso frente al mismo tramo del anterior. Si la semana lleva dos días, se compara contra esos dos días de la semana pasada." },
+  { id: "profitFactor", title: "Profit factor", tall: false, info: "Ganancia bruta dividida entre pérdida bruta. Sin días en pérdida no tiene valor finito: mide calidad, no crecimiento." },
   { id: "phase", title: "Fase del plan", tall: true, info: "Colchón hasta el umbral de liquidación de la cuenta más ajustada." },
   { id: "records", title: "Récords", tall: true, info: "Mejor y peor día operado, y las mayores rachas de días consecutivos ganando y perdiendo." },
 ];
@@ -4767,6 +4768,25 @@ function DashboardV2({
               );
             })}
           </div>
+        </V2Card>
+      );
+    }
+
+    if (id === "pnlPeriodo") {
+      const dif = cur.pnl - prev.pnl;
+      // El porcentaje solo con una base positiva de la que crecer. Con el tramo
+      // anterior en cero o en rojo la división no significa nada: pasar de -$100
+      // a +$200 no es "+300%". En esos casos manda la diferencia en dinero, que
+      // se entiende siempre.
+      const d = prev.pnl > 0 ? Math.round((dif / prev.pnl) * 100) : null;
+      return (
+        <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}>
+          <V2Metric value={fmt(Math.round(cur.pnl))} deltaPct={d} up={dif >= 0}
+            compare={<>
+              Frente a <span style={{ color: prev.pnl >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{fmt(Math.round(prev.pnl))}</span> {cmpPeriodo}
+              {" · "}
+              <span style={{ color: dif >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{fmt(Math.round(dif))}</span>
+            </>} />
         </V2Card>
       );
     }
