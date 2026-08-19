@@ -3423,6 +3423,23 @@ function v2LocalIso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// El periodo en curso se compara contra el MISMO tramo del anterior. Si esta
+// semana solo lleva lunes y martes, el anterior se recorta a su lunes y su
+// martes: comparar dos días contra una semana entera no dice nada, y hacía que
+// el acierto y el profit factor parecieran desplomarse cada lunes.
+// El corte se hace por días transcurridos desde el inicio del periodo, así vale
+// igual para semana, mes y año, y se acota al final del periodo anterior por si
+// era más corto (febrero contra marzo).
+function v2AlineaPrev(cur, prev, anchor) {
+  if (anchor >= cur[1]) return { prev, parcial: false, dias: 0 };
+  const dia = 86400000;
+  const transcurridos = Math.round((new Date(anchor + "T00:00:00") - new Date(cur[0] + "T00:00:00")) / dia);
+  if (transcurridos < 0) return { prev, parcial: false, dias: 0 };
+  const finPrev = new Date(new Date(prev[0] + "T00:00:00").getTime() + transcurridos * dia);
+  const fin = v2LocalIso(finPrev);
+  return { prev: [prev[0], fin < prev[1] ? fin : prev[1]], parcial: true, dias: transcurridos + 1 };
+}
+
 // `offset` desplaza el periodo hacia atrás (-1 = el anterior) para poder
 // navegar semana a semana o mes a mes sin perder la comparación.
 function v2Ranges(period, anchor, offset = 0) {
@@ -3430,25 +3447,28 @@ function v2Ranges(period, anchor, offset = 0) {
   const iso = v2LocalIso;
   const shift = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
+  let cur, prev;
   if (period === "day") {
     const c = shift(a, offset);
     const p = shift(c, -1);
-    return { cur: [iso(c), iso(c)], prev: [iso(p), iso(p)] };
-  }
-  if (period === "week") {
+    cur = [iso(c), iso(c)]; prev = [iso(p), iso(p)];
+  } else if (period === "week") {
     // Lunes de la semana del ancla, desplazado `offset` semanas
     const mon = shift(a, -((a.getDay() + 6) % 7) + offset * 7);
     const pm = shift(mon, -7);
-    return { cur: [iso(mon), iso(shift(mon, 6))], prev: [iso(pm), iso(shift(pm, 6))] };
-  }
-  if (period === "month") {
+    cur = [iso(mon), iso(shift(mon, 6))]; prev = [iso(pm), iso(shift(pm, 6))];
+  } else if (period === "month") {
     const y = a.getFullYear(), m = a.getMonth() + offset;
     const s = new Date(y, m, 1), e = new Date(y, m + 1, 0);
     const ps = new Date(y, m - 1, 1), pe = new Date(y, m, 0);
-    return { cur: [iso(s), iso(e)], prev: [iso(ps), iso(pe)] };
+    cur = [iso(s), iso(e)]; prev = [iso(ps), iso(pe)];
+  } else {
+    const y = a.getFullYear() + offset;
+    cur = [`${y}-01-01`, `${y}-12-31`]; prev = [`${y - 1}-01-01`, `${y - 1}-12-31`];
   }
-  const y = a.getFullYear() + offset;
-  return { cur: [`${y}-01-01`, `${y}-12-31`], prev: [`${y - 1}-01-01`, `${y - 1}-12-31`] };
+
+  const al = v2AlineaPrev(cur, prev, anchor);
+  return { cur, prev: al.prev, prevParcial: al.parcial, prevDias: al.dias };
 }
 
 // Etiqueta legible del periodo mostrado: "Julio 2026", "Semana 2 de julio"…
@@ -4520,6 +4540,8 @@ function DashboardV2({
     return {
       cur: v2Slice(days, ranges.cur),
       prev: v2Slice(days, ranges.prev),
+      prevParcial: ranges.prevParcial,
+      prevDias: ranges.prevDias,
       rangeLabel: v2RangeLabel(period, ranges.cur[0]),
       onPrevRange: () => shiftOffset(id, -1),
       onNextRange: () => shiftOffset(id, 1),
@@ -4571,10 +4593,15 @@ function DashboardV2({
       onUp: () => moveCard(sec, id, -1), onDown: () => moveCard(sec, id, 1),
       canUp: pos > 0, canDown: pos >= 0 && pos < lista.length - 1,
     };
-    const { cur, prev, rangeLabel, onPrevRange, onNextRange, canNextRange } = statsFor(id);
+    const { cur, prev, prevParcial, prevDias, rangeLabel, onPrevRange, onNextRange, canNextRange } = statsFor(id);
     const rangeNav = { rangeLabel, onPrevRange, onNextRange, canNextRange };
     const pw = periodWord[periodOf(id)];
     const pa = periodArticle[periodOf(id)];
+    // Con el periodo a medias se compara solo el mismo tramo del anterior, y hay
+    // que decirlo: si no, el lector cree que enfrenta semanas completas.
+    const cmpPeriodo = prevParcial
+      ? <>{pa} {pw} anterior <span style={{ opacity: 0.75 }}>(mismos {prevDias} {prevDias === 1 ? "día" : "días"})</span></>
+      : <>{pa} {pw} anterior</>;
 
     if (id === "equity") {
       return (
@@ -4600,7 +4627,7 @@ function DashboardV2({
       const dDays = delta(cur.days, prev.days);
       return (
         <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}
-          footer={<>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {pa} {pw} anterior</>}>
+          footer={<>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {cmpPeriodo}</>}>
           {/* Donut a la izquierda y datos a la derecha, en filas compactas:
               la tarjeta ocupa la mitad de alto que apilándolos. */}
           <div className="v2-split">
@@ -4745,12 +4772,21 @@ function DashboardV2({
     }
 
     if (id === "profitFactor") {
-      const c = isFinite(cur.pf) ? cur.pf : 0, p = isFinite(prev.pf) ? prev.pf : 0;
-      const d = p ? Math.round(((c - p) / p) * 100) : null;
+      // Sin días perdedores el profit factor no es cero, es infinito: no hay
+      // pérdida bruta entre la que dividir. Se pintaba 0.00 y con una semana
+      // impecable la tarjeta decía justo lo contrario de lo que había pasado.
+      const pfTexto = (s) => {
+        if (!s.wins && !s.losses) return "—";
+        return isFinite(s.pf) ? fmtN(s.pf, 2) : "∞";
+      };
+      // El porcentaje solo tiene sentido entre dos cifras finitas
+      const comparables = isFinite(cur.pf) && isFinite(prev.pf) && prev.pf > 0;
+      const d = comparables ? Math.round(((cur.pf - prev.pf) / prev.pf) * 100) : null;
+      const mejor = isFinite(cur.pf) && isFinite(prev.pf) ? cur.pf >= prev.pf : !isFinite(cur.pf);
       return (
         <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}>
-          <V2Metric value={fmtN(c, 2)} deltaPct={d} up={(d ?? 0) >= 0}
-            compare={<>Frente a profit factor {fmtN(p, 2)} {pa} {pw} anterior</>} />
+          <V2Metric value={pfTexto(cur)} deltaPct={d} up={mejor}
+            compare={<>Frente a profit factor {pfTexto(prev)} {cmpPeriodo}{!isFinite(cur.pf) && cur.wins ? " · sin días en pérdida" : ""}</>} />
         </V2Card>
       );
     }
