@@ -1860,7 +1860,7 @@ function BarChart({ labels, values, height = 120 }) {
 }
 
 // ── Trade Form ───────────────────────────────────────────────────────────────
-function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false }) {
+function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], dark = false }) {
   // Paleta del popup: sigue el tema claro/oscuro clásico por defecto, o la
   // paleta fija de V2 cuando se abre desde el dashboard nuevo (dark=true).
   const t = dark
@@ -2118,6 +2118,15 @@ function TradeForm({ trade, onSave, onCancel, isNew, accounts = [], dark = false
         <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: t.green, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Guardar</button>
         <button onClick={onCancel} style={{ flex: 1, padding: "9px 16px", background: t.secondaryBg, color: t.cancelText, border: `0.5px solid ${t.secondaryBorder}`, borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
       </div>
+      {/* Borrar vive aquí, separado de guardar, para que abrir un día desde la
+          lista deje editarlo o eliminarlo sin más botones en la propia lista. */}
+      {onDelete && !isNew && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${t.secondaryBorder}`, display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={onDelete} style={{ padding: "7px 14px", background: "transparent", color: t.redText, border: `0.5px solid ${t.red}`, borderRadius: 8, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+            Borrar este día
+          </button>
+        </div>
+      )}
       </div>
     </div>,
     document.body
@@ -5015,7 +5024,17 @@ function DashboardV2({
         )}
 
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
-        {editingTrade && <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} dark />}
+        {editingTrade && (
+          <TradeForm
+            trade={editingTrade}
+            onSave={saveTrade}
+            onCancel={() => setEditingTrade(null)}
+            onDelete={() => { setDeleteConfirm(editingTrade.id); setEditingTrade(null); }}
+            isNew={false}
+            accounts={allAccountsForForm}
+            dark
+          />
+        )}
 
         {/* El selector actúa sobre la hoja en la que estás */}
         {picker && nav === "dashboard" && (
@@ -5065,50 +5084,48 @@ function DashboardV2({
           const pageSafe = Math.min(tradePage, totalPages);
           const pageTrades = sortedTrades.slice((pageSafe - 1) * perPage, pageSafe * perPage);
           return (
-            <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 24 }}>
-              <div style={{ fontSize: 19, fontWeight: 500, color: V2.text, marginBottom: 18 }}>Días operados</div>
+            <div className="v5-dias-card" style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16 }}>
+              <div style={{ fontSize: 19, fontWeight: 500, color: V2.text, marginBottom: 14 }}>Días operados</div>
               {/* Móvil: una ficha por día. La tabla no baja de 720px y el
-                  contenedor en un iPhone son 355, así que allí no cabía. */}
-              <div className="v5-dias-fichas" style={{ flexDirection: "column", gap: 8 }}>
+                  contenedor en un iPhone son 355, así que allí no cabía.
+                  La ficha entera abre el popup del día, donde se edita o se
+                  borra: dos botones por fila alargaban la lista sin necesidad. */}
+              <div className="v5-dias-fichas" style={{ flexDirection: "column", gap: 6 }}>
                 {pageTrades.map(t => {
                   const colchon = (t.balance !== null && t.balance !== undefined && t.threshold !== null && t.threshold !== undefined)
                     ? t.balance - t.threshold
                     : null;
-                  const gana = t.pnl > 0;
                   const dato = (etiqueta, valor, color) => (
-                    <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <span style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 0 }}>
                       <span style={{ fontSize: 9, color: V2.text3, textTransform: "uppercase", letterSpacing: ".4px" }}>{etiqueta}</span>
                       <span style={{ fontSize: 12, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{valor}</span>
                     </span>
                   );
                   return (
-                    <div key={t.id} style={{ background: V2.segBg, border: `0.5px solid ${V2.border}`, borderLeft: `2px solid ${t.pnl === 0 ? V2.border : gana ? V2.green : V2.red}`, borderRadius: 8, padding: "10px 11px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button
+                      key={t.id}
+                      onClick={() => { setAddingTrade(false); setEditingTrade(t); }}
+                      aria-label={`Abrir ${t.date}`}
+                      style={{
+                        width: "100%", textAlign: "left", font: "inherit", cursor: "pointer",
+                        background: V2.segBg, border: `0.5px solid ${V2.border}`,
+                        borderLeft: `2px solid ${t.pnl === 0 ? V2.border : t.pnl > 0 ? V2.green : V2.red}`,
+                        borderRadius: 8, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 6,
+                      }}
+                    >
                       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                        <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: V2.text }}>{t.date}</span>
+                        <span style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: V2.text, whiteSpace: "nowrap" }}>{t.date}</span>
                           <span style={{ fontSize: 11, color: V2.text3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.account}</span>
                         </span>
-                        <span style={{ fontSize: 21, fontWeight: 700, color: t.pnl > 0 ? V2.green : t.pnl < 0 ? V2.red : V2.text, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{fmt(t.pnl)}</span>
+                        <span style={{ fontSize: 19, fontWeight: 700, color: t.pnl > 0 ? V2.green : t.pnl < 0 ? V2.red : V2.text, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", flexShrink: 0 }}>{fmt(t.pnl)}</span>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, borderTop: `1px solid ${V2.border}`, paddingTop: 8 }}>
-                        {dato("Cierre", t.balance !== null && t.balance !== undefined ? `$${Math.round(t.balance).toLocaleString()}` : "—", V2.text)}
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                        {dato("Cierre", t.balance !== null && t.balance !== undefined ? `$${Math.round(t.balance).toLocaleString()}` : "—", V2.text2)}
                         {dato("Umbral", t.threshold !== null && t.threshold !== undefined ? `$${Math.round(t.threshold).toLocaleString()}` : "—", V2.red)}
                         {dato("Colchón", colchon !== null ? `$${Math.round(colchon).toLocaleString()}` : "—", colchon === null ? V2.text3 : colchon > 0 ? V2.green : V2.red)}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                        <span style={{ fontSize: 10, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>
-                          {t.commission ? `Comisión -$${Math.abs(t.commission).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "Sin comisión"}
-                        </span>
-                        <span style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => { setAddingTrade(false); setEditingTrade(t); }} aria-label="Editar" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", padding: 0 }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={V2.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17v3z" /></svg>
-                          </button>
-                          <button onClick={() => setDeleteConfirm(t.id)} aria-label="Eliminar" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", padding: 0 }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={V2.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 4h4M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12" /></svg>
-                          </button>
-                        </span>
-                      </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -5204,6 +5221,11 @@ export default function App() {
   const [trades, setTrades] = useState([]);
   const [accountsList, setAccountsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Las cuentas se cargan en paralelo a los trades, pero el panel solo esperaba
+  // a los trades. Con la lista de cuentas todavía vacía, la curva de equity se
+  // reconstruye sin ninguna cuenta y sale plana en cero durante un instante,
+  // hasta que llegan y se repinta. De ahí la sensación de que tarda.
+  const [acctsReady, setAcctsReady] = useState(false);
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [visibility, setVisibility] = useState({});
   const [editMode, setEditMode] = useState(false);
@@ -5464,7 +5486,9 @@ export default function App() {
   // necesita leerlos ya, sin esperar al siguiente render.
   const fetchAccounts = async () => {
     try {
-      const res = await fetch('/api/accounts');
+      // no-store: sin cabeceras de caché el navegador puede servir la lista
+      // anterior, y entonces editar una cuenta no se refleja en ningún cálculo.
+      const res = await fetch('/api/accounts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setAccountsList(data);
@@ -5472,6 +5496,8 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error cargando cuentas:", err);
+    } finally {
+      setAcctsReady(true);
     }
     return null;
   };
@@ -5479,7 +5505,7 @@ export default function App() {
   const fetchTrades = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/trades');
+      const res = await fetch('/api/trades', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setTrades(data);
@@ -6764,7 +6790,7 @@ export default function App() {
       </div>
       )}
       
-      {loading ? (
+      {loading || !acctsReady ? (
         <div style={{ padding: "60px 0", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12 }}>
           Cargando trades de Neon...
         </div>

@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 
+// Sin esto el navegador puede servir de su caché una respuesta anterior, y
+// entonces editar las cuentas no se refleja hasta recargar del todo.
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const { userId } = await auth();
@@ -17,7 +21,7 @@ export async function GET() {
         name: 'asc',
       },
     });
-    return NextResponse.json(accounts);
+    return NextResponse.json(accounts, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('Error fetching accounts:', error);
     return NextResponse.json(

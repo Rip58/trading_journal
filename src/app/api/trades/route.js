@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
+
+// Sin esto el navegador puede servir de su caché una respuesta anterior, y
+// entonces editar los trades no se refleja hasta recargar del todo.
+export const dynamic = 'force-dynamic';
 import { normalizeDateToYYYYMMDD, parseLocaleFloat } from '@/lib/dateUtils';
 
 export async function GET() {
@@ -18,7 +22,7 @@ export async function GET() {
         id: 'asc',
       },
     });
-    return NextResponse.json(trades);
+    return NextResponse.json(trades, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('Error fetching trades:', error);
     return NextResponse.json(

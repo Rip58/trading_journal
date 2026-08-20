@@ -212,9 +212,12 @@ button:active {
    ficha por día en móvil. La tabla necesita 720px de ancho y el contenedor en
    un iPhone son 355, así que allí obligaba a arrastrar en horizontal. */
 .v5-dias-fichas { display: none; }
+.v5-dias-card { padding: 24px; }
 @media (max-width: 640px) {
   .v5-dias-tabla { display: none; }
   .v5-dias-fichas { display: flex; }
+  /* 24px por lado se comían 48 de los 355 disponibles */
+  .v5-dias-card { padding: 12px; }
 }
 
 /* Calendario V2: solo los 7 días, todos iguales, y el total de la semana como
