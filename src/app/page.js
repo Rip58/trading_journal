@@ -634,15 +634,18 @@ function calcLiquidationHistory(trades, filter, accountsList) {
 function calcEquityRefs(trades, filter, accountsList) {
   if (!trades || trades.length === 0) return { base: 0, objetivo: null };
   const historias = buildAccountHistories(trades, accountsList);
-  let base = 0, target = 0;
+  let base = 0, target = 0, cuentas = 0;
   accountsList.forEach(acc => {
     if (filter !== "all" && acc.name !== filter) return;
     const h = historias[acc.name];
     if (!h || h.sortedTrades.length === 0) return;
     base += h.originalStartSize;
     target += Number(acc.target) || 0;
+    cuentas++;
   });
-  return { base, objetivo: target > 0 ? base + target : null };
+  // La línea de objetivo solo se dibuja cuando hay UNA cuenta en juego: sumar
+  // los objetivos de varias da una meta que no es la de ninguna.
+  return { base, objetivo: (target > 0 && cuentas === 1) ? base + target : null };
 }
 
 
@@ -2760,6 +2763,7 @@ function SettingsPanel({
                 {[
                   ["Objetivo ($)", "target", "number"],
                   ["DD máximo ($)", "dd_limit", "number"],
+                  ["Límite diario ($)", "daily_limit", "number"],
                   ["Umbral inicial ($)", "threshold", "number"],
                   ["Reserva safety ($)", "safetyReserve", "number"],
                   ["Max. contratos", "maxContracts", "int"],
@@ -2899,6 +2903,7 @@ function SettingsPanel({
                   {[
                     ["Objetivo ($)", "target", "number"],
                     ["DD máximo ($)", "dd_limit", "number"],
+                    ["Límite diario ($)", "daily_limit", "number"],
                     ["Umbral autoliq. ($)", "threshold", "number"],
                     ["Reserva safety ($)", "safetyReserve", "number"],
                     ["Max. contratos", "maxContracts", "int"],
@@ -2946,6 +2951,7 @@ function SettingsPanel({
                     </div>
                     <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
                       {a.propfirm ? `${a.propfirm} · ` : ""}Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}
+                      {a.daily_limit ? ` · Diario: $${a.daily_limit.toLocaleString()}` : ""}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4 }}>
@@ -4658,7 +4664,10 @@ function DashboardV2({
             // del gráfico, no el signo del área, que ya se ve por el color.
             <div style={{ display: "flex", gap: 12, flexWrap: "nowrap", fontSize: 12, whiteSpace: "nowrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 0, borderTop: "2px solid rgba(255,255,255,0.5)", display: "inline-block" }} />Base</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 0, borderTop: `2px dashed ${V2_AMBER}`, display: "inline-block" }} />Objetivo</span>
+              {/* La línea de objetivo solo existe con una cuenta en juego */}
+              {new Set(scoped.map(t => t.account)).size === 1 && (
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 0, borderTop: `2px dashed ${V2_AMBER}`, display: "inline-block" }} />Objetivo</span>
+              )}
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "rgba(232,83,110,0.16)", borderTop: `2px solid ${V2.red}`, display: "inline-block" }} />Liquidación</span>
             </div>
           }>
