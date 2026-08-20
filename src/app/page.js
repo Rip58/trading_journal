@@ -6853,7 +6853,8 @@ export default function App() {
       )}
       
       {loading || !acctsReady ? (
-        <div style={{ padding: "34px 20px", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <div className="v5-carga-pantalla" style={currentTab === "v2" ? { background: V2.bg } : undefined}>
+        <div style={{ width: "100%", maxWidth: 340, padding: "34px 20px", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, boxSizing: "border-box" }}>
           <svg width="200" height="72" viewBox="0 0 200 72" fill="none" aria-hidden="true" style={{ maxWidth: "100%" }}>
             <line x1="0" y1="66" x2="200" y2="66" stroke="var(--color-border-secondary)" strokeWidth="1" />
             <path
@@ -6869,6 +6870,7 @@ export default function App() {
           <span className="v5-carga-texto" style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
             Cargando tus cuentas y tus días
           </span>
+        </div>
         </div>
       ) : (
         <>
