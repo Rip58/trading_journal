@@ -627,6 +627,24 @@ function calcLiquidationHistory(trades, filter, accountsList) {
   return portfolioThresholds;
 }
 
+// Saldo de partida y objetivo, en dólares, de lo que se está pintando. La curva
+// de equity va en absoluto, así que necesita el suelo sobre el que se levanta y
+// la meta a la que apunta. Con "todas" se suman los de las cuentas que tienen
+// operaciones, que son las que entran en la curva.
+function calcEquityRefs(trades, filter, accountsList) {
+  if (!trades || trades.length === 0) return { base: 0, objetivo: null };
+  const historias = buildAccountHistories(trades, accountsList);
+  let base = 0, target = 0;
+  accountsList.forEach(acc => {
+    if (filter !== "all" && acc.name !== filter) return;
+    const h = historias[acc.name];
+    if (!h || h.sortedTrades.length === 0) return;
+    base += h.originalStartSize;
+    target += Number(acc.target) || 0;
+  });
+  return { base, objetivo: target > 0 ? base + target : null };
+}
+
 
 const EMPTY_TRADE = { date: new Date().toISOString().slice(0, 10), entry_time: "", exit_time: "", account: "", instrument: "NQ", direction: "", qty: 1, entry: 0, exit_price: 0, gross: 0, commission: 4, pnl: 0, mae: 0, mfe: 0, etd: 0, rr: 0, result: "Win", strategy: "Resumen diario", timeframe: "Diario", notes: "", image: "", balance: "", threshold: "" };
 
@@ -3559,39 +3577,47 @@ function V2Equity({ trades, accountFilter, accountsList }) {
     });
   }, [trades]);
 
-  const pts = useMemo(() => calcReconstructedPnlHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
-  // Umbral de autoliquidación en la misma escala relativa que la curva verde
-  const liq = useMemo(() => calcLiquidationHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
+  const rel = useMemo(() => calcReconstructedPnlHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
+  const liqRel = useMemo(() => calcLiquidationHistory(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
+  const refs = useMemo(() => calcEquityRefs(trades, accountFilter, accountsList || []), [trades, accountFilter, accountsList]);
 
-  if (pts.length < 2) return <div style={{ padding: "20px 0", color: V2.text3, fontSize: 13 }}>Sin datos suficientes</div>;
+  if (rel.length < 2) return <div style={{ padding: "20px 0", color: V2.text3, fontSize: 13 }}>Sin datos suficientes</div>;
+
+  // El eje va en dólares, no en PnL acumulado. Con la escala relativa el umbral
+  // caía al sótano y aplastaba la curva contra el techo; en absoluto caben a la
+  // vez las cuatro referencias que importan —base, saldo, umbral y objetivo— y la
+  // distancia hasta la liquidación se lee sola.
+  const { base, objetivo } = refs;
+  const pts = rel.map(v => v + base);
+  const liq = liqRel.map(v => (v === null || v === undefined ? null : v + base));
 
   const hasLiq = liq.length === pts.length && liq.some(v => v !== null && v !== undefined);
   const liqVals = hasLiq ? liq.filter(v => v !== null && v !== undefined) : [];
 
   const W = width || 620, H = 150, PAD = 38;  // más bajo: la tarjeta no debe comerse la pantalla
-  const min = Math.min(0, ...pts, ...liqVals), max = Math.max(0, ...pts, ...liqVals);
+  const min = Math.min(base, ...pts, ...liqVals);
+  const max = Math.max(base, ...pts, ...(objetivo !== null ? [objetivo] : []));
   const range = max - min || 1;
   const toX = i => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
   const toY = v => H - PAD / 2 - ((v - min) / range) * (H - PAD);
-  const zeroY = toY(0);
-  const areaGreenPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.min(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
-  const areaRedPts = `${toX(0)},${zeroY} ` + pts.map((v, i) => `${toX(i)},${Math.max(toY(v), zeroY)}`).join(" ") + ` ${toX(pts.length - 1)},${zeroY}`;
-  // La marca más próxima a cero se clava en cero: con el suelo de liquidación el
-  // eje ya no arranca en 0, y sin esto la etiqueta de al lado de la línea de cero
-  // dice otra cosa (un "-$80" pegado al cero, por ejemplo).
+  const baseY = toY(base);
+  const areaGreenPts = `${toX(0)},${baseY} ` + pts.map((v, i) => `${toX(i)},${Math.min(toY(v), baseY)}`).join(" ") + ` ${toX(pts.length - 1)},${baseY}`;
+  const areaRedPts = `${toX(0)},${baseY} ` + pts.map((v, i) => `${toX(i)},${Math.max(toY(v), baseY)}`).join(" ") + ` ${toX(pts.length - 1)},${baseY}`;
+  // La marca más próxima a la base se clava en la base, para que la línea del
+  // saldo de partida lleve su cifra en el eje en vez de una etiqueta que dice
+  // casi lo mismo justo al lado.
   const ticks = Array.from({ length: 5 }, (_, i) => min + (i / 4) * range);
-  if (min < 0 && max > 0) {
+  if (base > min && base < max) {
     let nearest = 0;
-    ticks.forEach((v, i) => { if (Math.abs(v) < Math.abs(ticks[nearest])) nearest = i; });
-    ticks[nearest] = 0;
+    ticks.forEach((v, i) => { if (Math.abs(v - base) < Math.abs(ticks[nearest] - base)) nearest = i; });
+    ticks[nearest] = base;
   }
 
   const formatTick = (v) => {
     const abs = Math.abs(Math.round(v));
-    if (abs === 0) return "$0";
-    const sign = v >= 0 ? "+" : "-";
-    return abs >= 1000 ? `${sign}$${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${sign}$${abs}`;
+    return abs >= 1000 ? `$${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k` : `$${abs}`;
   };
+  const fmtDolar = (v) => `$${Math.round(v).toLocaleString()}`;
 
   const pointFromEvent = (clientX) => {
     if (!containerRef.current) return;
@@ -3655,10 +3681,10 @@ function V2Equity({ trades, accountFilter, accountsList }) {
           </defs>
           {ticks.map((v, i) => {
             const y = toY(v);
-            const isZero = Math.abs(v) < range * 0.01;
+            const esBase = Math.abs(v - base) < range * 0.01;
             return (
               <g key={i}>
-                <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={isZero ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)"} strokeWidth={isZero ? 1 : 0.5} />
+                <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke={esBase ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)"} strokeWidth={esBase ? 1 : 0.5} />
                 <text x={PAD - 4} y={y + 4} textAnchor="end" fontSize={9} fill={V2.text3}>{formatTick(v)}</text>
               </g>
             );
@@ -3668,9 +3694,17 @@ function V2Equity({ trades, accountFilter, accountsList }) {
           {pts.map((v, i) => {
             if (i === 0) return null;
             const avg = (pts[i - 1] + v) / 2;
-            return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= 0 ? V2.green : V2.red} strokeWidth={2} strokeLinecap="round" />;
+            return <line key={i} x1={toX(i - 1)} y1={toY(pts[i - 1])} x2={toX(i)} y2={toY(v)} stroke={avg >= base ? V2.green : V2.red} strokeWidth={2} strokeLinecap="round" />;
           })}
-          <line x1={PAD} y1={zeroY} x2={W - 10} y2={zeroY} stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
+          {/* Saldo de partida */}
+          <line x1={PAD} y1={baseY} x2={W - 10} y2={baseY} stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
+          {/* Objetivo: la meta a la que apunta la cuenta, en la misma escala */}
+          {objetivo !== null && (
+            <>
+              <line x1={PAD} y1={toY(objetivo)} x2={W - 10} y2={toY(objetivo)} stroke={V2_AMBER} strokeWidth={1} strokeDasharray="5,4" opacity={0.8} pointerEvents="none" />
+              <text x={PAD + 2} y={toY(objetivo) - 4} fontSize={9} fontWeight="600" fill={V2_AMBER} opacity={0.9} pointerEvents="none">Objetivo {fmtDolar(objetivo)}</text>
+            </>
+          )}
           {hasLiq && (
             <>
               <path d={liqArea} fill="url(#v2liqZone)" pointerEvents="none" />
@@ -3683,17 +3717,18 @@ function V2Equity({ trades, accountFilter, accountsList }) {
               >Liquidación</text>
             </>
           )}
-          <circle cx={toX(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3.5} fill={pts[pts.length - 1] >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} pointerEvents="none" />
+          <circle cx={toX(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3.5} fill={pts[pts.length - 1] >= base ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} pointerEvents="none" />
 
           {hoverIdx !== null && (() => {
             const x = toX(hoverIdx), y = toY(pts[hoverIdx]), val = pts[hoverIdx];
             const trade = sorted[hoverIdx];
-            const txt = fmt(val);
+            // El saldo de ese día, en dólares, y debajo lo acumulado sobre la base
+            const txt = fmtDolar(val);
             const dateStr = trade?.date ? normalizeDateToYYYYMMDD(trade.date) : "";
             const liqVal = hasLiq ? liq[hoverIdx] : null;
             // Colchón = distancia de la cuenta al umbral de liquidación
             const cushion = (liqVal === null || liqVal === undefined) ? null : val - liqVal;
-            const tooltipW = 92, tooltipH = cushion === null ? 36 : 49;
+            const tooltipW = 104, tooltipH = cushion === null ? 36 : 49;
             let tx = x - tooltipW / 2;
             if (tx < 5) tx = 5;
             if (tx + tooltipW > W - 5) tx = W - tooltipW - 5;
@@ -3703,11 +3738,11 @@ function V2Equity({ trades, accountFilter, accountsList }) {
               <g pointerEvents="none">
                 <line x1={x} y1={PAD / 2} x2={x} y2={H - PAD / 2} stroke={V2.border} strokeWidth={1} strokeDasharray="3,3" />
                 {cushion !== null && <circle cx={x} cy={toY(liqVal)} r={3} fill={V2.red} stroke={V2.card} strokeWidth={1.5} />}
-                <circle cx={x} cy={y} r={6} fill={val >= 0 ? V2.green : V2.red} opacity={0.3} />
-                <circle cx={x} cy={y} r={3.5} fill={val >= 0 ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} />
+                <circle cx={x} cy={y} r={6} fill={val >= base ? V2.green : V2.red} opacity={0.3} />
+                <circle cx={x} cy={y} r={3.5} fill={val >= base ? V2.green : V2.red} stroke={V2.card} strokeWidth={1.5} />
                 <rect x={tx} y={ty} width={tooltipW} height={tooltipH} rx={7} fill={V2.segActive} stroke={V2.border} strokeWidth={1} />
-                <text x={tx + tooltipW / 2} y={ty + 15} textAnchor="middle" fontSize={11} fontWeight="700" fill={val >= 0 ? V2.green : V2.red}>{txt}</text>
-                <text x={tx + tooltipW / 2} y={ty + 28} textAnchor="middle" fontSize={9} fill={V2.text3}>{dateStr}</text>
+                <text x={tx + tooltipW / 2} y={ty + 15} textAnchor="middle" fontSize={11} fontWeight="700" fill={val >= base ? V2.green : V2.red}>{txt}</text>
+                <text x={tx + tooltipW / 2} y={ty + 28} textAnchor="middle" fontSize={9} fill={V2.text3}>{dateStr} · {fmt(Math.round(val - base))}</text>
                 {cushion !== null && (
                   <text x={tx + tooltipW / 2} y={ty + 41} textAnchor="middle" fontSize={9} fontWeight="700" fill={V2.red}>
                     Colchón {cushion < 0 ? "-" : ""}${Math.abs(Math.round(cushion)).toLocaleString()}
@@ -4555,8 +4590,8 @@ function DashboardV2({
   // Al elegir una cuenta, Portfolio y Fase se acotan a ella
   const liveAccounts = visibleAccounts.filter(a => acct === "all" || a.name === acct);
   const phases = liveAccounts.map(a => {
-    const { cushion, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
-    return { account: a, cushion, basis, phase: getPhase(cushion) };
+    const { cushion, basis, balance, threshold } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+    return { account: a, cushion, basis, balance, threshold, phase: getPhase(cushion) };
   }).filter(p => p.phase);
   const tightest = phases.length ? phases.reduce((m, p) => (p.cushion < m.cushion ? p : m)) : null;
 
@@ -4610,9 +4645,11 @@ function DashboardV2({
           footer={
             // Las tres claves caben en una sola línea a 12px: con la del footer
             // (14px) la de liquidación se caía a una segunda fila en móvil.
+            // Con el eje en dólares las claves útiles son las tres referencias
+            // del gráfico, no el signo del área, que ya se ve por el color.
             <div style={{ display: "flex", gap: 12, flexWrap: "nowrap", fontSize: 12, whiteSpace: "nowrap" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.green, display: "inline-block" }} />Zona positiva</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: V2.red, display: "inline-block" }} />Zona negativa</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 0, borderTop: "2px solid rgba(255,255,255,0.5)", display: "inline-block" }} />Base</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 0, borderTop: `2px dashed ${V2_AMBER}`, display: "inline-block" }} />Objetivo</span>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "rgba(232,83,110,0.16)", borderTop: `2px solid ${V2.red}`, display: "inline-block" }} />Liquidación</span>
             </div>
           }>
@@ -4655,26 +4692,72 @@ function DashboardV2({
 
 
     if (id === "phase") {
-      const pct = tightest ? Math.min(100, (tightest.cushion / 1000) * 100) : 0;
+      // El colchón es el dato más crítico de la app: cuánto queda hasta que la
+      // cuenta se autoliquida. Vivía como una fila más al lado de un donut que
+      // repetía lo mismo; pasa a ser la cifra principal, con el medidor de las
+      // tres fases del plan debajo.
+      const faseCol = (n) => (n === 3 ? V2.green : n === 2 ? V2_AMBER : V2.red);
+      const col = tightest ? faseCol(tightest.phase.n) : V2.text3;
+      // Lo que falta para caer a la fase de abajo. La fase 1 ya es el suelo.
+      const margen = tightest && tightest.phase.min > 0 ? tightest.cushion - tightest.phase.min : null;
       return (
         <V2Card key={id} {...common}
           footer={tightest
             ? <>Cuenta más ajustada: <span style={{ color: V2.text2 }}>{tightest.account.name}</span>{tightest.basis && <> · cierre {tightest.basis}</>}</>
             : "Sin umbral de liquidación definido"}>
-          <div className="v2-split">
-            <V2Donut pct={pct} />
-            <div className="v2-rows">
-              <div className="v2-row"><span>Colchón</span><b style={{ color: V2.text }}>${tightest ? Math.round(tightest.cushion).toLocaleString() : "—"}</b></div>
-              <div className="v2-row">
-                <span>Fase {tightest ? tightest.phase.n : "—"}</span>
-                <b style={{ color: tightest ? (tightest.phase.n === 3 ? V2.green : tightest.phase.n === 2 ? "#E2B144" : V2.red) : V2.text }}>
-                  {tightest ? `${tightest.phase.contracts} MNQ` : "—"}
-                </b>
-              </div>
-              {tightest && (
-                <div className="v2-row"><span>SL / TP</span><b style={{ color: V2.text2, fontSize: "0.85em" }}>${tightest.phase.sl} / ${tightest.phase.tp}</b></div>
-              )}
+          <div style={{ fontSize: 12, color: V2.text2, marginBottom: 4 }}>Colchón hasta liquidación</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+            <span className="v2-metric" style={{ fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>
+              {tightest ? `$${Math.round(tightest.cushion).toLocaleString()}` : "—"}
+            </span>
+            {tightest && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: col, background: `${col}29`, border: `0.5px solid ${col}73`, borderRadius: 999, padding: "3px 9px" }}>
+                Fase {tightest.phase.n} · {tightest.phase.contracts} MNQ
+              </span>
+            )}
+          </div>
+          {tightest && (
+            <div style={{ fontSize: 12, color: V2.text3, marginBottom: 14, fontVariantNumeric: "tabular-nums" }}>
+              ${Math.round(tightest.balance).toLocaleString()} de cierre · umbral en ${Math.round(tightest.threshold).toLocaleString()}
             </div>
+          )}
+
+          {/* Medidor de las tres fases: los cortes salen de PHASES */}
+          {tightest && (
+            <>
+              <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>
+                {PHASES.map(p => (
+                  <div key={p.n} style={{
+                    flex: p.n === 3 ? "2 1 0" : "1 1 0", height: 8,
+                    borderRadius: p.n === 1 ? "4px 0 0 4px" : p.n === 3 ? "0 4px 4px 0" : 0,
+                    background: p.n === tightest.phase.n ? faseCol(p.n) : `${faseCol(p.n)}59`,
+                  }} />
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 2, marginBottom: 14 }}>
+                {PHASES.map(p => (
+                  <span key={p.n} style={{
+                    flex: p.n === 3 ? "2 1 0" : "1 1 0", fontSize: 9,
+                    color: p.n === tightest.phase.n ? faseCol(p.n) : V2.text3,
+                    fontWeight: p.n === tightest.phase.n ? 600 : 400,
+                  }}>
+                    {p.name}{p.n === tightest.phase.n ? " · estás aquí" : ""}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {tightest && (
+              <div className="v2-row"><span>SL / TP de la fase</span><b style={{ color: V2.text }}>${tightest.phase.sl} / ${tightest.phase.tp}</b></div>
+            )}
+            {margen !== null && (
+              <div className="v2-row" style={{ borderBottom: "none" }}>
+                <span>Margen antes de bajar de fase</span>
+                <b style={{ color: V2_AMBER }}>${Math.round(margen).toLocaleString()}</b>
+              </div>
+            )}
           </div>
         </V2Card>
       );
@@ -4984,7 +5067,53 @@ function DashboardV2({
           return (
             <div style={{ background: V2.card, border: `1px solid ${V2.border}`, borderRadius: 16, padding: 24 }}>
               <div style={{ fontSize: 19, fontWeight: 500, color: V2.text, marginBottom: 18 }}>Días operados</div>
-              <div className="v2-scroll-fade" style={{ overflowX: "auto", position: "relative" }}>
+              {/* Móvil: una ficha por día. La tabla no baja de 720px y el
+                  contenedor en un iPhone son 355, así que allí no cabía. */}
+              <div className="v5-dias-fichas" style={{ flexDirection: "column", gap: 8 }}>
+                {pageTrades.map(t => {
+                  const colchon = (t.balance !== null && t.balance !== undefined && t.threshold !== null && t.threshold !== undefined)
+                    ? t.balance - t.threshold
+                    : null;
+                  const gana = t.pnl > 0;
+                  const dato = (etiqueta, valor, color) => (
+                    <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 9, color: V2.text3, textTransform: "uppercase", letterSpacing: ".4px" }}>{etiqueta}</span>
+                      <span style={{ fontSize: 12, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{valor}</span>
+                    </span>
+                  );
+                  return (
+                    <div key={t.id} style={{ background: V2.segBg, border: `0.5px solid ${V2.border}`, borderLeft: `2px solid ${t.pnl === 0 ? V2.border : gana ? V2.green : V2.red}`, borderRadius: 8, padding: "10px 11px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: V2.text }}>{t.date}</span>
+                          <span style={{ fontSize: 11, color: V2.text3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.account}</span>
+                        </span>
+                        <span style={{ fontSize: 21, fontWeight: 700, color: t.pnl > 0 ? V2.green : t.pnl < 0 ? V2.red : V2.text, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{fmt(t.pnl)}</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, borderTop: `1px solid ${V2.border}`, paddingTop: 8 }}>
+                        {dato("Cierre", t.balance !== null && t.balance !== undefined ? `$${Math.round(t.balance).toLocaleString()}` : "—", V2.text)}
+                        {dato("Umbral", t.threshold !== null && t.threshold !== undefined ? `$${Math.round(t.threshold).toLocaleString()}` : "—", V2.red)}
+                        {dato("Colchón", colchon !== null ? `$${Math.round(colchon).toLocaleString()}` : "—", colchon === null ? V2.text3 : colchon > 0 ? V2.green : V2.red)}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ fontSize: 10, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>
+                          {t.commission ? `Comisión -$${Math.abs(t.commission).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "Sin comisión"}
+                        </span>
+                        <span style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => { setAddingTrade(false); setEditingTrade(t); }} aria-label="Editar" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", padding: 0 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={V2.text2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17v3z" /></svg>
+                          </button>
+                          <button onClick={() => setDeleteConfirm(t.id)} aria-label="Eliminar" style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", padding: 0 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={V2.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 4h4M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12" /></svg>
+                          </button>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="v5-dias-tabla" style={{ overflowX: "auto", position: "relative" }}>
                 <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", minWidth: 720 }}>
                   <thead>
                     <tr>
