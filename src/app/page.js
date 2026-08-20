@@ -4803,8 +4803,20 @@ function DashboardV2({
       const rows = liveAccounts.map(a => {
         const { balance, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
         const base = a.startSize ?? a.size;
-        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status };
+        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0 };
       });
+
+      // Cuánto falta para el objetivo. El ámbar es el mismo de la línea de
+      // objetivo del gráfico, para que se lean como la misma cosa. A partir del
+      // 95% pasa a ámbar también la barra: es el momento en que toca mirar la
+      // regla de consistencia, no cuando ya has pasado.
+      const progreso = (r) => {
+        if (!r.target) return null;
+        const objetivo = r.base + r.target;
+        const falta = objetivo - r.balance;
+        const pct = Math.max(0, Math.min(100, ((r.balance - r.base) / r.target) * 100));
+        return { objetivo, falta, pct, cerca: pct >= 95 };
+      };
 
       // Una sola cuenta: cifra grande. Varias: lista con nombre y saldo.
       if (rows.length === 1) {
@@ -4812,7 +4824,7 @@ function DashboardV2({
         const pct = r.base ? Math.round((r.pnl / r.base) * 100) : null;
         return (
           <V2Card key={id} {...common}
-            footer={<>Base ${Math.round(r.base).toLocaleString()} · acumulado <span style={{ color: r.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(r.pnl))}</span>{r.basis && <> · cierre {r.basis}</>}</>}>
+            footer={<span style={{ fontSize: 12 }}>Base ${Math.round(r.base).toLocaleString()} · acumulado <span style={{ color: r.pnl >= 0 ? V2.green : V2.red }}>{fmt(Math.round(r.pnl))}</span>{r.basis && <> · cierre {r.basis}</>}</span>}>
             <div style={{ fontSize: 15, color: V2.text2, marginBottom: 8 }}>{r.name}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span className="v2-metric" style={{ fontWeight: 700, color: V2.text, letterSpacing: "-0.03em", lineHeight: 1 }}>
@@ -4824,6 +4836,30 @@ function DashboardV2({
                 </span>
               )}
             </div>
+            {(() => {
+              const pr = progreso(r);
+              if (!pr) return null;
+              const col = pr.cerca ? V2_AMBER : V2.green;
+              return (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: V2.text2 }}>
+                      {pr.falta > 0
+                        ? <>Faltan <span style={{ color: V2_AMBER, fontWeight: 700 }}>${Math.round(pr.falta).toLocaleString()}</span> para el objetivo</>
+                        : <span style={{ color: V2_AMBER, fontWeight: 700 }}>Objetivo alcanzado</span>}
+                    </span>
+                    <span style={{ fontSize: 12, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>{Math.round(pr.pct)}%</span>
+                  </div>
+                  <div style={{ height: 6, background: V2.segActive, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${pr.pct}%`, height: "100%", background: col, borderRadius: 3 }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 5 }}>
+                    <span style={{ fontSize: 9, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>${Math.round(r.base).toLocaleString()}</span>
+                    <span style={{ fontSize: 9, color: V2_AMBER, fontVariantNumeric: "tabular-nums" }}>${Math.round(pr.objetivo).toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </V2Card>
         );
       }
@@ -4839,7 +4875,8 @@ function DashboardV2({
               // aparecer, y con la palabra al lado para no depender del color.
               const retirada = normStatus(r.status) === "CLOSED";
               return (
-              <div key={r.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+              <div key={r.name} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
                   <span style={{ fontSize: 14, color: retirada ? V2.red : V2.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
                   {retirada && (
@@ -4856,6 +4893,22 @@ function DashboardV2({
                     {fmt(Math.round(r.pnl))}
                   </span>
                 </span>
+              </div>
+              {(() => {
+                const pr = progreso(r);
+                if (!pr) return <span style={{ fontSize: 10, color: V2.text3 }}>Sin objetivo definido</span>;
+                const col = pr.cerca ? V2_AMBER : V2.green;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: "1 1 0", height: 3, background: V2.segActive, borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${pr.pct}%`, height: "100%", background: col, borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: pr.cerca ? V2_AMBER : V2.text3, fontWeight: pr.cerca ? 700 : 400, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+                      {pr.falta > 0 ? `faltan $${Math.round(pr.falta).toLocaleString()}` : "objetivo alcanzado"}
+                    </span>
+                  </div>
+                );
+              })()}
               </div>
               );
             })}
