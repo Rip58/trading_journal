@@ -2245,6 +2245,20 @@ function SettingsPanel({
   const ACCT_PAGE = 5;
   const [acctStatusF, setAcctStatusF] = useState("ACTIVE");
   const [acctPages, setAcctPages] = useState({});
+  // Cada control con su nombre fijo a la derecha. Antes el nombre vivía en el
+  // placeholder, así que en una cuenta con datos se veían siete cajas de
+  // números sin saber cuál era cuál.
+  const campoAcct = (control, etiqueta, nota) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ flex: "0 0 140px", minWidth: 0, display: "flex" }}>{control}</span>
+      <span style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.3 }}>
+        {etiqueta}
+        {nota ? <span style={{ color: "var(--color-text-tertiary)" }}> · {nota}</span> : null}
+      </span>
+    </div>
+  );
+  const inputAcct = { width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", boxSizing: "border-box", fontVariantNumeric: "tabular-nums" };
+
   const ACCT_STATUS_TABS = [
     { id: "ACTIVE", label: "Activas" },
     { id: "CLOSED", label: "Cerradas" },
@@ -2858,70 +2872,91 @@ function SettingsPanel({
           {visibles.map((a) => (
             <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: "var(--color-background-secondary)", flexWrap: "wrap", gap: 8 }}>
               {editingAcctId === a.id ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 w-full">
-                  <input type="text" value={editAcct.name} onChange={e => setEditAcct({...editAcct, name: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }} placeholder="Nombre" />
-                  <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct({...editAcct, type: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                    <option value="EXAMEN">Examen 📝</option>
-                    <option value="REAL">Real 💼</option>
-                  </select>
-                  <select value={normStatus(editAcct.status)} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}>
-                    <option value="ACTIVE">Activa</option>
-                    <option value="CLOSED">Cerrada</option>
-                  </select>
-                  <div style={{ display: "flex", gap: 4 }}>
+                <div className="w-full" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {campoAcct(
+                    <input type="text" value={editAcct.name} onChange={e => setEditAcct({...editAcct, name: e.target.value})} style={inputAcct} />,
+                    "Nombre"
+                  )}
+                  {campoAcct(
+                    <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct({...editAcct, type: e.target.value})} style={inputAcct}>
+                      <option value="EXAMEN">Examen 📝</option>
+                      <option value="REAL">Real 💼</option>
+                    </select>,
+                    "Tipo"
+                  )}
+                  {campoAcct(
+                    <select value={normStatus(editAcct.status)} onChange={e => setEditAcct({...editAcct, status: e.target.value})} style={inputAcct}>
+                      <option value="ACTIVE">Activa</option>
+                      <option value="CLOSED">Cerrada</option>
+                    </select>,
+                    "Estado"
+                  )}
+                  {campoAcct(
                     <select
                       value={editPfCustom ? "__custom__" : (editAcct.propfirm || "Bulenox")}
                       onChange={e => {
                         if (e.target.value === "__custom__") { setEditPfCustom(true); setEditAcct({ ...editAcct, propfirm: "" }); }
                         else { setEditPfCustom(false); setEditAcct({ ...editAcct, propfirm: e.target.value }); }
                       }}
-                      style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none" }}
+                      style={inputAcct}
                     >
                       {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
                       <option value="__custom__">➕ Otra…</option>
-                    </select>
-                    {editPfCustom && (
-                      <input
-                        type="text"
-                        placeholder="Nombre de la propfirm"
-                        value={editAcct.propfirm ?? ""}
-                        onChange={e => setEditAcct({ ...editAcct, propfirm: e.target.value })}
-                        autoFocus
-                        style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${C.blue}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                      />
-                    )}
-                  </div>
-                  <select
-                    value={editPlanId}
-                    onChange={e => { setEditPlanId(e.target.value); applyPlan(e.target.value, editAcct.propfirm, editAcct, setEditAcct); }}
-                    disabled={!(PROPFIRM_PLANS[editAcct.propfirm] || []).length}
-                    style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: `0.5px solid ${editPlanId ? C.blue : "var(--color-border-secondary)"}`, background: "var(--color-background-primary)", color: "var(--color-text-primary)", outline: "none", opacity: (PROPFIRM_PLANS[editAcct.propfirm] || []).length ? 1 : 0.5 }}
-                  >
-                    <option value="">{(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes"}</option>
-                    {(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
-                  {[
-                    ["Objetivo ($)", "target", "number"],
-                    ["DD máximo ($)", "dd_limit", "number"],
-                    ["Límite diario ($)", "daily_limit", "number"],
-                    ["Umbral autoliq. ($)", "threshold", "number"],
-                    ["Reserva safety ($)", "safetyReserve", "number"],
-                    ["Max. contratos", "maxContracts", "int"],
-                    ["Consistencia", "consistency", "text"],
-                  ].map(([ph, field, kind]) => (
+                    </select>,
+                    "Propfirm"
+                  )}
+                  {editPfCustom && campoAcct(
                     <input
-                      key={field}
-                      type={kind === "text" ? "text" : "number"}
-                      placeholder={ph}
-                      value={editAcct[field] !== undefined && editAcct[field] !== null ? editAcct[field] : ""}
-                      onChange={e => {
-                        const v = e.target.value;
-                        if (kind === "text") setEditAcct({...editAcct, [field]: v === "" ? null : v});
-                        else if (kind === "int") setEditAcct({...editAcct, [field]: v === "" ? null : parseInt(v)});
-                        else setEditAcct({...editAcct, [field]: v === "" ? null : parseFloat(v)});
-                      }}
-                      style={{ fontSize: 11, padding: "4px 6px", borderRadius: 4, border: field === "balance" ? `0.5px solid ${C.blue}` : "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
-                    />
+                      type="text"
+                      placeholder="Nombre de la propfirm"
+                      value={editAcct.propfirm ?? ""}
+                      onChange={e => setEditAcct({ ...editAcct, propfirm: e.target.value })}
+                      autoFocus
+                      style={{ ...inputAcct, borderColor: C.blue }}
+                    />,
+                    "Nueva propfirm"
+                  )}
+                  {campoAcct(
+                    <select
+                      value={editPlanId}
+                      onChange={e => { setEditPlanId(e.target.value); applyPlan(e.target.value, editAcct.propfirm, editAcct, setEditAcct); }}
+                      disabled={!(PROPFIRM_PLANS[editAcct.propfirm] || []).length}
+                      style={{ ...inputAcct, borderColor: editPlanId ? C.blue : "var(--color-border-secondary)", opacity: (PROPFIRM_PLANS[editAcct.propfirm] || []).length ? 1 : 0.5 }}
+                    >
+                      <option value="">{(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "Personalizado…" : "Sin planes"}</option>
+                      {(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>,
+                    "Plan"
+                  )}
+
+                  <div style={{ height: 1, background: "var(--color-border-tertiary)", margin: "2px 0" }} />
+
+                  {[
+                    ["Objetivo ($)", "target", "number", null],
+                    ["DD máximo ($)", "dd_limit", "number", "pierdes la cuenta"],
+                    ["Límite diario ($)", "daily_limit", "number", null],
+                    ["Umbral autoliq. ($)", "threshold", "number", null],
+                    ["Reserva safety ($)", "safetyReserve", "number", null],
+                    ["Máx. contratos", "maxContracts", "int", null],
+                    ["Consistencia", "consistency", "text", null],
+                  ].map(([etiqueta, field, kind, nota]) => (
+                    <Fragment key={field}>
+                      {campoAcct(
+                        <input
+                          type={kind === "text" ? "text" : "number"}
+                          value={editAcct[field] !== undefined && editAcct[field] !== null ? editAcct[field] : ""}
+                          onChange={e => {
+                            const v = e.target.value;
+                            if (kind === "text") setEditAcct({...editAcct, [field]: v === "" ? null : v});
+                            else if (kind === "int") setEditAcct({...editAcct, [field]: v === "" ? null : parseInt(v)});
+                            else setEditAcct({...editAcct, [field]: v === "" ? null : parseFloat(v)});
+                          }}
+                          style={{ ...inputAcct, borderColor: field === "threshold" ? C.red : "var(--color-border-secondary)" }}
+                        />,
+                        etiqueta,
+                        nota
+                      )}
+                    </Fragment>
                   ))}
                   {editAcct.balance !== null && editAcct.balance !== undefined && editAcct.balance !== "" && !isNaN(parseFloat(editAcct.balance)) && (
                     <button
@@ -2938,27 +2973,61 @@ function SettingsPanel({
                   </div>
                 </div>
               ) : (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                      {a.name}
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 9 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
                       {a.type === "REAL" ? (
-                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 500 }}>Real 💼</span>
+                        <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.greenBg, color: C.greenText, fontWeight: 600 }}>Real</span>
                       ) : (
-                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 500 }}>Examen 📝</span>
+                        <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: C.blueBg, color: C.blueText, fontWeight: 600 }}>Examen</span>
                       )}
-                      {isClosedAcct(a) && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 500 }}>Cerrada</span>}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      {a.propfirm ? `${a.propfirm} · ` : ""}Balance: ${(a.balance ?? a.size).toLocaleString()} · Obj: ${a.target.toLocaleString()} · DD: ${a.dd_limit.toLocaleString()}
-                      {a.daily_limit ? ` · Diario: $${a.daily_limit.toLocaleString()}` : ""}
-                    </div>
+                      {isClosedAcct(a) && <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--color-border-secondary)", color: "var(--color-text-secondary)", fontWeight: 600 }}>Cerrada</span>}
+                    </span>
+                    {/* Editar y borrar suben a la cabecera: así se ahorra una fila por cuenta */}
+                    <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button
+                        onClick={() => { setEditingAcctId(a.id); setEditAcct(a); setEditPfCustom(false); setEditPlanId(""); }}
+                        aria-label={`Editar ${a.name}`}
+                        style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", padding: 0 }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17v3z" /></svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAccount(a.id)}
+                        aria-label={`Borrar ${a.name}`}
+                        style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", padding: 0 }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.red} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 4h4M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12" /></svg>
+                      </button>
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => { setEditingAcctId(a.id); setEditAcct(a); setEditPfCustom(false); setEditPlanId(""); }} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}>✏️ Editar</button>
-                    <button onClick={() => handleDeleteAccount(a.id)} style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: C.red, cursor: "pointer" }}>✕ Borrar</button>
+
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    {a.propfirm && <span style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{a.propfirm}</span>}
+                    {a.propfirm && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>·</span>}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                      ${Math.round(a.balance ?? a.size).toLocaleString()}
+                    </span>
                   </div>
-                </>
+
+                  {/* Las reglas del plan, etiquetadas: en una frase corrida se partían en dos líneas */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, borderTop: "1px solid var(--color-border-tertiary)", paddingTop: 8 }}>
+                    {[
+                      ["Objetivo", a.target, null],
+                      ["DD máx.", a.dd_limit, null],
+                      ["Diario", a.daily_limit, null],
+                      ["Umbral", a.threshold, C.red],
+                    ].map(([et, valor, color]) => (
+                      <span key={et} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                        <span style={{ fontSize: 9, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: ".4px" }}>{et}</span>
+                        <span style={{ fontSize: 12, color: valor ? (color || "var(--color-text-primary)") : "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                          {valor ? `$${Math.round(valor).toLocaleString()}` : "—"}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           ))}
