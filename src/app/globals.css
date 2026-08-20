@@ -208,6 +208,15 @@ button:active {
   }
 }
 
+/* Días operados: tabla en escritorio, donde caben las nueve columnas, y una
+   ficha por día en móvil. La tabla necesita 720px de ancho y el contenedor en
+   un iPhone son 355, así que allí obligaba a arrastrar en horizontal. */
+.v5-dias-fichas { display: none; }
+@media (max-width: 640px) {
+  .v5-dias-tabla { display: none; }
+  .v5-dias-fichas { display: flex; }
+}
+
 /* Calendario V2: solo los 7 días, todos iguales, y el total de la semana como
    fila a todo lo ancho debajo. Con la semana en una octava columna la rejilla
    no bajaba de 440px y en móvil obligaba a hacer scroll horizontal. */
