@@ -274,6 +274,45 @@ button:active {
   --c-green-text: #0F6E56;
   --c-red-text: #993C1D;
   --c-blue-text: #185FA5;
+
+  /* Verde de la pantalla de carga: el clásico en claro, el de V5 en oscuro */
+  --c-carga: #1D9E75;
+}
+:root.dark { --c-carga: #4ECCA3; }
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) { --c-carga: #4ECCA3; }
+}
+
+/* Pantalla de carga: una curva de equity que se traza sola. La espera es real
+   —hay que pedir cuentas y días antes de poder dibujar nada— y un texto quieto
+   no se distingue de una pantalla colgada. */
+.v5-carga-traza {
+  stroke-dasharray: 230;
+  stroke-dashoffset: 230;
+  animation: v5CargaTraza 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes v5CargaTraza {
+  0%   { stroke-dashoffset: 230; opacity: 0.2; }
+  55%  { stroke-dashoffset: 0;   opacity: 1; }
+  82%  { stroke-dashoffset: 0;   opacity: 1; }
+  100% { stroke-dashoffset: 0;   opacity: 0; }
+}
+.v5-carga-punto { animation: v5CargaPunto 2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@keyframes v5CargaPunto {
+  0%, 50%   { opacity: 0; }
+  60%, 82%  { opacity: 1; }
+  100%      { opacity: 0; }
+}
+.v5-carga-texto { animation: v5CargaTexto 2s ease-in-out infinite; }
+@keyframes v5CargaTexto {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+/* Con el movimiento reducido del sistema, la curva se queda dibujada y quieta */
+@media (prefers-reduced-motion: reduce) {
+  .v5-carga-traza { animation: none; stroke-dashoffset: 0; opacity: 1; }
+  .v5-carga-punto { animation: none; opacity: 1; }
+  .v5-carga-texto { animation: none; opacity: 1; }
 }
 
 /* Hoja de ajustes dentro del dashboard V2: se redefinen tanto las superficies

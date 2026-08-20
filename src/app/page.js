@@ -6791,8 +6791,22 @@ export default function App() {
       )}
       
       {loading || !acctsReady ? (
-        <div style={{ padding: "60px 0", textAlign: "center", color: "var(--color-text-secondary)", fontSize: 13, background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12 }}>
-          Cargando trades de Neon...
+        <div style={{ padding: "34px 20px", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <svg width="200" height="72" viewBox="0 0 200 72" fill="none" aria-hidden="true" style={{ maxWidth: "100%" }}>
+            <line x1="0" y1="66" x2="200" y2="66" stroke="var(--color-border-secondary)" strokeWidth="1" />
+            <path
+              className="v5-carga-traza"
+              d="M4,54 L32,41 L60,47 L88,26 L116,33 L144,16 L172,22 L196,6"
+              stroke="var(--c-carga)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle className="v5-carga-punto" cx="196" cy="6" r="4" fill="var(--c-carga)" />
+          </svg>
+          <span className="v5-carga-texto" style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+            Cargando tus cuentas y tus días
+          </span>
         </div>
       ) : (
         <>
