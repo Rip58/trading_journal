@@ -283,6 +283,20 @@ button:active {
   :root:not(.light) { --c-carga: #4ECCA3; }
 }
 
+/* La pantalla de carga se pinta fuera de .v5-main, que es quien reserva el
+   hueco de la barra de estado, así que necesita su propio respeto al notch.
+   100dvh y no 100vh: en Safari móvil 100vh cuenta la barra del navegador y
+   deja la tarjeta descentrada hacia abajo. */
+.v5-carga-pantalla {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+
 /* Pantalla de carga: una curva de equity que se traza sola. La espera es real
    —hay que pedir cuentas y días antes de poder dibujar nada— y un texto quieto
    no se distingue de una pantalla colgada. */
