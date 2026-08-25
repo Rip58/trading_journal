@@ -4877,9 +4877,9 @@ function DashboardV2({
 
     if (id === "portfolio") {
       const rows = liveAccounts.map(a => {
-        const { balance, basis } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+        const { balance, basis, threshold } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
         const base = a.startSize ?? a.size;
-        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0 };
+        return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0, threshold };
       });
 
       // Cuánto falta para el objetivo. El ámbar es el mismo de la línea de
@@ -4891,7 +4891,19 @@ function DashboardV2({
         const objetivo = r.base + r.target;
         const falta = objetivo - r.balance;
         const pct = Math.max(0, Math.min(100, ((r.balance - r.base) / r.target) * 100));
-        return { objetivo, falta, pct, cerca: pct >= 95 };
+        // Dónde cae el cierre de la cuenta en esta misma escala. Con drawdown
+        // trailing y la cuenta en ganancias el umbral sube y queda DENTRO de
+        // la barra; al principio (o con las cuentas EOD) está por debajo de la
+        // base y no cabe: entonces la marca se pega al extremo izquierdo en
+        // vez de estirar la barra, que descuadraría el porcentaje.
+        const liq = r.threshold
+          ? {
+              pct: Math.max(0, Math.min(100, ((r.threshold - r.base) / r.target) * 100)),
+              colchon: r.balance - r.threshold,
+              fuera: r.threshold <= r.base,
+            }
+          : null;
+        return { objetivo, falta, pct, cerca: pct >= 95, liq };
       };
 
       // Una sola cuenta: cifra grande. Varias: lista con nombre y saldo.
@@ -4916,6 +4928,12 @@ function DashboardV2({
               const pr = progreso(r);
               if (!pr) return null;
               const col = pr.cerca ? V2_AMBER : V2.green;
+              // El tramo a la izquierda de la marca roja se apaga: si el
+              // balance llega ahí la cuenta ya está cerrada, así que ese verde
+              // no es colchón de nada. El vivo mide el colchón exacto.
+              const colApagado = pr.cerca ? "rgba(226,177,68,0.28)" : "rgba(78,204,163,0.28)";
+              const apagado = pr.liq ? Math.min(pr.liq.pct, pr.pct) : 0;
+              const vivo = Math.max(0, pr.pct - apagado);
               return (
                 <div style={{ marginTop: 16 }}>
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
@@ -4926,12 +4944,35 @@ function DashboardV2({
                     </span>
                     <span style={{ fontSize: 12, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>{Math.round(pr.pct)}%</span>
                   </div>
-                  <div style={{ height: 6, background: V2.segActive, borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${pr.pct}%`, height: "100%", background: col, borderRadius: 3 }} />
+                  {/* La barra sube a 8px: sobre 6px una marca de 2px no se
+                      distingue de la propia barra. */}
+                  <div style={{ position: "relative", height: 8 }}>
+                    <div style={{ position: "absolute", inset: 0, background: V2.segActive, borderRadius: 4, overflow: "hidden", display: "flex" }}>
+                      {apagado > 0 && <span style={{ width: `${apagado}%`, background: colApagado }} />}
+                      {/* Solo se redondea el extremo derecho cuando el tramo
+                          apagado va delante: si no, queda una muesca. */}
+                      {vivo > 0 && <span style={{ width: `${vivo}%`, background: col, borderRadius: apagado > 0 ? "0 4px 4px 0" : 4 }} />}
+                    </div>
+                    {pr.liq && (
+                      <span
+                        title={`Cierre de la cuenta en $${Math.round(r.threshold).toLocaleString()}${pr.liq.fuera ? " (por debajo de la base, fuera de la barra)" : ""}`}
+                        style={{
+                          position: "absolute", top: -3, bottom: -3,
+                          left: `${pr.liq.pct}%`, width: pr.liq.fuera ? 3 : 2,
+                          background: V2.red, borderRadius: 1,
+                        }}
+                      />
+                    )}
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 5 }}>
-                    <span style={{ fontSize: 9, color: V2.text3, fontVariantNumeric: "tabular-nums" }}>${Math.round(r.base).toLocaleString()}</span>
-                    <span style={{ fontSize: 9, color: V2_AMBER, fontVariantNumeric: "tabular-nums" }}>${Math.round(pr.objetivo).toLocaleString()}</span>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 7 }}>
+                    <span style={{ fontSize: 12, color: V2.text2 }}>
+                      {!pr.liq
+                        ? <span style={{ color: V2.text3 }}>Sin umbral de liquidación</span>
+                        : pr.liq.colchon > 0
+                          ? <>Faltan <span style={{ color: V2.red, fontWeight: 700 }}>${Math.round(pr.liq.colchon).toLocaleString()}</span> para la liquidación</>
+                          : <span style={{ color: V2.red, fontWeight: 700 }}>Por debajo de la liquidación</span>}
+                    </span>
+                    <span style={{ fontSize: 12, color: V2_AMBER, fontVariantNumeric: "tabular-nums" }}>${Math.round(pr.objetivo).toLocaleString()}</span>
                   </div>
                 </div>
               );
