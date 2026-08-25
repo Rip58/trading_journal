@@ -4177,7 +4177,7 @@ function V2Card({ title, subtitle, info, wide, onRemove, onToggleWide, onUp, onD
           <button onClick={onUp} disabled={!canUp} title="Subir" style={{ background: "none", border: "none", padding: 0, cursor: canUp ? "pointer" : "default", opacity: canUp ? 1 : 0.28, display: "flex" }}><IconUp c={V2.text3} /></button>
           <button onClick={onDown} disabled={!canDown} title="Bajar" style={{ background: "none", border: "none", padding: 0, cursor: canDown ? "pointer" : "default", opacity: canDown ? 1 : 0.28, display: "flex" }}><IconDown c={V2.text3} /></button>
           <span title={info} style={{ cursor: "help", display: "flex" }}><IconInfo c={V2.text3} /></span>
-          <button onClick={onToggleWide} title={wide ? "Media anchura" : "Anchura completa"} aria-pressed={wide} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}>{wide ? <IconHalf c={V2.text3} /> : <IconWide c={V2.text3} />}</button>
+          <button className="v2-btn-ancho" onClick={onToggleWide} title={wide ? "Media anchura" : "Anchura completa"} aria-pressed={wide} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}>{wide ? <IconHalf c={V2.text3} /> : <IconWide c={V2.text3} />}</button>
           <button onClick={onRemove} title="Quitar tarjeta" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex" }}><IconTrash c={V2.text3} /></button>
         </div>
       </div>
@@ -4608,17 +4608,11 @@ function DashboardV2({
   const anchoDe = (id) => widths[id] ?? (V2_CARD_DEFS.find(c => c.id === id)?.tall ? "full" : "half");
   const toggleAncho = (id) => guardar(layout, { ...widths, [id]: anchoDe(id) === "full" ? "half" : "full" });
 
-  // Una tarjeta a media anchura sin pareja detrás se estira a fila completa,
-  // para no dejar medio hueco vacío.
-  const anchosEfectivos = (lista) => {
-    const out = []; let i = 0;
-    while (i < lista.length) {
-      if (anchoDe(lista[i]) === "full") { out[i] = true; i++; continue; }
-      if (i + 1 < lista.length && anchoDe(lista[i + 1]) !== "full") { out[i] = false; out[i + 1] = false; i += 2; }
-      else { out[i] = true; i++; }
-    }
-    return out;
-  };
+  // Antes, una tarjeta a media anchura sin pareja detrás se estiraba a fila
+  // completa para no dejar medio hueco. El efecto secundario era peor que el
+  // hueco: mover cualquier tarjeta cambiaba el ancho de otra, y el botón de
+  // anchura no hacía nada visible en la que se estiraba. Ahora el ancho es
+  // siempre el que se ha elegido.
   const removeCard = (sec, id) => persist(sec, cardsOf(sec).filter(c => c !== id));
   const toggleCard = (sec, id) => persist(sec, cardsOf(sec).includes(id) ? cardsOf(sec).filter(c => c !== id) : [...cardsOf(sec), id]);
   const moveCard = (sec, id, dir) => {
@@ -4701,14 +4695,14 @@ function DashboardV2({
   const periodArticle = { year: "el", month: "el", week: "la", day: "el" }; // "semana" es femenino
 
   // `sec` es la hoja en la que se pinta: cada una guarda su propio orden
-  const renderCard = (id, sec = "dashboard", wide) => {
+  const renderCard = (id, sec = "dashboard") => {
     const def = V2_CARD_DEFS.find(c => c.id === id);
     if (!def) return null;
     const lista = cardsOf(sec);
     const pos = lista.indexOf(id);
     const common = {
       title: def.title, subtitle: def.subtitle, info: def.info,
-      wide: wide ?? (anchoDe(id) === "full"),
+      wide: anchoDe(id) === "full",
       onRemove: () => removeCard(sec, id), onToggleWide: () => toggleAncho(id),
       onUp: () => moveCard(sec, id, -1), onDown: () => moveCard(sec, id, 1),
       canUp: pos > 0, canDown: pos >= 0 && pos < lista.length - 1,
@@ -5201,11 +5195,7 @@ function DashboardV2({
         {nav === "dashboard" && (
           cardsOf("dashboard").length === 0
             ? <div style={{ color: V2.text3, fontSize: 15 }}>No hay tarjetas. Pulsa ⊕ arriba para añadirlas.</div>
-            : (() => {
-                const lista = cardsOf("dashboard");
-                const anchos = anchosEfectivos(lista);
-                return <div className="v2-grid">{lista.map((id, i) => renderCard(id, "dashboard", anchos[i]))}</div>;
-              })()
+            : <div className="v2-grid">{cardsOf("dashboard").map(id => renderCard(id, "dashboard"))}</div>
         )}
 
         {nav === "trades" && (() => {
