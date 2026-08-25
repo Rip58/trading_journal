@@ -237,22 +237,6 @@ button:active {
   .v2-cal-pnl { font-size: 10px; }
 }
 
-/* Dashboard V2 — rejilla en mosaico: las tarjetas altas ocupan dos filas */
-.v2-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, auto);
-  gap: 22px;
-  align-items: start;
-}
-@media (max-width: 1180px) {
-  .v2-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 760px) {
-  .v2-grid { grid-template-columns: 1fr; }
-  .v2-grid > * { grid-row: span 1 !important; }
-}
-
 /* Dashboard V2 — calendario oscuro: fade de scroll horizontal contra el fondo
    de la tarjeta V2 (#1A1A1A), no el fondo claro del tema clásico. */
 /* Antes había aquí un degradado fijo a la derecha para insinuar el scroll,
@@ -388,6 +372,17 @@ button:active {
 /* Anchura completa: ocupa la fila entera en cualquier tamaño */
 .v2-grid > .v2-wide { grid-column: 1 / -1; }
 
+/* En móvil, una tarjeta por fila. Antes había aquí una regla que ponía una
+   sola columna, pero estaba escrita ANTES de la definición de arriba y las
+   media queries no ganan por especificidad: quedaban dos columnas también en
+   el teléfono, con los títulos y las etiquetas cortados ("% de a…", "Ga…"). */
+@media (max-width: 760px) {
+  .v2-grid { grid-template-columns: 1fr; }
+  /* Con una sola columna no hay media anchura que elegir. El !important es
+     necesario: el botón lleva display en el atributo style. */
+  .v2-btn-ancho { display: none !important; }
+}
+
 .v2-card { padding: 20px; }
 .v2-card-hd { margin-bottom: 14px; }
 
@@ -463,9 +458,9 @@ button:active {
 @media (max-width: 640px) {
   .v5-toolbar { gap: 6px; margin-bottom: 12px; }
   .v5-acct { min-width: 0; flex: 1 1 100%; }
-  /* Con dos tarjetas por fila la cifra no puede seguir a 38px */
-  .v2-metric { font-size: 26px; }
-  .v2-wide .v2-metric { font-size: 32px; }
+  /* Una tarjeta por fila: la cifra baja de 38px, pero ya no hace falta el
+     tamaño reducido que necesitaban las tarjetas a media anchura. */
+  .v2-metric { font-size: 32px; }
 }
 
 /* Nada debe poder ensanchar el documento: en móvil un desborde hace que
