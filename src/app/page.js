@@ -4746,7 +4746,11 @@ function DashboardV2({
       const dDays = delta(cur.days, prev.days);
       return (
         <V2Card key={id} {...common} period={periodOf(id)} onPeriod={v => setPeriod(id, v)} {...rangeNav}
-          footer={<>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {cmpPeriodo}</>}>
+          footer={prev.days === 0
+            // Sin días operados en el periodo anterior no hay con qué comparar:
+            // el porcentaje salía siempre contra cero y no significaba nada.
+            ? <>Sin días operados {pa} {pw} anterior: no hay con qué comparar.</>
+            : <>Tu acierto es {diff >= 0 ? "superior" : "inferior"} en <span style={{ color: diff >= 0 ? V2.green : V2.red, fontWeight: 600 }}>{Math.abs(diff)}%</span> frente a <span style={{ color: V2.green, fontWeight: 600 }}>{prev.wins} ganadores</span> / <span style={{ color: V2.text2, fontWeight: 600 }}>{prev.losses} perdedores</span> {cmpPeriodo}</>}>
           {/* Donut a la izquierda y datos a la derecha, en filas compactas:
               la tarjeta ocupa la mitad de alto que apilándolos. */}
           <div className="v2-split">
