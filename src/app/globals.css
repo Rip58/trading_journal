@@ -313,6 +313,27 @@ button:active {
   .v5-carga-texto { animation: none; opacity: 1; }
 }
 
+/* Guardar un día tarda: sin señal de que la petición está en marcha se vuelve
+   a pulsar Guardar y se crean dos registros del mismo día. Esta barra recorre
+   el borde superior del popup mientras dura. El color lo pone el propio popup,
+   que puede estar en tema claro o en la paleta oscura de V2. */
+.v5-barrido {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 1px;
+  animation: v5Barrido 1.2s ease-in-out infinite;
+}
+@keyframes v5Barrido {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+/* Sin movimiento, la barra se queda entera y quieta: sigue diciendo "ocupado" */
+@media (prefers-reduced-motion: reduce) {
+  .v5-barrido { animation: none; left: 0; width: 100%; opacity: 0.65; }
+}
+
 /* Hoja de ajustes dentro del dashboard V2: se redefinen tanto las superficies
    del tema clásico como los acentos, de modo que todo el panel pasa a oscuro
    sin tocar ni una línea de su marcado ni de su lógica. */
