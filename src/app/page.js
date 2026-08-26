@@ -1862,27 +1862,41 @@ function BarChart({ labels, values, height = 120 }) {
   );
 }
 
+// Paleta de los popups: sigue el tema claro/oscuro clásico por defecto, o la
+// paleta fija de V2 cuando se abren desde el dashboard nuevo (dark=true).
+const paletaPopup = (dark) => (dark
+  ? {
+      bg: V2.card, border: V2.border, text: V2.text, text2: V2.text2, text3: V2.text3,
+      inputBg: V2.segBg, green: V2.green, red: V2.red,
+      greenBg: "rgba(78,204,163,0.16)", redBg: "rgba(232,83,110,0.16)",
+      greenText: V2.green, redText: V2.red,
+      secondaryBg: V2.segBg, secondaryBorder: V2.border, cancelText: V2.text2,
+      saveTextColor: "#0A0A0A",
+    }
+  : {
+      bg: "var(--color-background-primary)", border: "var(--color-border-secondary)",
+      text: "var(--color-text-primary)", text2: "var(--color-text-secondary)", text3: "var(--color-text-tertiary)",
+      inputBg: "var(--color-background-primary)", green: C.green, red: C.red,
+      greenBg: C.greenBg, redBg: C.redBg, greenText: C.greenText, redText: C.redText,
+      secondaryBg: "var(--color-background-secondary)", secondaryBorder: "var(--color-border-secondary)", cancelText: "var(--color-text-secondary)",
+      saveTextColor: "#fff",
+    });
+
+// Fondo común de los popups: la capa oscura con desenfoque que los centra.
+const veloPopup = {
+  position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)",
+  backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)",
+  display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+};
+
 // ── Trade Form ───────────────────────────────────────────────────────────────
 function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], dark = false }) {
-  // Paleta del popup: sigue el tema claro/oscuro clásico por defecto, o la
-  // paleta fija de V2 cuando se abre desde el dashboard nuevo (dark=true).
-  const t = dark
-    ? {
-        bg: V2.card, border: V2.border, text: V2.text, text2: V2.text2, text3: V2.text3,
-        inputBg: V2.segBg, green: V2.green, red: V2.red,
-        greenBg: "rgba(78,204,163,0.16)", redBg: "rgba(232,83,110,0.16)",
-        greenText: V2.green, redText: V2.red,
-        secondaryBg: V2.segBg, secondaryBorder: V2.border, cancelText: V2.text2,
-        saveTextColor: "#0A0A0A",
-      }
-    : {
-        bg: "var(--color-background-primary)", border: "var(--color-border-secondary)",
-        text: "var(--color-text-primary)", text2: "var(--color-text-secondary)", text3: "var(--color-text-tertiary)",
-        inputBg: "var(--color-background-primary)", green: C.green, red: C.red,
-        greenBg: C.greenBg, redBg: C.redBg, greenText: C.greenText, redText: C.redText,
-        secondaryBg: "var(--color-background-secondary)", secondaryBorder: "var(--color-border-secondary)", cancelText: "var(--color-text-secondary)",
-        saveTextColor: "#fff",
-      };
+  const t = paletaPopup(dark);
+  // Guardar un día tarda lo suyo (POST, y luego recargar días y cuentas). Sin
+  // señal de que está en marcha se vuelve a pulsar y se crean dos registros.
+  const [guardando, setGuardando] = useState(false);
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
 
   const [form, setForm] = useState(() => {
     const initial = { ...EMPTY_TRADE, ...trade };
@@ -1983,7 +1997,8 @@ function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], da
     ["threshold", "Umbral autoliq."],
   ].filter(([k]) => vacio(form[k])).map(([, etiqueta]) => etiqueta);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (guardando) return;
     if (faltan.length) {
       setAviso(`Falta rellenar: ${faltan.join(", ")}.`);
       return;
@@ -2003,7 +2018,9 @@ function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], da
       : "";
     const notes = (form.notes || "").trim() || autoNotes;
 
-    onSave({
+    setGuardando(true);
+    try {
+      await onSave({
       ...form,
       date: form.date,
       account: form.account,
@@ -2029,14 +2046,27 @@ function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], da
       etd: 0,
       rr: 0,
       image: null,
-    });
+      });
+    } finally {
+      // Si guardó bien, el padre ya ha cerrado el popup y este componente ya
+      // no existe: solo se reactiva el botón si sigue montado (falló y hay
+      // que poder reintentar).
+      if (montado.current) setGuardando(false);
+    }
   };
 
   // Popup centrado vía portal al body: los módulos tienen overflow:hidden y
   // transform en hover, que romperían un position:fixed anidado.
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={veloPopup}>
       <div style={{ background: t.bg, border: `0.5px solid ${t.border}`, borderRadius: 14, padding: 18, width: "100%", maxWidth: 460, maxHeight: "90dvh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }}>
+      {/* Barra de guardado pegada al borde superior del popup. Se reserva su
+          hueco siempre (margen inferior de 16 = los 18 de padding menos sus 2
+          de alto) para que al aparecer no salte todo el contenido. Sticky y no
+          absolute: el popup puede tener scroll y debe quedarse arriba. */}
+      <div aria-hidden="true" style={{ position: "sticky", top: 0, zIndex: 2, margin: "-18px -18px 16px", height: 2, background: guardando ? t.greenBg : "transparent", overflow: "hidden" }}>
+        {guardando && <span className="v5-barrido" style={{ background: t.green }} />}
+      </div>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 3, color: t.text }}>{isNew ? "Añadir día operado" : `Editar día #${form.id}`}</div>
       <div style={{ fontSize: 10, color: t.text3, marginBottom: 12 }}>
         Resumen diario Bulenox · un registro por día operado
@@ -2117,19 +2147,89 @@ function TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [], da
         </div>
       )}
 
+      {/* Mientras guarda no se puede volver a pulsar —era lo que duplicaba el
+          día— ni cancelar, que dejaría el registro a medias. */}
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleSave} style={{ flex: 1, padding: "9px 16px", background: t.green, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Guardar</button>
-        <button onClick={onCancel} style={{ flex: 1, padding: "9px 16px", background: t.secondaryBg, color: t.cancelText, border: `0.5px solid ${t.secondaryBorder}`, borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+        <button onClick={handleSave} disabled={guardando} style={{ flex: 1, padding: "9px 16px", background: t.green, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, cursor: guardando ? "default" : "pointer", fontWeight: 700, opacity: guardando ? 0.55 : 1 }}>{guardando ? "Guardando…" : "Guardar"}</button>
+        <button onClick={onCancel} disabled={guardando} style={{ flex: 1, padding: "9px 16px", background: t.secondaryBg, color: t.cancelText, border: `0.5px solid ${t.secondaryBorder}`, borderRadius: 8, fontSize: 13, cursor: guardando ? "default" : "pointer", opacity: guardando ? 0.55 : 1 }}>Cancelar</button>
       </div>
       {/* Borrar vive aquí, separado de guardar, para que abrir un día desde la
           lista deje editarlo o eliminarlo sin más botones en la propia lista. */}
       {onDelete && !isNew && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: `0.5px solid ${t.secondaryBorder}`, display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={onDelete} style={{ padding: "7px 14px", background: "transparent", color: t.redText, border: `0.5px solid ${t.red}`, borderRadius: 8, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+          <button onClick={onDelete} disabled={guardando} style={{ padding: "7px 14px", background: "transparent", color: t.redText, border: `0.5px solid ${t.red}`, borderRadius: 8, fontSize: 12, cursor: guardando ? "default" : "pointer", fontWeight: 600, opacity: guardando ? 0.55 : 1 }}>
             Borrar este día
           </button>
         </div>
       )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Confirmación de borrado ──────────────────────────────────────────────────
+// Antes esto era una banda al final de la lista de días operados: con la
+// pantalla a media lista quedaba varios cientos de píxeles por debajo y
+// parecía que el botón de borrar no hacía nada. Ahora es un diálogo centrado,
+// como el resto de popups de la app.
+function ConfirmarBorrado({ trade, onConfirm, onCancel, dark = false }) {
+  const t = paletaPopup(dark);
+  const [borrando, setBorrando] = useState(false);
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
+
+  const pulsar = async () => {
+    if (borrando) return;
+    setBorrando(true);
+    try {
+      await onConfirm();
+    } finally {
+      if (montado.current) setBorrando(false);
+    }
+  };
+
+  const pnl = Number(trade?.pnl) || 0;
+
+  return createPortal(
+    <div style={veloPopup}>
+      <div role="alertdialog" aria-label="Borrar este día" style={{ background: t.bg, border: `0.5px solid ${t.border}`, borderRadius: 14, padding: 18, width: "100%", maxWidth: 380, boxShadow: "0 12px 40px rgba(0,0,0,0.35)" }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={t.red} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 4h4M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12" /></svg>
+          <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>Borrar este día</span>
+        </div>
+
+        <div style={{ fontSize: 12, color: t.text2, lineHeight: 1.5, marginBottom: 12 }}>
+          Se elimina el registro y no se puede deshacer.
+        </div>
+
+        {/* Qué registro se va a borrar. Con un día duplicado los dos se ven
+            idénticos y el número de registro es lo único que los distingue. */}
+        {trade && (
+          <div style={{ border: `0.5px solid ${t.border}`, background: t.inputBg, borderRadius: 8, padding: "10px 11px", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{normalizeDateToYYYYMMDD(trade.date)}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: pnl >= 0 ? t.green : t.red, fontVariantNumeric: "tabular-nums" }}>
+                {pnl >= 0 ? "+" : "−"}${Math.abs(Math.round(pnl)).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 11, color: t.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.account}</span>
+              <span style={{ fontSize: 11, color: t.text3, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>registro #{trade.id}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={pulsar} disabled={borrando} style={{ flex: 1, padding: "9px 16px", background: t.red, color: t.saveTextColor, border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: borrando ? "default" : "pointer", opacity: borrando ? 0.55 : 1 }}>
+            {borrando ? "Borrando…" : "Borrar"}
+          </button>
+          <button onClick={onCancel} disabled={borrando} style={{ flex: 1, padding: "9px 16px", background: t.secondaryBg, color: t.cancelText, border: `0.5px solid ${t.secondaryBorder}`, borderRadius: 8, fontSize: 13, cursor: borrando ? "default" : "pointer", opacity: borrando ? 0.55 : 1 }}>
+            Cancelar
+          </button>
+        </div>
+
       </div>
     </div>,
     document.body
@@ -5193,6 +5293,17 @@ function DashboardV2({
         </div>
         )}
 
+        {/* Fuera de la pestaña de días: se puede pedir borrar desde cualquier
+            sitio y la confirmación tiene que salir esté donde esté la vista. */}
+        {deleteConfirm && (
+          <ConfirmarBorrado
+            trade={trades.find(t => t.id === deleteConfirm)}
+            onConfirm={() => deleteTrade(deleteConfirm)}
+            onCancel={() => setDeleteConfirm(null)}
+            dark
+          />
+        )}
+
         {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
         {editingTrade && (
           <TradeForm
@@ -5333,14 +5444,6 @@ function DashboardV2({
                   </tbody>
                 </table>
               </div>
-
-              {deleteConfirm && (
-                <div style={{ padding: "10px 14px", background: "rgba(232,83,110,0.14)", border: "0.5px solid rgba(232,83,110,0.4)", borderRadius: 8, marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, color: V2.red }}>¿Seguro que deseas eliminar el trade #{deleteConfirm}?</span>
-                  <button onClick={() => deleteTrade(deleteConfirm)} style={{ fontSize: 12, padding: "5px 12px", background: V2.red, color: "#0A0A0A", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
-                  <button onClick={() => setDeleteConfirm(null)} style={{ fontSize: 12, padding: "5px 12px", background: "transparent", border: `0.5px solid ${V2.border}`, borderRadius: 6, cursor: "pointer", color: V2.text2 }}>Cancelar</button>
-                </div>
-              )}
 
               {totalPages > 1 && (
                 <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
@@ -6826,11 +6929,11 @@ export default function App() {
           <TradeForm trade={editingTrade} onSave={saveTrade} onCancel={() => setEditingTrade(null)} isNew={false} accounts={allAccountsForForm} />
         )}
         {deleteConfirm && (
-          <div style={{ padding: "10px 14px", background: C.redBg, borderRadius: 8, marginTop: 12, display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 12, color: C.redText }}>¿Seguro que deseas eliminar el trade #{deleteConfirm}?</span>
-            <button onClick={() => deleteTrade(deleteConfirm)} style={{ fontSize: 11, padding: "4px 12px", background: C.red, color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Confirmar</button>
-            <button onClick={() => setDeleteConfirm(null)} style={{ fontSize: 11, padding: "4px 12px", background: "transparent", border: "0.5px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer", color: "var(--color-text-secondary)" }}>Cancelar</button>
-          </div>
+          <ConfirmarBorrado
+            trade={trades.find(t => t.id === deleteConfirm)}
+            onConfirm={() => deleteTrade(deleteConfirm)}
+            onCancel={() => setDeleteConfirm(null)}
+          />
         )}
         {totalPages > 1 && (
           <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center" }}>
