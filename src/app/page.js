@@ -4652,7 +4652,7 @@ const V2_SETTINGS_VARS = {
 };
 
 function DashboardV2({
-  trades, accountsList, onExit, onRefresh, deployId,
+  trades, accountsList, onExit, onOpenV6, onRefresh, deployId,
   addingTrade, setAddingTrade, editingTrade, setEditingTrade,
   deleteConfirm, setDeleteConfirm, saveTrade, deleteTrade,
   activeAccountsForForm, allAccountsForForm, settingsPanel,
@@ -5248,6 +5248,16 @@ function DashboardV2({
           >
             V4 (Old)
           </button>
+          <button
+            onClick={onOpenV6}
+            title="Probar el diseño V6 (estética de terminal)"
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "0 12px", height: 42, borderRadius: 10, cursor: "pointer",
+              background: "transparent", color: V2.text3, border: `1px solid ${V2.border}`, whiteSpace: "nowrap",
+            }}
+          >
+            V6
+          </button>
 
           {/* Cuentas retiradas: ocultas por defecto, se recuperan para consultar
               sus estadísticas. Si se ocultan estando seleccionada una, se vuelve
@@ -5484,6 +5494,257 @@ function DashboardV2({
   );
 }
 
+
+// ── V6 — estética de terminal ────────────────────────────────────────────────
+// Reskin visual sobre las mismas pantallas, mismos datos y mismas acciones de
+// V2: por ahora solo "trades" está construida; el resto abre un aviso hasta
+// que se rediseñen. Solo tema oscuro, sin equivalente en claro.
+const V6 = {
+  bg: "#0A0A0A",
+  fg: "#E8E8E8",
+  green: "#4ECCA3",
+  amber: "#E2B144",
+  red: "#E8536E",
+  violet: "#A78BFA",
+  blue: "#5AA9E6",
+  dim: "#5C5C5C",
+  dim2: "#8C8C8C",
+  white: "#FFFFFF",
+  border: "#1E1E1E",
+};
+const V6_MONO = "var(--font-mono-v6), ui-monospace, SFMono-Regular, Menlo, monospace";
+
+const V6_NAV = [
+  { id: "dashboard", label: "dashboard", accent: V6.green },
+  { id: "trades", label: "trades", accent: V6.amber },
+  { id: "calendar", label: "calendario", accent: V6.red },
+  { id: "settings", label: "ajustes", accent: V6.violet },
+];
+
+// El prompt hace de menú: el cursor parpadea junto al nombre de la hoja
+// abierta y los cuatro destinos van entre corchetes debajo. La zona de toque
+// es la celda entera (un cuarto del ancho x 44px), no el texto del corchete.
+function V6Nav({ active, onChange }) {
+  const cur = V6_NAV.find(n => n.id === active) || V6_NAV[0];
+  return (
+    <div style={{
+      position: "sticky", bottom: 0, background: V6.bg, borderTop: `1px solid ${V6.border}`,
+      padding: "8px 14px calc(8px + env(safe-area-inset-bottom, 0px))", fontFamily: V6_MONO,
+    }}>
+      <div style={{ fontSize: 12, color: V6.dim2 }}>
+        <span style={{ color: V6.green }}>$</span> <span style={{ color: V6.dim }}>cd</span>{" "}
+        <span style={{ color: cur.accent, fontWeight: 700 }}>{cur.label}</span>
+        <span aria-hidden="true" className="v6-cursor" style={{ background: cur.accent }} />
+      </div>
+      <div style={{ display: "flex", alignItems: "stretch", height: 44, marginTop: 2 }}>
+        {V6_NAV.map(n => (
+          <button
+            key={n.id}
+            onClick={() => onChange(n.id)}
+            aria-current={n.id === active ? "page" : undefined}
+            aria-label={n.label}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+              background: "none", border: "none", fontFamily: V6_MONO,
+              fontSize: 11, color: n.id === active ? n.accent : V6.dim,
+              fontWeight: n.id === active ? 700 : 400, cursor: "pointer", padding: 0,
+            }}
+          >
+            [{n.label}]
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Lista de días operados como un diff: + verde para un día ganador, − rojo
+// para uno perdido, con el fondo teñido. Toca la fila para editar o borrar.
+function V6Trades({ scoped, tradePage, setTradePage, onOpen }) {
+  const sorted = [...scoped].sort((a, b) => b.id - a.id);
+  const perPage = 10;
+  const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
+  const pageSafe = Math.min(tradePage, totalPages);
+  const pageTrades = sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+  const totalPnl = sorted.reduce((s, t) => s + (t.pnl || 0), 0);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+        <span style={{ color: V6.amber }}>▸</span>
+        <span style={{ color: V6.white, fontWeight: 700, fontSize: 14 }}>días operados</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: V6.dim }}>{sorted.length} registros</span>
+      </div>
+      <div style={{ fontSize: 11, color: V6.dim, marginBottom: 10, paddingLeft: 18 }}>
+        {"// toca un día para editarlo o borrarlo"}
+      </div>
+
+      {pageTrades.length === 0 ? (
+        <div style={{ fontSize: 12, color: V6.dim, padding: "10px 0" }}>{"// sin días registrados"}</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {pageTrades.map(t => {
+            const win = t.pnl > 0, loss = t.pnl < 0;
+            const colchon = (t.balance != null && t.threshold != null) ? t.balance - t.threshold : null;
+            return (
+              <button
+                key={t.id}
+                onClick={() => onOpen(t)}
+                aria-label={`Abrir ${t.date}`}
+                style={{
+                  textAlign: "left", font: "inherit", cursor: "pointer", width: "100%",
+                  background: win ? "rgba(78,204,163,0.07)" : loss ? "rgba(232,83,110,0.07)" : "transparent",
+                  border: "none", borderLeft: `2px solid ${win ? V6.green : loss ? V6.red : V6.border}`,
+                  padding: "5px 8px", display: "flex", flexDirection: "column", gap: 1,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ color: win ? V6.green : loss ? V6.red : V6.dim, fontWeight: 700 }}>
+                    {win ? "+" : loss ? "-" : "·"}
+                  </span>
+                  <span style={{ color: V6.white }}>{t.date}</span>
+                  <span style={{ fontSize: 12, color: V6.dim, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.account}</span>
+                  <span style={{ marginLeft: "auto", fontWeight: 700, color: win ? V6.green : loss ? V6.red : V6.white, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{fmt(t.pnl)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: V6.dim, paddingLeft: 18 }}>
+                  cierre {t.balance != null ? `$${Math.round(t.balance).toLocaleString()}` : "—"} · umbral{" "}
+                  <span style={{ color: V6.red }}>{t.threshold != null ? `$${Math.round(t.threshold).toLocaleString()}` : "—"}</span> · colchón{" "}
+                  <span style={{ color: colchon == null ? V6.dim : colchon > 0 ? V6.green : V6.red }}>
+                    {colchon != null ? `$${Math.round(colchon).toLocaleString()}` : "—"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, fontSize: 12, fontFamily: V6_MONO }}>
+          <button onClick={() => setTradePage(p => Math.max(1, p - 1))} disabled={pageSafe === 1} style={{ background: "none", border: "none", color: pageSafe === 1 ? V6.border : V6.dim2, cursor: pageSafe === 1 ? "default" : "pointer", fontFamily: "inherit" }}>[‹]</button>
+          <span style={{ color: V6.dim2 }}>{pageSafe}/{totalPages}</span>
+          <button onClick={() => setTradePage(p => Math.min(totalPages, p + 1))} disabled={pageSafe === totalPages} style={{ background: "none", border: "none", color: pageSafe === totalPages ? V6.border : V6.green, cursor: pageSafe === totalPages ? "default" : "pointer", fontFamily: "inherit" }}>[›]</button>
+          <span style={{ marginLeft: "auto", color: V6.dim }}>{`// ${sorted.length} días · ${fmt(totalPnl)}`}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardV6({
+  trades, accountsList, onExit,
+  addingTrade, setAddingTrade, editingTrade, setEditingTrade,
+  deleteConfirm, setDeleteConfirm, saveTrade, deleteTrade,
+  activeAccountsForForm, allAccountsForForm,
+}) {
+  const [nav, setNav] = useState("trades");
+  const [acct, setAcct] = useState("all");
+  const [showClosed, setShowClosed] = useState(false);
+  const [tradePage, setTradePage] = useState(1);
+
+  const isRetired = (a) => isClosedAcct(a);
+  const visibleAccounts = accountsList.filter(a => showClosed || !isRetired(a));
+  const visibleNames = new Set(visibleAccounts.map(a => a.name));
+  const scoped = trades.filter(t =>
+    t.instrument !== "Ajuste de Broker" &&
+    (acct === "all" ? visibleNames.has(t.account) : t.account === acct)
+  );
+
+  const cur = V6_NAV.find(n => n.id === nav) || V6_NAV[0];
+
+  return (
+    <div style={{ background: V6.bg, minHeight: "100vh", fontFamily: V6_MONO, color: V6.fg }}>
+      <main className="v5-main" style={{ minWidth: 0, fontSize: 13, lineHeight: 1.55 }}>
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span style={{ color: V6.green }}>rip58</span><span style={{ color: V6.blue }}>@trading</span>
+            <span style={{ color: V6.dim }}>:~</span><span style={{ color: V6.green }}>$</span>{" "}
+            <span style={{ color: V6.white, fontWeight: 700 }}>{cur.label}</span>
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <button
+              onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
+              style={{ fontFamily: V6_MONO, fontSize: 12, background: "none", border: "none", cursor: "pointer", padding: "8px 0", whiteSpace: "nowrap" }}
+            >
+              [<span style={{ color: V6.green, fontWeight: 700 }}>+ día</span>]
+            </button>
+            <button
+              onClick={onExit}
+              title="Volver a V5"
+              style={{ fontFamily: V6_MONO, fontSize: 11, color: V6.dim, background: "none", border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 9px", cursor: "pointer" }}
+            >
+              v5
+            </button>
+            <UserButton />
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: V6.dim, marginBottom: 8 }}>
+          {"// versión experimental — mismos datos, solo cambia el traje"}
+        </div>
+
+        {visibleAccounts.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <select
+              value={acct}
+              onChange={e => { setAcct(e.target.value); setTradePage(1); }}
+              aria-label="Cuenta"
+              style={{
+                fontFamily: V6_MONO, fontSize: 12, color: V6.fg, background: "#101010",
+                border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 8px", outline: "none",
+              }}
+            >
+              <option value="all">todas las cuentas</option>
+              {visibleAccounts.map(a => (
+                <option key={a.id} value={a.name}>{a.name}{isRetired(a) ? " · cerrada" : ""}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {deleteConfirm && (
+          <ConfirmarBorrado
+            trade={trades.find(t => t.id === deleteConfirm)}
+            onConfirm={() => deleteTrade(deleteConfirm)}
+            onCancel={() => setDeleteConfirm(null)}
+            dark
+          />
+        )}
+        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
+        {editingTrade && (
+          <TradeForm
+            trade={editingTrade}
+            onSave={saveTrade}
+            onCancel={() => setEditingTrade(null)}
+            onDelete={() => { setDeleteConfirm(editingTrade.id); setEditingTrade(null); }}
+            isNew={false}
+            accounts={allAccountsForForm}
+            dark
+          />
+        )}
+
+        {nav === "trades" ? (
+          <V6Trades
+            scoped={scoped}
+            tradePage={tradePage}
+            setTradePage={setTradePage}
+            onOpen={(t) => { setAddingTrade(false); setEditingTrade(t); }}
+          />
+        ) : (
+          <div style={{ border: `1px solid ${V6.border}`, padding: "16px 14px" }}>
+            <div style={{ color: V6.white, fontWeight: 700, marginBottom: 6 }}>{cur.label}</div>
+            <div style={{ fontSize: 12, color: V6.dim }}>
+              {"// aún no rediseñada en V6 · disponible en "}
+              <button onClick={onExit} style={{ fontFamily: "inherit", fontSize: "inherit", color: V6.green, background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>V5</button>
+            </div>
+          </div>
+        )}
+
+      </main>
+      <V6Nav active={nav} onChange={setNav} />
+    </div>
+  );
+}
 
 // ── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
@@ -6951,13 +7212,17 @@ export default function App() {
 
 
 
+  // V2 y V6 comparten el mismo lienzo a pantalla completa (oscuro, sin la
+  // cabecera del V4 clásico); solo V6 añade su propia tipografía.
+  const fullBleed = currentTab === "v2" || currentTab === "v6";
+
   return (
-    <div style={currentTab === "v2"
+    <div style={fullBleed
       ? { fontFamily: "var(--font-sans)" }
       : { maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "var(--font-sans)" }}>
       <SundayReminder />
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
-      {currentTab !== "v2" && (
+      {!fullBleed && (
       <div className="flex flex-col md:flex-row justify-between gap-4 items-center md:items-center mb-5">
         <div className="flex flex-col items-center md:items-start text-center md:text-left">
           <h1 className="flex items-center justify-center md:justify-start gap-1.5" style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
@@ -7060,7 +7325,7 @@ export default function App() {
       )}
       
       {loading || !acctsReady ? (
-        <div className="v5-carga-pantalla" style={currentTab === "v2" ? { background: V2.bg } : undefined}>
+        <div className="v5-carga-pantalla" style={fullBleed ? { background: V2.bg } : undefined}>
         <div style={{ width: "100%", maxWidth: 340, padding: "34px 20px", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, boxSizing: "border-box" }}>
           <svg width="200" height="72" viewBox="0 0 200 72" fill="none" aria-hidden="true" style={{ maxWidth: "100%" }}>
             <line x1="0" y1="66" x2="200" y2="66" stroke="var(--color-border-secondary)" strokeWidth="1" />
@@ -7086,6 +7351,7 @@ export default function App() {
               trades={trades}
               accountsList={accountsList}
               onExit={() => setCurrentTab("dashboard")}
+              onOpenV6={() => setCurrentTab("v6")}
               onRefresh={refreshAndVerifyPhases}
               deployId={deployId}
               addingTrade={addingTrade}
@@ -7112,6 +7378,22 @@ export default function App() {
                   trades={trades}
                 />
               }
+            />
+          ) : currentTab === "v6" ? (
+            <DashboardV6
+              trades={trades}
+              accountsList={accountsList}
+              onExit={() => setCurrentTab("v2")}
+              addingTrade={addingTrade}
+              setAddingTrade={setAddingTrade}
+              editingTrade={editingTrade}
+              setEditingTrade={setEditingTrade}
+              deleteConfirm={deleteConfirm}
+              setDeleteConfirm={setDeleteConfirm}
+              saveTrade={saveTrade}
+              deleteTrade={deleteTrade}
+              activeAccountsForForm={activeAccountsForForm}
+              allAccountsForForm={allAccountsForForm}
             />
           ) : currentTab === "settings" ? (
             <SettingsPanel
