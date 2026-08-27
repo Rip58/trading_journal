@@ -5631,16 +5631,17 @@ export default function App() {
   const [editingTrade, setEditingTrade] = useState(null);
   const [addingTrade, setAddingTrade] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  // V5 es la vista principal; V6 (estética de terminal) se abre desde su botón.
-  // Se arranca siempre en V5 y en su primera sección, sin recordar la anterior.
-  const [currentTab, setCurrentTab] = useState("v2");
+  // V6 (estética de terminal) es la vista principal; V5 sigue accesible desde
+  // su botón "v5". Se arranca siempre en V6 y en su primera sección, sin
+  // recordar la anterior.
+  const [currentTab, setCurrentTab] = useState("v6");
 
-  // En V5 el documento entero pasa a negro. Hay que tocar html y body: body
-  // lleva su propio fondo claro y unos degradados que, si no, asoman por la
-  // franja de estado y al hacer overscroll. También la meta theme-color, que
-  // es la que tiñe la barra de estado en iOS.
+  // En V5 y V6 el documento entero pasa a negro. Hay que tocar html y body:
+  // body lleva su propio fondo claro y unos degradados que, si no, asoman por
+  // la franja de estado y al hacer overscroll. También la meta theme-color,
+  // que es la que tiñe la barra de estado en iOS.
   useEffect(() => {
-    const dark = currentTab === "v2";
+    const dark = currentTab === "v2" || currentTab === "v6";
     const html = document.documentElement;
     const body = document.body;
     const prev = { html: html.style.background, bg: body.style.backgroundColor, img: body.style.backgroundImage };
@@ -5940,24 +5941,21 @@ export default function App() {
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
 
       {loading || !acctsReady ? (
-        <div className="v5-carga-pantalla" style={{ background: V2.bg }}>
-        <div style={{ width: "100%", maxWidth: 340, padding: "34px 20px", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, boxSizing: "border-box" }}>
-          <svg width="200" height="72" viewBox="0 0 200 72" fill="none" aria-hidden="true" style={{ maxWidth: "100%" }}>
-            <line x1="0" y1="66" x2="200" y2="66" stroke="var(--color-border-secondary)" strokeWidth="1" />
-            <path
-              className="v5-carga-traza"
-              d="M4,54 L32,41 L60,47 L88,26 L116,33 L144,16 L172,22 L196,6"
-              stroke="var(--c-carga)"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <circle className="v5-carga-punto" cx="196" cy="6" r="4" fill="var(--c-carga)" />
-          </svg>
-          <span className="v5-carga-texto" style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
-            Cargando tus cuentas y tus días
-          </span>
-        </div>
+        <div className="v5-carga-pantalla" style={{ background: V6.bg }}>
+          <div style={{ width: "100%", maxWidth: 300, fontFamily: V6_MONO, boxSizing: "border-box" }}>
+            <div style={{ fontSize: 13, marginBottom: 14 }}>
+              <span style={{ color: V6.green }}>rip58</span><span style={{ color: V6.blue }}>@trading</span>
+              <span style={{ color: V6.dim }}>:~</span><span style={{ color: V6.green }}>$</span>{" "}
+              <span style={{ color: V6.white }}>cargando</span>
+              <span className="v6-cursor" style={{ color: V6.white }}>_</span>
+            </div>
+            <div style={{ position: "relative", height: 3, borderRadius: 1, overflow: "hidden", background: V6.border }}>
+              <span className="v5-barrido" style={{ background: V6.green }} />
+            </div>
+            <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
+              {"// cargando tus cuentas y tus días"}
+            </div>
+          </div>
         </div>
       ) : currentTab === "v2" ? (
         <DashboardV2
