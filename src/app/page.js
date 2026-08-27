@@ -4057,6 +4057,70 @@ const V6_NAV = [
   { id: "settings", label: "ajustes", accent: V6.violet },
 ];
 
+// Desplegable propio: el <select> nativo abre un popover que pinta el
+// sistema operativo (no se puede restylear), así que en V6 se sustituye por
+// este — mismo comportamiento de selección, pero con la caja cuadrada y la
+// tipografía mono del resto de la hoja.
+function V6Select({ value, onChange, options, disabled, placeholder, style, error }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const norm = options.map(o => (typeof o === "object" && o !== null ? o : { value: o, label: o }));
+  const current = norm.find(o => String(o.value) === String(value));
+
+  return (
+    <div ref={ref} style={{ position: "relative", ...style }}>
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        style={{
+          fontFamily: V6_MONO, fontSize: 12, color: disabled ? V6.dim : V6.fg, background: "#101010",
+          border: `1px solid ${open ? V6.green : error ? V6.red : V6.border}`, borderRadius: 2, padding: "5px 8px",
+          outline: "none", width: "100%", boxSizing: "border-box", cursor: disabled ? "default" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {current ? current.label : (placeholder || "—")}
+        </span>
+        <span style={{ fontSize: 9, color: V6.dim, flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 60,
+          background: "#101010", border: `1px solid ${V6.border}`, borderRadius: 2,
+          maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        }}>
+          {norm.map((o, i) => {
+            const sel = String(o.value) === String(value);
+            return (
+              <div
+                key={`${o.value}-${i}`}
+                onClick={() => { onChange(o.value); setOpen(false); }}
+                style={{
+                  fontFamily: V6_MONO, fontSize: 12, padding: "6px 8px", cursor: "pointer",
+                  color: sel ? V6.green : V6.fg, background: sel ? "rgba(78,204,163,0.08)" : "transparent",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}
+              >
+                {sel ? "✓ " : "  "}{o.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // El prompt hace de menú: el cursor parpadea junto al nombre de la hoja
 // abierta y los cuatro destinos van entre corchetes debajo. La zona de toque
 // es la celda entera (un cuarto del ancho x 44px), no el texto del corchete.
@@ -4735,43 +4799,40 @@ function V6EditAccount({
       <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
         {row("nombre", <input value={editAcct.name} onChange={e => setEditAcct(cur => ({ ...cur, name: e.target.value }))} style={selStyle} />)}
         {row("tipo", (
-          <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct(cur => ({ ...cur, type: e.target.value }))} style={selStyle}>
-            <option value="EXAMEN">examen</option>
-            <option value="REAL">real</option>
-          </select>
+          <V6Select
+            value={editAcct.type || "EXAMEN"}
+            onChange={v => setEditAcct(cur => ({ ...cur, type: v }))}
+            options={[{ value: "EXAMEN", label: "examen" }, { value: "REAL", label: "real" }]}
+          />
         ))}
         {row("estado", (
-          <select value={normStatus(editAcct.status)} onChange={e => setEditAcct(cur => ({ ...cur, status: e.target.value }))} style={selStyle}>
-            <option value="ACTIVE">activa</option>
-            <option value="CLOSED">cerrada</option>
-          </select>
+          <V6Select
+            value={normStatus(editAcct.status)}
+            onChange={v => setEditAcct(cur => ({ ...cur, status: v }))}
+            options={[{ value: "ACTIVE", label: "activa" }, { value: "CLOSED", label: "cerrada" }]}
+          />
         ))}
         {row("propfirm", (
-          <select
+          <V6Select
             value={editPfCustom ? "__custom__" : (editAcct.propfirm || "Bulenox")}
-            onChange={e => {
-              if (e.target.value === "__custom__") { setEditPfCustom(true); setEditAcct(cur => ({ ...cur, propfirm: "" })); }
-              else { setEditPfCustom(false); setEditAcct(cur => ({ ...cur, propfirm: e.target.value })); }
+            onChange={v => {
+              if (v === "__custom__") { setEditPfCustom(true); setEditAcct(cur => ({ ...cur, propfirm: "" })); }
+              else { setEditPfCustom(false); setEditAcct(cur => ({ ...cur, propfirm: v })); }
             }}
-            style={selStyle}
-          >
-            {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
-            <option value="__custom__">otra…</option>
-          </select>
+            options={[...propfirmOpts.map(pf => ({ value: pf, label: pf })), { value: "__custom__", label: "otra…" }]}
+          />
         ))}
         {editPfCustom && row("nueva propfirm", (
           <input value={editAcct.propfirm ?? ""} onChange={e => setEditAcct(cur => ({ ...cur, propfirm: e.target.value }))} autoFocus style={{ ...selStyle, borderColor: V6.violet }} />
         ))}
         {row("plan", (
-          <select
+          <V6Select
             value={editPlanId}
-            onChange={e => { setEditPlanId(e.target.value); applyEditPlan(e.target.value, editAcct.propfirm); }}
+            onChange={v => { setEditPlanId(v); applyEditPlan(v, editAcct.propfirm); }}
             disabled={!(PROPFIRM_PLANS[editAcct.propfirm] || []).length}
-            style={selStyle}
-          >
-            <option value="">{(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "personalizado…" : "sin planes"}</option>
-            {(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
+            placeholder={(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "personalizado…" : "sin planes"}
+            options={(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => ({ value: p.id, label: p.label }))}
+          />
         ))}
 
         <div style={{ height: 1, background: V6.border, margin: "2px 0" }} />
@@ -4946,19 +5007,20 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: V6.dim, flex: "0 0 62px" }}>propfirm</span>
-            <select
+            <V6Select
               value={propfirm}
-              onChange={e => { const pf = e.target.value; setPropfirm(pf); const first = (PROPFIRM_PLANS[pf] || [])[0]; setPlanId(first ? first.id : ""); }}
-              style={selStyle}
-            >
-              {Object.keys(PROPFIRM_PLANS).map(pf => <option key={pf} value={pf}>{pf}</option>)}
-            </select>
+              onChange={pf => { setPropfirm(pf); const first = (PROPFIRM_PLANS[pf] || [])[0]; setPlanId(first ? first.id : ""); }}
+              options={Object.keys(PROPFIRM_PLANS).map(pf => ({ value: pf, label: pf }))}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: V6.dim, flex: "0 0 62px" }}>plan</span>
-            <select value={planId} onChange={e => setPlanId(e.target.value)} style={{ ...selStyle, flex: 1, minWidth: 0 }}>
-              {plans.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
+            <V6Select
+              value={planId}
+              onChange={setPlanId}
+              options={plans.map(p => ({ value: p.id, label: p.label }))}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: V6.dim, flex: "0 0 62px" }}>nombre</span>
@@ -5116,6 +5178,300 @@ function V6ForceUpdate() {
   );
 }
 
+// Mismos campos, misma validación y el mismo payload de guardado que
+// TradeForm; solo cambia el traje a cuadrado/mono para que combine con el
+// resto de V6, en vez de reusar el popup redondeado de V5.
+function V6TradeForm({ trade, onSave, onCancel, onDelete, isNew, accounts = [] }) {
+  const [guardando, setGuardando] = useState(false);
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
+
+  const [form, setForm] = useState(() => {
+    const initial = { ...EMPTY_TRADE, ...trade };
+    if (initial.date && initial.date.includes("/")) {
+      const parts = initial.date.split("/");
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          initial.date = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+        } else if (parts[0].length === 4) {
+          initial.date = `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+        }
+      }
+    }
+    const comm = parseLocaleFloat(initial.commission) || 0;
+    initial.commission = comm === 0 ? "" : String(Math.abs(comm));
+    const pnlVal = parseLocaleFloat(initial.pnl) || 0;
+    initial.pnl = pnlVal === 0 ? "" : String(Math.abs(pnlVal));
+    initial.balance = initial.balance === null || initial.balance === undefined ? "" : initial.balance;
+    initial.threshold = initial.threshold === null || initial.threshold === undefined ? "" : initial.threshold;
+    if (/^Balance cierre: \$[\d.]+ \| Umbral autoliq\.: \$[\d.]+$/.test((initial.notes || "").trim())) {
+      initial.notes = "";
+    }
+    return initial;
+  });
+
+  const [isLoss, setIsLoss] = useState(() => (parseLocaleFloat(trade?.pnl) || 0) < 0);
+  const [aviso, setAviso] = useState("");
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const setPnl = (raw) => {
+    const cleaned = raw.replace(/[^0-9.,-]/g, "");
+    if (cleaned.includes("-")) setIsLoss(true);
+    setForm(f => ({ ...f, pnl: cleaned.replace(/-/g, "") }));
+  };
+
+  const vacio = (v) => v === "" || v === null || v === undefined;
+  const malo = (field) => !!(aviso && vacio(form[field]));
+
+  const inputStyle = (field) => ({
+    fontFamily: V6_MONO, fontSize: 12, padding: "5px 8px", borderRadius: 2,
+    border: `1px solid ${malo(field) ? V6.red : V6.border}`,
+    background: "#101010", color: V6.fg, outline: "none", width: "100%", boxSizing: "border-box",
+  });
+
+  const renderField = (label, field, type = "text", placeholder) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <label style={{ fontSize: 10, color: malo(field) ? V6.red : V6.dim, textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</label>
+      <input
+        type={type === "number" ? "text" : type}
+        inputMode={type === "number" ? "decimal" : undefined}
+        placeholder={placeholder}
+        value={form[field] ?? ""}
+        onChange={e => {
+          const val = e.target.value;
+          set(field, type === "number" ? val.replace(/[^0-9.,-]/g, "") : val);
+        }}
+        style={inputStyle(field)}
+      />
+    </div>
+  );
+
+  const accountOpts = accounts.some(a => a.value === form.account)
+    ? accounts
+    : form.account
+      ? [{ value: form.account, label: form.account }, ...accounts]
+      : [{ value: "", label: "selecciona una cuenta" }, ...accounts];
+
+  const signedPnl = (isLoss ? -1 : 1) * Math.abs(parseLocaleFloat(form.pnl) || 0);
+  const pnlPreview = signedPnl;
+  const commPreview = Math.abs(parseLocaleFloat(form.commission) || 0);
+
+  const faltan = [
+    ["date", "fecha"],
+    ["account", "cuenta"],
+    ["pnl", "pnl neto"],
+    ["commission", "comisión"],
+    ["balance", "balance cierre"],
+    ["threshold", "umbral autoliq."],
+  ].filter(([k]) => vacio(form[k])).map(([, etiqueta]) => etiqueta);
+
+  const handleSave = async () => {
+    if (guardando) return;
+    if (faltan.length) {
+      setAviso(`falta rellenar: ${faltan.join(", ")}.`);
+      return;
+    }
+    setAviso("");
+    const pnlNum = signedPnl;
+    const commNum = -Math.abs(parseLocaleFloat(form.commission) || 0);
+    const balanceNum = form.balance === "" || form.balance === null || form.balance === undefined
+      ? null : parseLocaleFloat(form.balance);
+    const thresholdNum = form.threshold === "" || form.threshold === null || form.threshold === undefined
+      ? null : parseLocaleFloat(form.threshold);
+
+    const autoNotes = (balanceNum !== null && thresholdNum !== null)
+      ? `Balance cierre: $${balanceNum} | Umbral autoliq.: $${thresholdNum}`
+      : "";
+    const notes = (form.notes || "").trim() || autoNotes;
+
+    setGuardando(true);
+    try {
+      await onSave({
+        ...form,
+        date: form.date,
+        account: form.account,
+        pnl: pnlNum,
+        commission: commNum,
+        gross: pnlNum + Math.abs(commNum),
+        balance: balanceNum,
+        threshold: thresholdNum,
+        notes,
+        result: isLoss ? "Loss" : "Win",
+        instrument: "NQ",
+        qty: 1,
+        strategy: "Resumen diario",
+        timeframe: "Diario",
+        direction: "",
+        entry_time: "",
+        exit_time: "",
+        entry: 0,
+        exit_price: 0,
+        mae: 0,
+        mfe: 0,
+        etd: 0,
+        rr: 0,
+        image: null,
+      });
+    } finally {
+      if (montado.current) setGuardando(false);
+    }
+  };
+
+  return createPortal(
+    <div style={veloPopup}>
+      <div style={{ background: V6.bg, border: `1px solid ${V6.border}`, borderRadius: 2, padding: 16, width: "100%", maxWidth: 460, maxHeight: "90dvh", overflowY: "auto", fontFamily: V6_MONO, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+
+        <div aria-hidden="true" style={{ position: "sticky", top: 0, zIndex: 2, margin: "-16px -16px 14px", height: 2, background: guardando ? "rgba(78,204,163,0.16)" : "transparent", overflow: "hidden" }}>
+          {guardando && <span className="v5-barrido" style={{ background: V6.green }} />}
+        </div>
+
+        <div style={{ fontSize: 13, marginBottom: 2 }}>
+          <span style={{ color: V6.green }}>$</span> <span style={{ color: V6.white, fontWeight: 700 }}>{isNew ? "añadir día operado" : `editar día #${form.id}`}</span>
+        </div>
+        <div style={{ fontSize: 11, color: V6.dim, marginBottom: 14 }}>
+          {"// resumen diario Bulenox · un registro por día operado"}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+          {renderField("fecha", "date", "date")}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <label style={{ fontSize: 10, color: malo("account") ? V6.red : V6.dim, textTransform: "uppercase", letterSpacing: ".3px" }}>cuenta</label>
+            <V6Select value={form.account || ""} onChange={v => set("account", v)} options={accountOpts} error={malo("account")} />
+          </div>
+
+          {/* PnL: magnitud + selector de signo win/loss */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <label style={{ fontSize: 10, color: malo("pnl") ? V6.red : V6.dim, textTransform: "uppercase", letterSpacing: ".3px" }}>pnl neto ($)</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button type="button" onClick={() => setIsLoss(false)} aria-pressed={!isLoss} style={{ fontFamily: V6_MONO, fontSize: 10, fontWeight: 700, padding: "2px 8px", background: "none", border: `1px solid ${!isLoss ? V6.green : V6.border}`, borderRadius: 2, color: !isLoss ? V6.green : V6.dim, cursor: "pointer" }}>win</button>
+                <button type="button" onClick={() => setIsLoss(true)} aria-pressed={isLoss} style={{ fontFamily: V6_MONO, fontSize: 10, fontWeight: 700, padding: "2px 8px", background: "none", border: `1px solid ${isLoss ? V6.red : V6.border}`, borderRadius: 2, color: isLoss ? V6.red : V6.dim, cursor: "pointer" }}>loss</button>
+              </div>
+            </div>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 700, color: isLoss ? V6.red : V6.green, pointerEvents: "none" }}>
+                {isLoss ? "−" : "+"}
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="Ej: 417.46"
+                value={form.pnl ?? ""}
+                onChange={e => setPnl(e.target.value)}
+                style={{ ...inputStyle("pnl"), paddingLeft: 20, color: isLoss ? V6.red : V6.green, fontWeight: 700 }}
+              />
+            </div>
+          </div>
+
+          {renderField("comisión ($)", "commission", "number", "Ej: 13")}
+          {renderField("balance cierre ($)", "balance", "number", "Ej: 25417")}
+          {renderField("umbral autoliq. / dd ($)", "threshold", "number", "Ej: 23917")}
+        </div>
+
+        <div style={{ fontSize: 11, color: V6.dim, marginBottom: 10 }}>
+          {"// pnl a guardar: "}
+          <strong style={{ color: isLoss ? V6.red : V6.green }}>{pnlPreview >= 0 ? "+" : "−"}${Math.abs(pnlPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+          {` · bruto: $${(pnlPreview + commPreview).toLocaleString(undefined, { maximumFractionDigits: 2 })} · la comisión se guarda en negativo automáticamente`}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 10, color: V6.dim, textTransform: "uppercase", letterSpacing: ".3px", display: "block", marginBottom: 3 }}>notas (opcional)</label>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="si lo dejas vacío se generan notas automáticas con balance y umbral" style={{ ...inputStyle("notes"), resize: "vertical" }} />
+        </div>
+
+        {aviso && (
+          <div role="alert" style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px",
+            borderRadius: 2, fontSize: 12, fontWeight: 600,
+            background: "rgba(232,83,110,0.1)", color: V6.red, border: `1px solid ${V6.red}`,
+          }}>
+            <span aria-hidden="true">⚠</span>{aviso}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleSave} disabled={guardando} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, fontWeight: 700, padding: "8px 10px", background: "none", border: `1px solid ${guardando ? V6.border : V6.green}`, borderRadius: 2, color: guardando ? V6.dim : V6.green, cursor: guardando ? "default" : "pointer" }}>
+            {guardando ? "guardando…" : "guardar"}
+          </button>
+          <button onClick={onCancel} disabled={guardando} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, padding: "8px 10px", background: "none", border: `1px solid ${V6.border}`, borderRadius: 2, color: V6.dim2, cursor: guardando ? "default" : "pointer" }}>
+            cancelar
+          </button>
+        </div>
+
+        {onDelete && !isNew && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${V6.border}`, display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={onDelete} disabled={guardando} style={{ fontFamily: V6_MONO, fontSize: 12, fontWeight: 600, padding: "6px 12px", background: "none", border: `1px solid ${V6.red}`, borderRadius: 2, color: V6.red, cursor: guardando ? "default" : "pointer" }}>
+              borrar este día
+            </button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Misma lógica que ConfirmarBorrado; solo cambia el traje a cuadrado/mono.
+function V6ConfirmarBorrado({ trade, onConfirm, onCancel }) {
+  const [borrando, setBorrando] = useState(false);
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
+
+  const pulsar = async () => {
+    if (borrando) return;
+    setBorrando(true);
+    try {
+      await onConfirm();
+    } finally {
+      if (montado.current) setBorrando(false);
+    }
+  };
+
+  const pnl = Number(trade?.pnl) || 0;
+
+  return createPortal(
+    <div style={veloPopup}>
+      <div role="alertdialog" aria-label="Borrar este día" style={{ background: V6.bg, border: `1px solid ${V6.red}`, borderRadius: 2, padding: 16, width: "100%", maxWidth: 380, fontFamily: V6_MONO, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+
+        <div style={{ fontSize: 13, marginBottom: 2 }}>
+          <span style={{ color: V6.red }}>$</span> <span style={{ color: V6.white, fontWeight: 700 }}>borrar este día</span>
+        </div>
+        <div style={{ fontSize: 11, color: V6.dim, marginBottom: 14 }}>
+          {"// se elimina el registro y no se puede deshacer"}
+        </div>
+
+        {trade && (
+          <div style={{ border: `1px solid ${V6.border}`, background: "#101010", borderRadius: 2, padding: "10px 11px", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: V6.fg }}>{normalizeDateToYYYYMMDD(trade.date)}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: pnl >= 0 ? V6.green : V6.red, fontVariantNumeric: "tabular-nums" }}>
+                {pnl >= 0 ? "+" : "−"}${Math.abs(Math.round(pnl)).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 11, color: V6.dim2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.account}</span>
+              <span style={{ fontSize: 11, color: V6.dim, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>registro #{trade.id}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={pulsar} disabled={borrando} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, fontWeight: 700, padding: "8px 10px", background: "none", border: `1px solid ${borrando ? V6.border : V6.red}`, borderRadius: 2, color: borrando ? V6.dim : V6.red, cursor: borrando ? "default" : "pointer" }}>
+            {borrando ? "borrando…" : "borrar"}
+          </button>
+          <button onClick={onCancel} disabled={borrando} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, padding: "8px 10px", background: "none", border: `1px solid ${V6.border}`, borderRadius: 2, color: V6.dim2, cursor: borrando ? "default" : "pointer" }}>
+            cancelar
+          </button>
+        </div>
+
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function DashboardV6({
   trades, accountsList, onExit, fetchAccounts,
   addingTrade, setAddingTrade, editingTrade, setEditingTrade,
@@ -5173,42 +5529,34 @@ function DashboardV6({
         {/* En ajustes no pinta nada: ni se filtran trades ni se añaden desde
             ahí, y esa hoja ya tiene su propio filtro de estado por cuenta. */}
         {nav !== "settings" && visibleAccounts.length > 0 && (
-          <div style={{ marginBottom: 18 }}>
-            <select
+          <div style={{ marginBottom: 18, maxWidth: 260 }}>
+            <V6Select
               value={acct}
-              onChange={e => { setAcct(e.target.value); setTradePage(1); }}
-              aria-label="Cuenta"
-              style={{
-                fontFamily: V6_MONO, fontSize: 12, color: V6.fg, background: "#101010",
-                border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 8px", outline: "none",
-              }}
-            >
-              <option value="all">todas las cuentas</option>
-              {visibleAccounts.map(a => (
-                <option key={a.id} value={a.name}>{a.name}{isRetired(a) ? " · cerrada" : ""}</option>
-              ))}
-            </select>
+              onChange={v => { setAcct(v); setTradePage(1); }}
+              options={[
+                { value: "all", label: "todas las cuentas" },
+                ...visibleAccounts.map(a => ({ value: a.name, label: `${a.name}${isRetired(a) ? " · cerrada" : ""}` })),
+              ]}
+            />
           </div>
         )}
 
         {deleteConfirm && (
-          <ConfirmarBorrado
+          <V6ConfirmarBorrado
             trade={trades.find(t => t.id === deleteConfirm)}
             onConfirm={() => deleteTrade(deleteConfirm)}
             onCancel={() => setDeleteConfirm(null)}
-            dark
           />
         )}
-        {addingTrade && <TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} dark />}
+        {addingTrade && <V6TradeForm trade={EMPTY_TRADE} onSave={saveTrade} onCancel={() => setAddingTrade(false)} isNew accounts={activeAccountsForForm} />}
         {editingTrade && (
-          <TradeForm
+          <V6TradeForm
             trade={editingTrade}
             onSave={saveTrade}
             onCancel={() => setEditingTrade(null)}
             onDelete={() => { setDeleteConfirm(editingTrade.id); setEditingTrade(null); }}
             isNew={false}
             accounts={allAccountsForForm}
-            dark
           />
         )}
 
