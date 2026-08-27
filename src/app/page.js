@@ -5844,15 +5844,21 @@ function V6Calendario({ scoped }) {
     }
   });
 
+  // Semanas completas de 7 huecos (con null en los bordes del mes) para poder
+  // calcular el total de cada una y ponerlo en su domingo: V6 no tiene todavía
+  // la fila de "total semana" aparte que lleva V5.
   const daysInMonth = new Date(year, mo + 1, 0).getDate();
   const startDow = (new Date(year, mo, 1).getDay() + 6) % 7;
-  const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push(null);
+  const weeks = [];
+  let week = [];
+  for (let i = 0; i < startDow; i++) week.push(null);
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
     const dow = (new Date(year, mo, d).getDay() + 6) % 7;
-    cells.push({ d, key, dow, info: byDate[key] });
+    week.push({ d, key, dow, info: byDate[key] });
+    if (dow === 6) { weeks.push(week); week = []; }
   }
+  if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
 
   const entries = Object.entries(byDate);
   const daysOperados = entries.length;
@@ -5861,6 +5867,41 @@ function V6Calendario({ scoped }) {
   const peor = entries.reduce((m, e) => (!m || e[1].pnl < m[1].pnl ? e : m), null);
   const wins = entries.filter(([, v]) => v.pnl > 0).length;
   const losses = entries.filter(([, v]) => v.pnl < 0).length;
+
+  // Mismo cálculo que calStats en V5: global desde el primer trade e
+  // historial por mes, sobre TODOS los trades filtrados, no solo el mes visto.
+  const calStats = useMemo(() => {
+    const dayMap = new Map();
+    scoped.forEach(t => {
+      const d = normalizeDateToYYYYMMDD(t.date);
+      if (!dayMap.has(d)) dayMap.set(d, { pnl: 0, comm: 0 });
+      const day = dayMap.get(d);
+      day.pnl += t.pnl || 0;
+      day.comm += Math.abs(t.commission || 0);
+    });
+    const byMonth = new Map();
+    const global = { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0, first: null, last: null };
+    [...dayMap.entries()].forEach(([d, day]) => {
+      const ym = d.slice(0, 7);
+      if (!byMonth.has(ym)) byMonth.set(ym, { pnl: 0, win: 0, lose: 0, comm: 0, winDays: 0, loseDays: 0, days: 0 });
+      const m = byMonth.get(ym);
+      m.pnl += day.pnl; global.pnl += day.pnl;
+      m.comm += day.comm; global.comm += day.comm;
+      m.days++; global.days++;
+      if (day.pnl > 0) { m.win += day.pnl; global.win += day.pnl; m.winDays++; global.winDays++; }
+      else if (day.pnl < 0) { m.lose += day.pnl; global.lose += day.pnl; m.loseDays++; global.loseDays++; }
+      if (!global.first || d < global.first) global.first = d;
+      if (!global.last || d > global.last) global.last = d;
+    });
+    const months = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    return { global, months };
+  }, [scoped]);
+  const rangoFechas = calStats.global.first && calStats.global.last
+    ? `${V2_MN[parseInt(calStats.global.first.slice(5, 7)) - 1].toLowerCase()} ${calStats.global.first.slice(0, 4)} – ${V2_MN[parseInt(calStats.global.last.slice(5, 7)) - 1].toLowerCase()} ${calStats.global.last.slice(0, 4)}`
+    : "";
+  const globalWr = calStats.global.winDays + calStats.global.loseDays > 0
+    ? Math.round((calStats.global.winDays / (calStats.global.winDays + calStats.global.loseDays)) * 100)
+    : null;
 
   const fmtCorto = (v) => {
     const abs = Math.abs(Math.round(v));
@@ -5881,21 +5922,41 @@ function V6Calendario({ scoped }) {
           {["lu", "ma", "mi", "ju", "vi", "sá", "do"].map(d => (
             <div key={d} style={{ textAlign: "center", color: V6.dim, paddingBottom: 2 }}>{d}</div>
           ))}
-          {cells.map((c, i) => {
-            if (!c) return <div key={`e${i}`} />;
-            const finde = c.dow >= 5 && !c.info;
-            const col = c.info ? (c.info.pnl > 0 ? V6.green : c.info.pnl < 0 ? V6.red : V6.fg) : V6.dim;
-            const border = c.info ? (c.info.pnl > 0 ? V6.green : V6.red) : (finde ? "#141414" : V6.border);
+          {weeks.map((w, wi) => {
+            const weekPnl = w.reduce((s, c) => s + (c?.info ? c.info.pnl : 0), 0);
+            const weekHasData = w.some(c => c?.info);
             return (
-              <div key={c.key} style={{ border: `1px solid ${border}`, borderRadius: 2, padding: "3px 0 4px", textAlign: "center", background: finde ? "#101010" : "transparent" }}>
-                <div style={{ fontSize: 12, color: c.info ? V6.white : (finde ? V6.dim : V6.dim2) }}>{c.d}</div>
-                <div style={{ fontSize: 9, color: col }}>{c.info ? fmtCorto(c.info.pnl) : (finde ? "·" : "—")}</div>
-              </div>
+              <Fragment key={wi}>
+                {w.map((c, ci) => {
+                  // El domingo de una semana con datos se convierte en el total
+                  // de esa semana: es fin de semana, así que nunca pisa un día
+                  // real operado.
+                  if (ci === 6 && weekHasData) {
+                    const pos = weekPnl >= 0;
+                    return (
+                      <div key={`t${wi}`} style={{ border: `1px solid ${pos ? V6.green : V6.red}`, borderRadius: 2, padding: "3px 0 4px", textAlign: "center", background: pos ? "rgba(78,204,163,0.08)" : "rgba(232,83,110,0.08)" }}>
+                        <div style={{ fontSize: 8, color: V6.dim, textTransform: "uppercase", letterSpacing: ".3px" }}>total</div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: pos ? V6.green : V6.red }}>{fmtCorto(weekPnl)}</div>
+                      </div>
+                    );
+                  }
+                  if (!c) return <div key={`e${wi}-${ci}`} />;
+                  const finde = c.dow >= 5 && !c.info;
+                  const col = c.info ? (c.info.pnl > 0 ? V6.green : c.info.pnl < 0 ? V6.red : V6.fg) : V6.dim;
+                  const border = c.info ? (c.info.pnl > 0 ? V6.green : V6.red) : (finde ? "#141414" : V6.border);
+                  return (
+                    <div key={c.key} style={{ border: `1px solid ${border}`, borderRadius: 2, padding: "3px 0 4px", textAlign: "center", background: finde ? "#101010" : "transparent" }}>
+                      <div style={{ fontSize: 12, color: c.info ? V6.white : (finde ? V6.dim : V6.dim2) }}>{c.d}</div>
+                      <div style={{ fontSize: 9, color: col }}>{c.info ? fmtCorto(c.info.pnl) : (finde ? "·" : "—")}</div>
+                    </div>
+                  );
+                })}
+              </Fragment>
             );
           })}
         </div>
         <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
-          <span style={{ color: V6.green }}>+</span> ganador &nbsp; <span style={{ color: V6.red }}>−</span> perdedor &nbsp; — sin operar &nbsp; · fin de semana
+          <span style={{ color: V6.green }}>+</span> ganador &nbsp; <span style={{ color: V6.red }}>−</span> perdedor &nbsp; — sin operar &nbsp; · fin de semana &nbsp; total = suma de la semana, en el domingo
         </div>
       </V6Sec>
 
@@ -5926,6 +5987,132 @@ function V6Calendario({ scoped }) {
           </div>
         )}
       </V6Sec>
+
+      {calStats.global.days > 0 && (
+        <V6Sec accent={V6.red} title="global" comment={"// desde el primer trade"}>
+          <div style={{ fontSize: 12, color: V6.dim2 }}>pnl total: <b style={{ color: calStats.global.pnl >= 0 ? V6.green : V6.red }}>{fmt(Math.round(calStats.global.pnl))}</b></div>
+          <div style={{ fontSize: 12, color: V6.dim2 }}>win rate: <b style={{ color: V6.white }}>{globalWr !== null ? `${globalWr}%` : "—"}</b></div>
+          <div style={{ fontSize: 12, color: V6.dim2 }}>
+            ganado: <b style={{ color: V6.green }}>{fmt(Math.round(calStats.global.win))}</b> · perdido: <b style={{ color: V6.red }}>{fmt(Math.round(calStats.global.lose))}</b>
+          </div>
+          <div style={{ fontSize: 12, color: V6.dim2 }}>comisiones: <b style={{ color: V6.white }}>-${Math.round(calStats.global.comm).toLocaleString()}</b></div>
+          <div style={{ fontSize: 12, color: V6.dim2 }}>días: <b style={{ color: V6.white }}>{calStats.global.days}</b> <span style={{ color: V6.dim }}>({rangoFechas})</span></div>
+        </V6Sec>
+      )}
+
+      {calStats.months.length > 0 && (
+        <V6Sec accent={V6.red} title="historial mensual" comment={"// pnl y días ganados/perdidos por mes"}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "4px 12px", fontSize: 11 }}>
+            <span style={{ color: V6.dim }}>mes</span>
+            <span style={{ color: V6.dim, textAlign: "right" }}>pnl</span>
+            <span style={{ color: V6.dim, textAlign: "right" }}>g/p</span>
+            <span style={{ color: V6.dim, textAlign: "right" }}>win%</span>
+            {calStats.months.map(([ym, m]) => {
+              const wr = m.winDays + m.loseDays > 0 ? Math.round((m.winDays / (m.winDays + m.loseDays)) * 100) : null;
+              const label = `${V2_MN[parseInt(ym.slice(5, 7)) - 1].toLowerCase()} ${ym.slice(0, 4)}`;
+              return (
+                <Fragment key={ym}>
+                  <span style={{ color: V6.fg }}>{label}</span>
+                  <span style={{ color: m.pnl >= 0 ? V6.green : V6.red, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(Math.round(m.pnl))}</span>
+                  <span style={{ color: V6.dim2, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{m.winDays}/{m.loseDays}</span>
+                  <span style={{ color: V6.dim2, textAlign: "right" }}>{wr !== null ? `${wr}%` : "—"}</span>
+                </Fragment>
+              );
+            })}
+          </div>
+        </V6Sec>
+      )}
+    </div>
+  );
+}
+
+// Mismo cálculo que la ficha Fase del plan de V5: la cuenta con menos
+// colchón manda, con el medidor de las tres fases (PHASES) debajo.
+function V6Phase({ tightest }) {
+  if (!tightest) {
+    return <div style={{ fontSize: 12, color: V6.dim }}>{"// sin umbral de liquidación definido"}</div>;
+  }
+  const faseCol = (n) => (n === 3 ? V6.green : n === 2 ? V6.amber : V6.red);
+  const col = faseCol(tightest.phase.n);
+  const margen = tightest.phase.min > 0 ? tightest.cushion - tightest.phase.min : null;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 26, fontWeight: 700, color: V6.white }}>${Math.round(tightest.cushion).toLocaleString()}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: col, border: `1px solid ${col}`, borderRadius: 2, padding: "2px 6px" }}>
+          fase {tightest.phase.n} · {tightest.phase.contracts} mnq
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: V6.dim, marginBottom: 10 }}>
+        {`$${Math.round(tightest.balance).toLocaleString()} de cierre · umbral en $${Math.round(tightest.threshold).toLocaleString()}`}
+      </div>
+
+      <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
+        {PHASES.map(p => (
+          <div key={p.n} style={{ flex: p.n === 3 ? 2 : 1, height: 6, background: p.n === tightest.phase.n ? faseCol(p.n) : `${faseCol(p.n)}59` }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 2, marginBottom: 10, fontSize: 9 }}>
+        {PHASES.map(p => (
+          <span key={p.n} style={{ flex: p.n === 3 ? 2 : 1, color: p.n === tightest.phase.n ? faseCol(p.n) : V6.dim, fontWeight: p.n === tightest.phase.n ? 700 : 400 }}>
+            {p.name.toLowerCase()}{p.n === tightest.phase.n ? " ·" : ""}
+          </span>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 12, color: V6.dim2 }}>sl / tp de la fase: <b style={{ color: V6.white }}>${tightest.phase.sl} / ${tightest.phase.tp}</b></div>
+      {margen !== null && (
+        <div style={{ fontSize: 12, color: V6.dim2 }}>margen antes de bajar de fase: <b style={{ color: V6.amber }}>${Math.round(margen).toLocaleString()}</b></div>
+      )}
+      <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
+        {`cuenta más ajustada: ${tightest.account.name}${tightest.basis ? ` · cierre ${tightest.basis}` : ""}`}
+      </div>
+    </div>
+  );
+}
+
+// Mismo cálculo que la ficha Récords de V5: mejor/peor día operado y
+// mayores rachas de días consecutivos ganando/perdiendo, sobre todo el
+// histórico (no depende del periodo elegido en % de acierto).
+function V6Records({ days }) {
+  const records = (() => {
+    let bestDay = null, worstDay = null;
+    let curW = 0, curL = 0, maxW = 0, maxL = 0;
+    days.forEach(([d, v]) => {
+      if (!bestDay || v.pnl > bestDay.pnl) bestDay = { date: d, pnl: v.pnl };
+      if (!worstDay || v.pnl < worstDay.pnl) worstDay = { date: d, pnl: v.pnl };
+      if (v.pnl > 0) { curW++; curL = 0; }
+      else if (v.pnl < 0) { curL++; curW = 0; }
+      else { curW = 0; curL = 0; }
+      maxW = Math.max(maxW, curW);
+      maxL = Math.max(maxL, curL);
+    });
+    return { bestDay, worstDay, maxWinStreak: maxW, maxLoseStreak: maxL };
+  })();
+
+  const stat = (label, day, pos) => (
+    <div style={{ border: `1px solid ${pos ? V6.green : V6.red}`, padding: "8px 10px" }}>
+      <div style={{ fontSize: 9, color: pos ? V6.green : V6.red, textTransform: "uppercase", letterSpacing: ".3px", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: pos ? V6.green : V6.red }}>{day ? fmt(Math.round(day.pnl)) : "—"}</div>
+      <div style={{ fontSize: 10, color: V6.dim, marginTop: 2 }}>{day ? day.date : "sin datos"}</div>
+    </div>
+  );
+  const streak = (label, n, pos) => (
+    <div style={{ border: `1px solid ${V6.border}`, padding: "8px 10px" }}>
+      <div style={{ fontSize: 9, color: V6.dim2, textTransform: "uppercase", letterSpacing: ".3px", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: pos ? V6.green : V6.red }}>{n} {n === 1 ? "día" : "días"}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {stat("mejor día", records.bestDay, true)}
+        {stat("peor día", records.worstDay, false)}
+        {streak("mejor racha ganando", records.maxWinStreak, true)}
+        {streak("mejor racha perdiendo", records.maxLoseStreak, false)}
+      </div>
+      <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>{`histórico completo · ${days.length} días operados`}</div>
     </div>
   );
 }
@@ -5934,10 +6121,13 @@ function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period,
   const days = v2Agg(scoped);
   const anchor = days.length ? days[days.length - 1][0] : v2LocalIso(new Date());
 
-  const cushionRows = liveAccounts
-    .map(a => ({ account: a, ...computeCushion(a, trades.filter(t => t.account === a.name), a.size) }))
-    .filter(r => r.cushion !== null && r.cushion !== undefined);
-  const tightest = cushionRows.length ? cushionRows.reduce((m, r) => (r.cushion < m.cushion ? r : m)) : null;
+  // Igual que en V5: la fase se calcula sobre la cuenta con menos colchón de
+  // las que están a la vista, no sobre una suma de todas.
+  const phases = liveAccounts.map(a => {
+    const { cushion, basis, balance, threshold } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+    return { account: a, cushion, basis, balance, threshold, phase: getPhase(cushion) };
+  }).filter(p => p.phase);
+  const tightest = phases.length ? phases.reduce((m, p) => (p.cushion < m.cushion ? p : m)) : null;
 
   return (
     <div>
@@ -5962,6 +6152,14 @@ function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period,
 
       <V6Sec accent={V6.blue} title="pnl del periodo" comment={"// resultado del mes en curso"}>
         <V6PnlPeriodo days={days} anchor={anchor} />
+      </V6Sec>
+
+      <V6Sec accent={V6.red} title="fase del plan" comment={"// colchón hasta el umbral de liquidación"}>
+        <V6Phase tightest={tightest} />
+      </V6Sec>
+
+      <V6Sec accent={V6.green} title="récords" comment={"// mejor y peor día, mayores rachas"}>
+        <V6Records days={days} />
       </V6Sec>
     </div>
   );
