@@ -5528,7 +5528,8 @@ function V6Nav({ active, onChange }) {
   const cur = V6_NAV.find(n => n.id === active) || V6_NAV[0];
   return (
     <div style={{
-      position: "sticky", bottom: 0, background: V6.bg, borderTop: `1px solid ${V6.border}`,
+      position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 900,
+      background: V6.bg, borderTop: `1px solid ${V6.border}`,
       padding: "8px 14px calc(8px + env(safe-area-inset-bottom, 0px))", fontFamily: V6_MONO,
     }}>
       <div style={{ fontSize: 12, color: V6.dim2 }}>
@@ -5818,6 +5819,117 @@ function V6PnlPeriodo({ days, anchor }) {
 // Las cuatro fichas ya aprobadas en el lienzo, en orden fijo. Sin gestión de
 // tarjetas (añadir/quitar/reordenar): es la simplificación de esta primera
 // versión, igual que Trades no lleva el filtro de cuentas cerradas todavía.
+// Rejilla del mes con el pnl de cada día debajo del número, y el resumen del
+// mes con mejor/peor día y el reparto ganadores/perdedores. Sin la sección
+// "global desde el primer trade" ni el historial mensual de V5 todavía.
+function V6Calendario({ scoped }) {
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const sorted = [...scoped].sort((a, b) => normalizeDateToYYYYMMDD(b.date).localeCompare(normalizeDateToYYYYMMDD(a.date)));
+    return sorted[0]?.date ? normalizeDateToYYYYMMDD(sorted[0].date).slice(0, 7) : v2LocalIso(new Date()).slice(0, 7);
+  });
+
+  const year = parseInt(currentMonth.split("-")[0]);
+  const mo = parseInt(currentMonth.split("-")[1]) - 1;
+
+  const handlePrev = () => { let y = year, m = mo - 1; if (m < 0) { m = 11; y -= 1; } setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`); };
+  const handleNext = () => { let y = year, m = mo + 1; if (m > 11) { m = 0; y += 1; } setCurrentMonth(`${y}-${String(m + 1).padStart(2, "0")}`); };
+
+  const byDate = {};
+  scoped.forEach(t => {
+    const d = normalizeDateToYYYYMMDD(t.date);
+    if (d.startsWith(currentMonth)) {
+      if (!byDate[d]) byDate[d] = { pnl: 0, count: 0 };
+      byDate[d].pnl += t.pnl || 0;
+      byDate[d].count++;
+    }
+  });
+
+  const daysInMonth = new Date(year, mo + 1, 0).getDate();
+  const startDow = (new Date(year, mo, 1).getDay() + 6) % 7;
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${currentMonth}-${String(d).padStart(2, "0")}`;
+    const dow = (new Date(year, mo, d).getDay() + 6) % 7;
+    cells.push({ d, key, dow, info: byDate[key] });
+  }
+
+  const entries = Object.entries(byDate);
+  const daysOperados = entries.length;
+  const pnlMes = entries.reduce((s, [, v]) => s + v.pnl, 0);
+  const mejor = entries.reduce((m, e) => (!m || e[1].pnl > m[1].pnl ? e : m), null);
+  const peor = entries.reduce((m, e) => (!m || e[1].pnl < m[1].pnl ? e : m), null);
+  const wins = entries.filter(([, v]) => v.pnl > 0).length;
+  const losses = entries.filter(([, v]) => v.pnl < 0).length;
+
+  const fmtCorto = (v) => {
+    const abs = Math.abs(Math.round(v));
+    return (v < 0 ? "-" : "+") + "$" + (abs >= 1000 ? `${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k` : abs);
+  };
+  const fmtDia = (key) => { const d = new Date(`${key}T00:00:00`); return `${d.getDate()} ${V2_MN[d.getMonth()].toLowerCase()}`; };
+  const navBtn = (color) => ({ background: "none", border: "none", color, cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: "6px" });
+
+  return (
+    <div>
+      <V6Sec
+        accent={V6.red}
+        title={`${V2_MFULL[mo].toLowerCase()} ${year}`}
+        comment={"// pnl de cada día operado"}
+        right={<span><button onClick={handlePrev} style={navBtn(V6.dim2)}>[‹]</button><button onClick={handleNext} style={navBtn(V6.dim2)}>[›]</button></span>}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 3, fontSize: 11 }}>
+          {["lu", "ma", "mi", "ju", "vi", "sá", "do"].map(d => (
+            <div key={d} style={{ textAlign: "center", color: V6.dim, paddingBottom: 2 }}>{d}</div>
+          ))}
+          {cells.map((c, i) => {
+            if (!c) return <div key={`e${i}`} />;
+            const finde = c.dow >= 5 && !c.info;
+            const col = c.info ? (c.info.pnl > 0 ? V6.green : c.info.pnl < 0 ? V6.red : V6.fg) : V6.dim;
+            const border = c.info ? (c.info.pnl > 0 ? V6.green : V6.red) : (finde ? "#141414" : V6.border);
+            return (
+              <div key={c.key} style={{ border: `1px solid ${border}`, borderRadius: 2, padding: "3px 0 4px", textAlign: "center", background: finde ? "#101010" : "transparent" }}>
+                <div style={{ fontSize: 12, color: c.info ? V6.white : (finde ? V6.dim : V6.dim2) }}>{c.d}</div>
+                <div style={{ fontSize: 9, color: col }}>{c.info ? fmtCorto(c.info.pnl) : (finde ? "·" : "—")}</div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
+          <span style={{ color: V6.green }}>+</span> ganador &nbsp; <span style={{ color: V6.red }}>−</span> perdedor &nbsp; — sin operar &nbsp; · fin de semana
+        </div>
+      </V6Sec>
+
+      <V6Sec accent={V6.red} title="resumen del mes" comment={`// ${V2_MFULL[mo].toLowerCase()} ${year}`}>
+        <div style={{ fontSize: 12, color: V6.dim2 }}>días operados: <b style={{ color: V6.white }}>{daysOperados}</b></div>
+        <div style={{ fontSize: 12, color: V6.dim2 }}>pnl del mes: <b style={{ color: pnlMes >= 0 ? V6.green : V6.red }}>{fmt(Math.round(pnlMes))}</b></div>
+        <div style={{ fontSize: 12, color: V6.dim2 }}>
+          mejor día: {mejor
+            ? <><b style={{ color: V6.green }}>{fmt(Math.round(mejor[1].pnl))}</b> <span style={{ color: V6.dim }}>({fmtDia(mejor[0])})</span></>
+            : <span style={{ color: V6.dim }}>—</span>}
+        </div>
+        <div style={{ fontSize: 12, color: V6.dim2 }}>
+          peor día: {peor
+            ? <><b style={{ color: V6.red }}>{fmt(Math.round(peor[1].pnl))}</b> <span style={{ color: V6.dim }}>({fmtDia(peor[0])})</span></>
+            : <span style={{ color: V6.dim }}>—</span>}
+        </div>
+
+        {daysOperados > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+              <span style={{ color: V6.dim }}>ganadores {wins}</span><span style={{ color: V6.dim }}>{Math.round((wins / daysOperados) * 100)}%</span>
+            </div>
+            <div style={{ ...v6Track, marginTop: 3, marginBottom: 6 }}><div style={v6Fill((wins / daysOperados) * 100, V6.green)} /></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+              <span style={{ color: V6.dim }}>perdedores {losses}</span><span style={{ color: V6.dim }}>{Math.round((losses / daysOperados) * 100)}%</span>
+            </div>
+            <div style={{ ...v6Track, marginTop: 3 }}><div style={v6Fill((losses / daysOperados) * 100, V6.red)} /></div>
+          </div>
+        )}
+      </V6Sec>
+    </div>
+  );
+}
+
 function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period, setPeriod }) {
   const days = v2Agg(scoped);
   const anchor = days.length ? days[days.length - 1][0] : v2LocalIso(new Date());
@@ -5966,6 +6078,8 @@ function DashboardV6({
             setTradePage={setTradePage}
             onOpen={(t) => { setAddingTrade(false); setEditingTrade(t); }}
           />
+        ) : nav === "calendar" ? (
+          <V6Calendario scoped={scoped} />
         ) : (
           <div style={{ border: `1px solid ${V6.border}`, padding: "16px 14px" }}>
             <div style={{ color: V6.white, fontWeight: 700, marginBottom: 6 }}>{cur.label}</div>
