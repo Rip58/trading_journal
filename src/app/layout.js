@@ -1,5 +1,16 @@
 import { ClerkProvider, SignInButton, SignUpButton, Show } from "@clerk/nextjs";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+// Solo para la V6 (estética de terminal); el resto de la app sigue con la
+// tipografía del sistema. next/font la autohospeda y expone la variable en
+// todo el documento, así que su coste es nulo donde no se usa.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-mono-v6",
+  display: "swap",
+});
 
 export const metadata = {
   title: "Diario de Trading",
@@ -30,7 +41,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className={jetbrainsMono.variable}>
       <head>
         <script
           dangerouslySetInnerHTML={{
