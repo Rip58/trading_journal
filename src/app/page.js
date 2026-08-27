@@ -5967,8 +5967,254 @@ function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period,
   );
 }
 
+// Nueva cuenta (crea de verdad), listado agrupado por propfirm con
+// paginación y borrado (de verdad), y una única acción real de sistema.
+// Editar una cuenta abre el formulario más grande de toda la app —status,
+// plan, ocho campos de riesgo—: de momento sigue en V5, con un botón que
+// lleva directo allí. Igual con exportar/importar/tema.
+function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
+  const DEFAULT_PLAN = PROPFIRM_PLANS.Bulenox[0];
+  const [propfirm, setPropfirm] = useState("Bulenox");
+  const [planId, setPlanId] = useState(DEFAULT_PLAN.id);
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const plans = PROPFIRM_PLANS[propfirm] || [];
+
+  const handleCreate = async () => {
+    if (creating) return;
+    const plan = plans.find(p => p.id === planId);
+    if (!plan) { setCreateError("Elige un plan"); return; }
+    if (!name.trim()) { setCreateError("Falta el nombre"); return; }
+    setCreating(true);
+    setCreateError("");
+    try {
+      const payload = {
+        name: name.trim(), propfirm, status: "ACTIVE", type: "EXAMEN",
+        size: plan.size, startSize: plan.size, target: plan.target,
+        dd_limit: plan.dd_limit, threshold: plan.threshold,
+        safetyReserve: plan.safetyReserve, maxContracts: plan.maxContracts,
+        consistency: plan.consistency, daily_limit: plan.daily_limit ?? 0,
+        balance: plan.size,
+      };
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setName("");
+        await fetchAccounts();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCreateError(data.error || "No se pudo crear la cuenta");
+      }
+    } catch {
+      setCreateError("Error de conexión");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const [statusF, setStatusF] = useState("ACTIVE");
+  const [pages, setPages] = useState({});
+  const [deleting, setDeleting] = useState(null);
+  const PER_PAGE = 5;
+
+  const counts = { ACTIVE: 0, CLOSED: 0, ALL: accountsList.length };
+  accountsList.forEach(a => { const s = normStatus(a.status); if (counts[s] !== undefined) counts[s]++; });
+
+  const groups = useMemo(() => {
+    const filtradas = accountsList.filter(a => statusF === "ALL" || normStatus(a.status) === statusF);
+    const g = [];
+    filtradas.forEach(a => {
+      const pf = a.propfirm || "sin propfirm";
+      let entry = g.find(x => x.pf === pf);
+      if (!entry) { entry = { pf, items: [] }; g.push(entry); }
+      entry.items.push(a);
+    });
+    return g;
+  }, [accountsList, statusF]);
+
+  const handleDelete = async (id) => {
+    if (deleting) return;
+    setDeleting(id);
+    try {
+      const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
+      if (res.ok) await fetchAccounts();
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const selStyle = { fontFamily: V6_MONO, fontSize: 12, color: V6.fg, background: "#101010", border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 8px", outline: "none" };
+  const dato = (label, val, color) => (
+    <div>
+      <div style={{ fontSize: 9, color: V6.dim, textTransform: "uppercase", letterSpacing: ".4px" }}>{label}</div>
+      <div style={{ fontSize: 12, color: color || V6.fg, fontVariantNumeric: "tabular-nums" }}>{val}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <V6Sec accent={V6.violet} title="nueva cuenta" comment={"// el plan rellena objetivo, dd y umbral"}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: V6.dim, flex: "0 0 62px" }}>propfirm</span>
+            <select
+              value={propfirm}
+              onChange={e => { const pf = e.target.value; setPropfirm(pf); const first = (PROPFIRM_PLANS[pf] || [])[0]; setPlanId(first ? first.id : ""); }}
+              style={selStyle}
+            >
+              {Object.keys(PROPFIRM_PLANS).map(pf => <option key={pf} value={pf}>{pf}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: V6.dim, flex: "0 0 62px" }}>plan</span>
+            <select value={planId} onChange={e => setPlanId(e.target.value)} style={{ ...selStyle, flex: 1, minWidth: 0 }}>
+              {plans.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: V6.dim, flex: "0 0 62px" }}>nombre</span>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="BX101840-16"
+              style={{ ...selStyle, flex: 1, minWidth: 0 }}
+            />
+            <button onClick={handleCreate} disabled={creating} style={{ fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: creating ? V6.dim : V6.green, background: "none", border: `1px solid ${creating ? V6.border : V6.green}`, borderRadius: 2, padding: "5px 10px", cursor: creating ? "default" : "pointer", whiteSpace: "nowrap" }}>
+              {creating ? "creando…" : "crear"}
+            </button>
+          </div>
+          {createError && <div style={{ fontSize: 11, color: V6.red }}>{createError}</div>}
+        </div>
+      </V6Sec>
+
+      <V6Sec
+        accent={V6.violet}
+        title="cuentas"
+        right={
+          <span>
+            {[["ACTIVE", "activas"], ["CLOSED", "cerradas"], ["ALL", "todas"]].map(([id, label]) => (
+              <button key={id} onClick={() => setStatusF(id)} style={{ fontFamily: "inherit", fontSize: 11, color: id === statusF ? V6.violet : V6.dim, fontWeight: id === statusF ? 700 : 400, background: "none", border: "none", padding: "6px 4px", cursor: "pointer" }}>
+                [{label} {counts[id]}]
+              </button>
+            ))}
+          </span>
+        }
+      >
+        {groups.length === 0 ? (
+          <div style={{ fontSize: 12, color: V6.dim }}>{"// sin cuentas en este filtro"}</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {groups.map(g => {
+              const page = pages[g.pf] || 1;
+              const totalPages = Math.max(1, Math.ceil(g.items.length / PER_PAGE));
+              const pageSafe = Math.min(page, totalPages);
+              const shown = g.items.slice((pageSafe - 1) * PER_PAGE, pageSafe * PER_PAGE);
+              const setPage = (n) => setPages(p => ({ ...p, [g.pf]: n }));
+              return (
+                <div key={g.pf}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: V6.dim2, textTransform: "lowercase" }}>{g.pf} <span style={{ opacity: 0.7 }}>· {g.items.length}</span></span>
+                    {totalPages > 1 && (
+                      <span style={{ fontSize: 11 }}>
+                        <button onClick={() => setPage(Math.max(1, pageSafe - 1))} disabled={pageSafe === 1} style={{ background: "none", border: "none", fontFamily: "inherit", color: pageSafe === 1 ? V6.border : V6.dim2, cursor: pageSafe === 1 ? "default" : "pointer", padding: "6px" }}>[‹]</button>
+                        <span style={{ color: V6.dim }}>{pageSafe}/{totalPages}</span>
+                        <button onClick={() => setPage(Math.min(totalPages, pageSafe + 1))} disabled={pageSafe === totalPages} style={{ background: "none", border: "none", fontFamily: "inherit", color: pageSafe === totalPages ? V6.border : V6.dim2, cursor: pageSafe === totalPages ? "default" : "pointer", padding: "6px" }}>[›]</button>
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {shown.map(a => {
+                      const cerrada = normStatus(a.status) === "CLOSED";
+                      return (
+                        <div key={a.id} style={{ border: `1px solid ${V6.border}`, borderLeft: `2px solid ${cerrada ? V6.red : V6.violet}`, padding: "8px 10px" }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: cerrada ? V6.red : V6.white, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                            {cerrada && <span style={{ fontSize: 10, color: V6.red, flexShrink: 0 }}>[cerrada]</span>}
+                            <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: V6.white, flexShrink: 0 }}>${Math.round(a.size || 0).toLocaleString()}</span>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginBottom: 8 }}>
+                            {dato("objetivo", a.target ? `$${Math.round(a.target).toLocaleString()}` : "—")}
+                            {dato("dd máx.", a.dd_limit ? `$${Math.round(a.dd_limit).toLocaleString()}` : "—")}
+                            {dato("diario", a.daily_limit ? `$${Math.round(a.daily_limit).toLocaleString()}` : "—")}
+                            {dato("umbral", a.threshold ? `$${Math.round(a.threshold).toLocaleString()}` : "—", V6.red)}
+                          </div>
+                          <div style={{ fontSize: 11 }}>
+                            <button onClick={onExit} style={{ fontFamily: "inherit", color: V6.dim2, background: "none", border: "none", padding: 0, marginRight: 14, cursor: "pointer" }}>[editar en V5]</button>
+                            <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} style={{ fontFamily: "inherit", color: deleting === a.id ? V6.dim : V6.red, background: "none", border: "none", padding: 0, cursor: deleting === a.id ? "default" : "pointer" }}>
+                              [{deleting === a.id ? "borrando…" : "borrar"}]
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </V6Sec>
+
+      <V6Sec accent={V6.violet} title="sistema" comment={"// exportar, importar y tema siguen en V5 por ahora"}>
+        <V6ForceUpdate />
+      </V6Sec>
+    </div>
+  );
+}
+
+// Misma lógica que "actualizar --forzar" de V5: versión sin caché, borra
+// cachés y service workers, recarga con el parámetro de versión.
+function V6ForceUpdate() {
+  const [state, setState] = useState("idle");
+
+  const run = async () => {
+    if (state === "working") return;
+    setState("working");
+    let target = "";
+    try {
+      const res = await fetch(`/api/version?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        target = (data.commitSha && data.commitSha !== "development") ? data.commitSha : data.deploymentId;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    try {
+      if (typeof caches !== "undefined") {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    try {
+      if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("v", (target && target !== "local") ? target : String(Date.now()));
+    window.location.replace(nextUrl.toString());
+  };
+
+  return (
+    <button onClick={run} disabled={state === "working"} style={{ fontFamily: "inherit", fontSize: 12, background: "none", border: "none", padding: 0, cursor: state === "working" ? "default" : "pointer", color: state === "working" ? V6.dim : V6.fg }}>
+      <span style={{ color: V6.green }}>$</span> {state === "working" ? "actualizando…" : "actualizar --forzar"}
+    </button>
+  );
+}
+
 function DashboardV6({
-  trades, accountsList, onExit,
+  trades, accountsList, onExit, fetchAccounts,
   addingTrade, setAddingTrade, editingTrade, setEditingTrade,
   deleteConfirm, setDeleteConfirm, saveTrade, deleteTrade,
   activeAccountsForForm, allAccountsForForm,
@@ -6081,13 +6327,7 @@ function DashboardV6({
         ) : nav === "calendar" ? (
           <V6Calendario scoped={scoped} />
         ) : (
-          <div style={{ border: `1px solid ${V6.border}`, padding: "16px 14px" }}>
-            <div style={{ color: V6.white, fontWeight: 700, marginBottom: 6 }}>{cur.label}</div>
-            <div style={{ fontSize: 12, color: V6.dim }}>
-              {"// aún no rediseñada en V6 · disponible en "}
-              <button onClick={onExit} style={{ fontFamily: "inherit", fontSize: "inherit", color: V6.green, background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>V5</button>
-            </div>
-          </div>
+          <V6Ajustes accountsList={accountsList} fetchAccounts={fetchAccounts} onExit={onExit} />
         )}
 
       </main>
@@ -7734,6 +7974,7 @@ export default function App() {
               trades={trades}
               accountsList={accountsList}
               onExit={() => setCurrentTab("v2")}
+              fetchAccounts={fetchAccounts}
               addingTrade={addingTrade}
               setAddingTrade={setAddingTrade}
               editingTrade={editingTrade}
