@@ -199,6 +199,22 @@ button:active {
   box-sizing: border-box;
 }
 
+/* Pantalla de carga de V6: la barra arranca vacía y se rellena una vez, en
+   el mismo tiempo fijo (1.4s) que espera el JS antes de enseñar la app —
+   ver introDone en App(). No es un barrido en bucle: cuando termina se
+   queda llena hasta que los datos estén listos y se cambie de pantalla. */
+.v6-carga-barra {
+  width: 0%;
+  animation: v6CargaBarra 1.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes v6CargaBarra {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v6-carga-barra { animation: none; width: 100%; }
+}
+
 /* V6 — cursor de terminal parpadeando junto al nombre de la hoja abierta,
    en el prompt que hace de menú inferior. */
 .v6-cursor {

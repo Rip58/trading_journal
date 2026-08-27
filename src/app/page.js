@@ -4040,6 +4040,7 @@ const V6 = {
   fg: "#E8E8E8",
   green: "#4ECCA3",
   amber: "#E2B144",
+  orange: "#E0793C",
   red: "#E8536E",
   violet: "#A78BFA",
   blue: "#5AA9E6",
@@ -4994,6 +4995,14 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
   };
 
   const selStyle = { fontFamily: V6_MONO, fontSize: 12, color: V6.fg, background: "#101010", border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 8px", outline: "none" };
+  // Cada propfirm con su propio color de acento en la línea lateral, para
+  // distinguirlas de un vistazo en el listado agrupado.
+  const pfColor = (pf) => {
+    const p = (pf || "").toLowerCase();
+    if (p.includes("lucid")) return V6.amber;
+    if (p.includes("bulenox")) return V6.orange;
+    return V6.violet;
+  };
   const dato = (label, val, color) => (
     <div>
       <div style={{ fontSize: 9, color: V6.dim, textTransform: "uppercase", letterSpacing: ".4px" }}>{label}</div>
@@ -5096,7 +5105,7 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
                         );
                       }
                       return (
-                        <div key={a.id} style={{ border: `1px solid ${V6.border}`, borderLeft: `2px solid ${cerrada ? V6.red : V6.violet}`, padding: "8px 10px" }}>
+                        <div key={a.id} style={{ border: `1px solid ${V6.border}`, borderLeft: `2px solid ${cerrada ? V6.red : pfColor(a.propfirm)}`, padding: "8px 10px" }}>
                           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: cerrada ? V6.red : V6.white, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
                             {cerrada && <span style={{ fontSize: 10, color: V6.red, flexShrink: 0 }}>[cerrada]</span>}
@@ -5520,11 +5529,8 @@ function DashboardV6({
             >
               v5
             </button>
-            <UserButton />
+            <UserButton appearance={{ elements: { userButtonAvatarBox: { borderRadius: "2px" } } }} />
           </span>
-        </div>
-        <div style={{ fontSize: 11, color: V6.dim, marginBottom: 8 }}>
-          {"// versión experimental — mismos datos, solo cambia el traje"}
         </div>
 
         {/* En ajustes no pinta nada: ni se filtran trades ni se añaden desde
@@ -5628,6 +5634,17 @@ export default function App() {
   // reconstruye sin ninguna cuenta y sale plana en cero durante un instante,
   // hasta que llegan y se repinta. De ahí la sensación de que tarda.
   const [acctsReady, setAcctsReady] = useState(false);
+  // La barra de carga arranca vacía y se rellena en un tiempo fijo; hasta que
+  // termina no se enseña V6, aunque los datos ya hayan llegado antes. Con
+  // movimiento reducido se salta directa, sin esperar a una animación que no
+  // se verá.
+  const [introDone, setIntroDone] = useState(false);
+  useEffect(() => {
+    const reducido = typeof window !== "undefined" && window.matchMedia
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const t = setTimeout(() => setIntroDone(true), reducido ? 0 : 1400);
+    return () => clearTimeout(t);
+  }, []);
   const [editingTrade, setEditingTrade] = useState(null);
   const [addingTrade, setAddingTrade] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -5940,7 +5957,7 @@ export default function App() {
       <SundayReminder />
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
 
-      {loading || !acctsReady ? (
+      {loading || !acctsReady || !introDone ? (
         <div className="v5-carga-pantalla" style={{ background: V6.bg }}>
           <div style={{ width: "100%", maxWidth: 300, fontFamily: V6_MONO, boxSizing: "border-box" }}>
             <div style={{ fontSize: 13, marginBottom: 14 }}>
@@ -5950,7 +5967,7 @@ export default function App() {
               <span className="v6-cursor" style={{ color: V6.white }}>_</span>
             </div>
             <div style={{ position: "relative", height: 3, borderRadius: 1, overflow: "hidden", background: V6.border }}>
-              <span className="v5-barrido" style={{ background: V6.green }} />
+              <span className="v6-carga-barra" style={{ position: "absolute", top: 0, bottom: 0, left: 0, background: V6.green, borderRadius: 1 }} />
             </div>
             <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
               {"// cargando tus cuentas y tus días"}
