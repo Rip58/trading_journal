@@ -6165,12 +6165,109 @@ function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period,
   );
 }
 
+// Formulario de edición completo: mismos campos que V5 (nombre, tipo,
+// estado, propfirm con opción "otra…", plan, y los siete campos de riesgo),
+// mismo payload al guardar. Sustituye a la fila normal de la cuenta mientras
+// está en edición.
+function V6EditAccount({
+  editAcct, setEditAcct, editPfCustom, setEditPfCustom, editPlanId, setEditPlanId,
+  applyEditPlan, propfirmOpts, updating, updateError, onSave, onCancel,
+}) {
+  const selStyle = { fontFamily: "inherit", fontSize: 12, color: V6.fg, background: "#101010", border: `1px solid ${V6.border}`, borderRadius: 2, padding: "5px 8px", outline: "none", width: "100%", boxSizing: "border-box" };
+  const row = (label, control, note) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ color: V6.dim, flex: "0 0 88px", fontSize: 11 }}>
+        {label}{note && <span style={{ opacity: 0.7 }}> · {note}</span>}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>{control}</span>
+    </div>
+  );
+  const numField = (label, field, kind, note) => row(label, (
+    <input
+      type={kind === "text" ? "text" : "number"}
+      value={editAcct[field] !== undefined && editAcct[field] !== null ? editAcct[field] : ""}
+      onChange={e => {
+        const v = e.target.value;
+        setEditAcct(cur => ({ ...cur, [field]: v === "" ? null : (kind === "text" ? v : kind === "int" ? parseInt(v) : parseFloat(v)) }));
+      }}
+      style={{ ...selStyle, borderColor: field === "threshold" ? V6.red : V6.border }}
+    />
+  ), note);
+
+  return (
+    <div style={{ border: `1px solid ${V6.violet}`, padding: "10px 10px 12px", background: "rgba(167,139,250,0.05)" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
+        {row("nombre", <input value={editAcct.name} onChange={e => setEditAcct(cur => ({ ...cur, name: e.target.value }))} style={selStyle} />)}
+        {row("tipo", (
+          <select value={editAcct.type || "EXAMEN"} onChange={e => setEditAcct(cur => ({ ...cur, type: e.target.value }))} style={selStyle}>
+            <option value="EXAMEN">examen</option>
+            <option value="REAL">real</option>
+          </select>
+        ))}
+        {row("estado", (
+          <select value={normStatus(editAcct.status)} onChange={e => setEditAcct(cur => ({ ...cur, status: e.target.value }))} style={selStyle}>
+            <option value="ACTIVE">activa</option>
+            <option value="CLOSED">cerrada</option>
+          </select>
+        ))}
+        {row("propfirm", (
+          <select
+            value={editPfCustom ? "__custom__" : (editAcct.propfirm || "Bulenox")}
+            onChange={e => {
+              if (e.target.value === "__custom__") { setEditPfCustom(true); setEditAcct(cur => ({ ...cur, propfirm: "" })); }
+              else { setEditPfCustom(false); setEditAcct(cur => ({ ...cur, propfirm: e.target.value })); }
+            }}
+            style={selStyle}
+          >
+            {propfirmOpts.map(pf => <option key={pf} value={pf}>{pf}</option>)}
+            <option value="__custom__">otra…</option>
+          </select>
+        ))}
+        {editPfCustom && row("nueva propfirm", (
+          <input value={editAcct.propfirm ?? ""} onChange={e => setEditAcct(cur => ({ ...cur, propfirm: e.target.value }))} autoFocus style={{ ...selStyle, borderColor: V6.violet }} />
+        ))}
+        {row("plan", (
+          <select
+            value={editPlanId}
+            onChange={e => { setEditPlanId(e.target.value); applyEditPlan(e.target.value, editAcct.propfirm); }}
+            disabled={!(PROPFIRM_PLANS[editAcct.propfirm] || []).length}
+            style={selStyle}
+          >
+            <option value="">{(PROPFIRM_PLANS[editAcct.propfirm] || []).length ? "personalizado…" : "sin planes"}</option>
+            {(PROPFIRM_PLANS[editAcct.propfirm] || []).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        ))}
+
+        <div style={{ height: 1, background: V6.border, margin: "2px 0" }} />
+
+        {numField("objetivo ($)", "target", "number")}
+        {numField("dd máximo ($)", "dd_limit", "number", "pierdes la cuenta")}
+        {numField("límite diario ($)", "daily_limit", "number")}
+        {numField("umbral autoliq. ($)", "threshold", "number")}
+        {numField("reserva safety ($)", "safetyReserve", "number")}
+        {numField("máx. contratos", "maxContracts", "int")}
+        {numField("consistencia", "consistency", "text")}
+
+        {updateError && <div style={{ fontSize: 11, color: V6.red }}>{updateError}</div>}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button onClick={onSave} disabled={updating} style={{ flex: 1, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: updating ? V6.dim : V6.green, background: "none", border: `1px solid ${updating ? V6.border : V6.green}`, borderRadius: 2, padding: "6px 10px", cursor: updating ? "default" : "pointer" }}>
+            {updating ? "guardando…" : "guardar"}
+          </button>
+          <button onClick={onCancel} disabled={updating} style={{ flex: 1, fontFamily: "inherit", fontSize: 12, color: V6.dim2, background: "none", border: `1px solid ${V6.border}`, borderRadius: 2, padding: "6px 10px", cursor: updating ? "default" : "pointer" }}>
+            cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Nueva cuenta (crea de verdad), listado agrupado por propfirm con
-// paginación y borrado (de verdad), y una única acción real de sistema.
-// Editar una cuenta abre el formulario más grande de toda la app —status,
-// plan, ocho campos de riesgo—: de momento sigue en V5, con un botón que
-// lleva directo allí. Igual con exportar/importar/tema.
-function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
+// paginación y borrado (de verdad), edición completa (mismos campos que V5)
+// y una única acción real de sistema. Importar CSV, sincronizar con el
+// broker y borrar todos los datos se quedan en V5 por ahora.
+function V6Ajustes({ accountsList, fetchAccounts }) {
   const DEFAULT_PLAN = PROPFIRM_PLANS.Bulenox[0];
   const [propfirm, setPropfirm] = useState("Bulenox");
   const [planId, setPlanId] = useState(DEFAULT_PLAN.id);
@@ -6243,6 +6340,59 @@ function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
       if (res.ok) await fetchAccounts();
     } finally {
       setDeleting(null);
+    }
+  };
+
+  // Editar cuenta: mismo formulario y mismo payload que V5 (se manda la
+  // cuenta entera; la API ignora los campos que no reconoce), salvo
+  // sincronizar con el broker, que se queda en V5.
+  const propfirmOpts = [...new Set(["Bulenox", "Lucid", ...accountsList.map(a => a.propfirm).filter(Boolean)])];
+  const [editingId, setEditingId] = useState(null);
+  const [editAcct, setEditAcct] = useState(null);
+  const [editPfCustom, setEditPfCustom] = useState(false);
+  const [editPlanId, setEditPlanId] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+
+  const startEdit = (a) => {
+    setEditingId(a.id);
+    setEditAcct(a);
+    setEditPfCustom(false);
+    setEditPlanId("");
+    setUpdateError("");
+  };
+  const cancelEdit = () => { setEditingId(null); setEditAcct(null); setUpdateError(""); };
+  const applyEditPlan = (pid, propfirmVal) => {
+    const plan = (PROPFIRM_PLANS[propfirmVal] || []).find(p => p.id === pid);
+    if (!plan) return;
+    setEditAcct(cur => ({
+      ...cur, size: plan.size, startSize: plan.size, target: plan.target,
+      dd_limit: plan.dd_limit, threshold: plan.threshold, safetyReserve: plan.safetyReserve,
+      maxContracts: plan.maxContracts, consistency: plan.consistency, daily_limit: plan.daily_limit ?? 0,
+    }));
+  };
+  const handleUpdate = async () => {
+    if (updating || !editAcct) return;
+    if (!editAcct.name) { setUpdateError("Falta el nombre"); return; }
+    setUpdating(true);
+    setUpdateError("");
+    try {
+      const res = await fetch(`/api/accounts/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editAcct),
+      });
+      if (res.ok) {
+        await fetchAccounts();
+        cancelEdit();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setUpdateError(data.error || "No se pudo actualizar la cuenta");
+      }
+    } catch {
+      setUpdateError("Error de conexión");
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -6328,6 +6478,25 @@ function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {shown.map(a => {
                       const cerrada = normStatus(a.status) === "CLOSED";
+                      if (editingId === a.id) {
+                        return (
+                          <V6EditAccount
+                            key={a.id}
+                            editAcct={editAcct}
+                            setEditAcct={setEditAcct}
+                            editPfCustom={editPfCustom}
+                            setEditPfCustom={setEditPfCustom}
+                            editPlanId={editPlanId}
+                            setEditPlanId={setEditPlanId}
+                            applyEditPlan={applyEditPlan}
+                            propfirmOpts={propfirmOpts}
+                            updating={updating}
+                            updateError={updateError}
+                            onSave={handleUpdate}
+                            onCancel={cancelEdit}
+                          />
+                        );
+                      }
                       return (
                         <div key={a.id} style={{ border: `1px solid ${V6.border}`, borderLeft: `2px solid ${cerrada ? V6.red : V6.violet}`, padding: "8px 10px" }}>
                           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
@@ -6342,7 +6511,7 @@ function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
                             {dato("umbral", a.threshold ? `$${Math.round(a.threshold).toLocaleString()}` : "—", V6.red)}
                           </div>
                           <div style={{ fontSize: 11 }}>
-                            <button onClick={onExit} style={{ fontFamily: "inherit", color: V6.dim2, background: "none", border: "none", padding: 0, marginRight: 14, cursor: "pointer" }}>[editar en V5]</button>
+                            <button onClick={() => startEdit(a)} style={{ fontFamily: "inherit", color: V6.green, background: "none", border: "none", padding: 0, marginRight: 14, cursor: "pointer" }}>[editar]</button>
                             <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} style={{ fontFamily: "inherit", color: deleting === a.id ? V6.dim : V6.red, background: "none", border: "none", padding: 0, cursor: deleting === a.id ? "default" : "pointer" }}>
                               [{deleting === a.id ? "borrando…" : "borrar"}]
                             </button>
@@ -6358,7 +6527,7 @@ function V6Ajustes({ accountsList, fetchAccounts, onExit }) {
         )}
       </V6Sec>
 
-      <V6Sec accent={V6.violet} title="sistema" comment={"// exportar, importar y tema siguen en V5 por ahora"}>
+      <V6Sec accent={V6.violet} title="sistema" comment={"// importar CSV, sincronizar con el bróker y borrar todo siguen en V5"}>
         <V6ForceUpdate />
       </V6Sec>
     </div>
@@ -6465,7 +6634,9 @@ function DashboardV6({
           {"// versión experimental — mismos datos, solo cambia el traje"}
         </div>
 
-        {visibleAccounts.length > 0 && (
+        {/* En ajustes no pinta nada: ni se filtran trades ni se añaden desde
+            ahí, y esa hoja ya tiene su propio filtro de estado por cuenta. */}
+        {nav !== "settings" && visibleAccounts.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <select
               value={acct}
@@ -6525,7 +6696,7 @@ function DashboardV6({
         ) : nav === "calendar" ? (
           <V6Calendario scoped={scoped} />
         ) : (
-          <V6Ajustes accountsList={accountsList} fetchAccounts={fetchAccounts} onExit={onExit} />
+          <V6Ajustes accountsList={accountsList} fetchAccounts={fetchAccounts} />
         )}
 
       </main>
