@@ -5520,7 +5520,7 @@ function DashboardV6({
               onClick={() => { setEditingTrade(null); setAddingTrade(true); }}
               style={{ fontFamily: V6_MONO, fontSize: 12, background: "none", border: "none", cursor: "pointer", padding: "8px 0", whiteSpace: "nowrap" }}
             >
-              [<span style={{ color: V6.green, fontWeight: 700 }}>+ día</span>]
+              [<span style={{ color: V6.green, fontWeight: 700 }}>+ trade</span>]
             </button>
             <button
               onClick={onExit}
@@ -5529,7 +5529,18 @@ function DashboardV6({
             >
               v5
             </button>
-            <UserButton appearance={{ elements: { userButtonAvatarBox: { borderRadius: "2px" } } }} />
+            <UserButton
+              appearance={{
+                elements: {
+                  userButtonAvatarBox: {
+                    borderRadius: "2px",
+                    padding: "2px",
+                    background: `linear-gradient(135deg, ${V6.green}, ${V6.red})`,
+                  },
+                  userButtonAvatarImage: { borderRadius: "1px" },
+                },
+              }}
+            />
           </span>
         </div>
 
@@ -5642,7 +5653,7 @@ export default function App() {
   useEffect(() => {
     const reducido = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t = setTimeout(() => setIntroDone(true), reducido ? 0 : 1400);
+    const t = setTimeout(() => setIntroDone(true), reducido ? 0 : 2000);
     return () => clearTimeout(t);
   }, []);
   const [editingTrade, setEditingTrade] = useState(null);
