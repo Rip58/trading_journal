@@ -5486,6 +5486,7 @@ function DashboardV6({
 
   const isRetired = (a) => isClosedAcct(a);
   const visibleAccounts = accountsList.filter(a => showClosed || !isRetired(a));
+  const retiredCount = accountsList.filter(isRetired).length;
   const visibleNames = new Set(visibleAccounts.map(a => a.name));
   const scoped = trades.filter(t =>
     t.instrument !== "Ajuste de Broker" &&
@@ -5528,16 +5529,44 @@ function DashboardV6({
 
         {/* En ajustes no pinta nada: ni se filtran trades ni se añaden desde
             ahí, y esa hoja ya tiene su propio filtro de estado por cuenta. */}
-        {nav !== "settings" && visibleAccounts.length > 0 && (
-          <div style={{ marginBottom: 18, maxWidth: 260 }}>
-            <V6Select
-              value={acct}
-              onChange={v => { setAcct(v); setTradePage(1); }}
-              options={[
-                { value: "all", label: "todas las cuentas" },
-                ...visibleAccounts.map(a => ({ value: a.name, label: `${a.name}${isRetired(a) ? " · cerrada" : ""}` })),
-              ]}
-            />
+        {/* Cuentas quemadas: ocultas por defecto, se recuperan para consultar
+            sus estadísticas. Si se ocultan estando seleccionada una, se vuelve
+            a "todas las cuentas" para no quedarse en una cuenta invisible. */}
+        {nav !== "settings" && (visibleAccounts.length > 0 || retiredCount > 0) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+            {visibleAccounts.length > 0 && (
+              <div style={{ flex: "1 1 200px", minWidth: 0, maxWidth: 260 }}>
+                <V6Select
+                  value={acct}
+                  onChange={v => { setAcct(v); setTradePage(1); }}
+                  options={[
+                    { value: "all", label: "todas las cuentas" },
+                    ...visibleAccounts.map(a => ({ value: a.name, label: `${a.name}${isRetired(a) ? " · cerrada" : ""}` })),
+                  ]}
+                />
+              </div>
+            )}
+            {retiredCount > 0 && (
+              <button
+                onClick={() => {
+                  const next = !showClosed;
+                  setShowClosed(next);
+                  if (!next && acct !== "all" && accountsList.some(a => a.name === acct && isRetired(a))) setAcct("all");
+                }}
+                aria-pressed={showClosed}
+                title={showClosed ? "Ocultar cuentas quemadas" : `Mostrar ${retiredCount} cuenta${retiredCount > 1 ? "s quemadas" : " quemada"}`}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, fontFamily: V6_MONO, fontSize: 12, fontWeight: 700,
+                  padding: "5px 10px", borderRadius: 2, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                  background: showClosed ? "rgba(232,83,110,0.12)" : "#101010",
+                  border: `1px solid ${showClosed ? V6.red : V6.border}`,
+                  color: showClosed ? V6.red : V6.dim,
+                }}
+              >
+                <IconFlame s={13} c={showClosed ? V6.red : V6.dim} />
+                {retiredCount}
+              </button>
+            )}
           </div>
         )}
 
