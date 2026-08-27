@@ -5631,16 +5631,241 @@ function V6Trades({ scoped, tradePage, setTradePage, onOpen }) {
   );
 }
 
+// Cabecera de sección: ▸ del color de la hoja + título, con línea de
+// comentario opcional debajo. Mismo ritmo en las cuatro fichas del dashboard.
+function V6Sec({ accent, title, right, comment, children }) {
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ color: accent }}>▸</span>
+        <span style={{ color: V6.white, fontWeight: 700, fontSize: 14 }}>{title}</span>
+        {right && <span style={{ marginLeft: "auto", fontSize: 11, color: V6.dim, whiteSpace: "nowrap" }}>{right}</span>}
+      </div>
+      {comment && <div style={{ fontSize: 11, color: V6.dim, paddingLeft: 18, marginTop: 2, marginBottom: 8 }}>{comment}</div>}
+      <div style={{ paddingLeft: 18 }}>{children}</div>
+    </div>
+  );
+}
+
+// Carril punteado + relleno segmentado: se lee como una regla, no como una
+// pastilla lisa, y es lo bastante fino para no distraer a 13px de tipo.
+const v6Track = { position: "relative", height: 8, borderRadius: 1, background: "#141414", backgroundImage: "repeating-linear-gradient(90deg, #262626 0 2px, transparent 2px 4px)" };
+const v6Fill = (pct, color) => ({ position: "absolute", inset: 0, width: `${Math.max(0, Math.min(100, pct))}%`, borderRadius: 1, backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 14px, #0A0A0A 14px 16px)` });
+
+// Mismo cálculo que la ficha Balance de V5 (computeCushion + objetivo/umbral
+// en la misma escala): una cuenta muestra la cifra grande con su barra, varias
+// muestran la lista. La marca roja de la barra es el umbral de liquidación.
+function V6Balance({ liveAccounts, trades }) {
+  const rows = liveAccounts.map(a => {
+    const { balance, basis, threshold } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
+    const base = a.startSize ?? a.size;
+    return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0, threshold };
+  });
+
+  const progreso = (r) => {
+    if (!r.target) return null;
+    const objetivo = r.base + r.target;
+    const falta = objetivo - r.balance;
+    const pct = Math.max(0, Math.min(100, ((r.balance - r.base) / r.target) * 100));
+    const liq = r.threshold
+      ? { pct: Math.max(0, Math.min(100, ((r.threshold - r.base) / r.target) * 100)), colchon: r.balance - r.threshold, fuera: r.threshold <= r.base }
+      : null;
+    return { objetivo, falta, pct, liq };
+  };
+
+  if (rows.length === 0) {
+    return <div style={{ fontSize: 12, color: V6.dim }}>{"// sin cuentas activas"}</div>;
+  }
+
+  if (rows.length === 1) {
+    const r = rows[0];
+    const pct = r.base ? Math.round((r.pnl / r.base) * 100) : null;
+    const pr = progreso(r);
+    return (
+      <div>
+        <div style={{ fontSize: 12, color: V6.dim, marginBottom: 4 }}>{r.name}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span style={{ fontSize: 26, fontWeight: 700, color: V6.white }}>${Math.round(r.balance).toLocaleString()}</span>
+          {pct !== null && (
+            <span style={{ fontSize: 13, fontWeight: 700, color: r.pnl >= 0 ? V6.green : V6.red }}>{r.pnl >= 0 ? "↗" : "↘"} {Math.abs(pct)}%</span>
+          )}
+        </div>
+        {pr && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 5, fontSize: 12 }}>
+              <span style={{ color: V6.dim2 }}>
+                {pr.falta > 0
+                  ? <>faltan <span style={{ color: V6.amber, fontWeight: 700 }}>${Math.round(pr.falta).toLocaleString()}</span> para el objetivo</>
+                  : <span style={{ color: V6.amber, fontWeight: 700 }}>objetivo alcanzado</span>}
+              </span>
+              <span style={{ color: V6.dim }}>{Math.round(pr.pct)}%</span>
+            </div>
+            <div style={v6Track}>
+              <div style={v6Fill(pr.pct, V6.green)} />
+              {pr.liq && <div style={{ position: "absolute", top: -3, bottom: -3, left: `${pr.liq.pct}%`, width: pr.liq.fuera ? 3 : 2, background: V6.red }} />}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 5, fontSize: 12 }}>
+              <span style={{ color: V6.dim2 }}>
+                {!pr.liq
+                  ? <span style={{ color: V6.dim }}>sin umbral de liquidación</span>
+                  : pr.liq.colchon > 0
+                    ? <>faltan <span style={{ color: V6.red, fontWeight: 700 }}>${Math.round(pr.liq.colchon).toLocaleString()}</span> para la liquidación</>
+                    : <span style={{ color: V6.red, fontWeight: 700 }}>por debajo de la liquidación</span>}
+              </span>
+              <span style={{ color: V6.amber }}>${Math.round(pr.objetivo).toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
+          {`base $${Math.round(r.base).toLocaleString()} · acumulado ${fmt(Math.round(r.pnl))}${r.basis ? ` · cierre ${r.basis}` : ""}`}
+        </div>
+      </div>
+    );
+  }
+
+  const total = rows.reduce((s, r) => s + r.balance, 0);
+  return (
+    <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {rows.map(r => {
+          const retirada = normStatus(r.status) === "CLOSED";
+          const pr = progreso(r);
+          return (
+            <div key={r.name}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 13, color: retirada ? V6.red : V6.fg, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.name}{retirada ? " [cerrada]" : ""}
+                </span>
+                <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: V6.white }}>${Math.round(r.balance).toLocaleString()}</span>
+                  <span style={{ fontSize: 12, color: r.pnl >= 0 ? V6.green : V6.red }}>{fmt(Math.round(r.pnl))}</span>
+                </span>
+              </div>
+              {pr ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <div style={{ ...v6Track, height: 3, flex: 1 }}><div style={v6Fill(pr.pct, V6.green)} /></div>
+                  <span style={{ fontSize: 10, color: V6.dim, whiteSpace: "nowrap", flexShrink: 0 }}>{pr.falta > 0 ? `faltan $${Math.round(pr.falta).toLocaleString()}` : "objetivo alcanzado"}</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: V6.dim, marginTop: 2 }}>{"// sin objetivo definido"}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>{`total $${Math.round(total).toLocaleString()} en ${rows.length} cuentas`}</div>
+    </div>
+  );
+}
+
+// Mismo cálculo que la ficha % de acierto de V5 (v2Slice sobre el periodo
+// elegido). El donut pasa a barra: a este tamaño de letra dice lo mismo en
+// una línea y deja sitio a los tres datos de debajo.
+function V6Acierto({ days, anchor, period, setPeriod }) {
+  const ranges = v2Ranges(period, anchor, 0);
+  const cur = v2Slice(days, ranges.cur);
+  const prev = v2Slice(days, ranges.prev);
+  const diff = Math.round(cur.wr - prev.wr);
+  const cmpTxt = ranges.prevParcial ? ` (mismos ${ranges.prevDias} días)` : "";
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontSize: 26, fontWeight: 700, color: V6.green }}>{Math.round(cur.wr)}%</span>
+        <div style={{ ...v6Track, flex: 1 }}><div style={v6Fill(cur.wr, V6.green)} /></div>
+      </div>
+      <div style={{ fontSize: 12, color: V6.dim2 }}>días operados: <b style={{ color: V6.white }}>{cur.days}</b></div>
+      <div style={{ fontSize: 12, color: V6.dim2 }}>ganadores: <b style={{ color: V6.green }}>{cur.wins}</b></div>
+      <div style={{ fontSize: 12, color: V6.dim2 }}>perdedores: <b style={{ color: V6.red }}>{cur.losses}</b></div>
+
+      <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
+        {prev.days === 0
+          ? `// sin días operados el periodo anterior: no hay con qué comparar`
+          : `// ${diff >= 0 ? "superior" : "inferior"} en ${Math.abs(diff)}% frente a ${prev.wins}g/${prev.losses}p${cmpTxt}`}
+      </div>
+
+      <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 11 }}>
+        {["year", "month", "week"].map(p => (
+          <button key={p} onClick={() => setPeriod(p)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", color: p === period ? V6.green : V6.dim, fontWeight: p === period ? 700 : 400 }}>
+            [{p === "year" ? "año" : p === "month" ? "mes" : "semana"}]
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Mismo cálculo que la ficha PnL del periodo de V5. Fijo al mes en curso: el
+// dashboard de V6 no lleva selector de periodo aquí, solo en % de acierto.
+function V6PnlPeriodo({ days, anchor }) {
+  const ranges = v2Ranges("month", anchor, 0);
+  const cur = v2Slice(days, ranges.cur);
+  const prev = v2Slice(days, ranges.prev);
+  const dif = cur.pnl - prev.pnl;
+  const cmpTxt = ranges.prevParcial ? ` (mismos ${ranges.prevDias} días)` : "";
+  return (
+    <div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: cur.pnl >= 0 ? V6.green : V6.red }}>{fmt(Math.round(cur.pnl))}</div>
+      <div style={{ fontSize: 11, color: V6.dim, marginTop: 8 }}>
+        {prev.days === 0
+          ? `// sin días operados el mes anterior`
+          : `// frente a ${fmt(Math.round(prev.pnl))} el mes anterior${cmpTxt} · ${fmt(Math.round(dif))}`}
+      </div>
+    </div>
+  );
+}
+
+// Las cuatro fichas ya aprobadas en el lienzo, en orden fijo. Sin gestión de
+// tarjetas (añadir/quitar/reordenar): es la simplificación de esta primera
+// versión, igual que Trades no lleva el filtro de cuentas cerradas todavía.
+function V6Dashboard({ scoped, acct, accountsList, liveAccounts, trades, period, setPeriod }) {
+  const days = v2Agg(scoped);
+  const anchor = days.length ? days[days.length - 1][0] : v2LocalIso(new Date());
+
+  const cushionRows = liveAccounts
+    .map(a => ({ account: a, ...computeCushion(a, trades.filter(t => t.account === a.name), a.size) }))
+    .filter(r => r.cushion !== null && r.cushion !== undefined);
+  const tightest = cushionRows.length ? cushionRows.reduce((m, r) => (r.cushion < m.cushion ? r : m)) : null;
+
+  return (
+    <div>
+      <V6Sec accent={V6.green} title="equity" comment={"// valor de la cuenta contra el umbral"}>
+        <V2Equity trades={scoped} accountFilter={acct} accountsList={accountsList} />
+        {tightest && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: V6.dim2 }}>balance: <b style={{ color: V6.white }}>${Math.round(tightest.balance).toLocaleString()}</b></div>
+            <div style={{ fontSize: 12, color: V6.dim2 }}>umbral: <b style={{ color: V6.red }}>${Math.round(tightest.threshold).toLocaleString()}</b></div>
+            <div style={{ fontSize: 12, color: V6.dim2 }}>colchón: <b style={{ color: tightest.cushion >= 0 ? V6.green : V6.red }}>${Math.round(tightest.cushion).toLocaleString()}</b></div>
+          </div>
+        )}
+      </V6Sec>
+
+      <V6Sec accent={V6.amber} title="balance" comment={"// saldo del último cierre registrado"}>
+        <V6Balance liveAccounts={liveAccounts} trades={trades} />
+      </V6Sec>
+
+      <V6Sec accent={V6.violet} title="% de acierto" comment={"// días ganadores sobre días operados"}>
+        <V6Acierto days={days} anchor={anchor} period={period} setPeriod={setPeriod} />
+      </V6Sec>
+
+      <V6Sec accent={V6.blue} title="pnl del periodo" comment={"// resultado del mes en curso"}>
+        <V6PnlPeriodo days={days} anchor={anchor} />
+      </V6Sec>
+    </div>
+  );
+}
+
 function DashboardV6({
   trades, accountsList, onExit,
   addingTrade, setAddingTrade, editingTrade, setEditingTrade,
   deleteConfirm, setDeleteConfirm, saveTrade, deleteTrade,
   activeAccountsForForm, allAccountsForForm,
 }) {
-  const [nav, setNav] = useState("trades");
+  const [nav, setNav] = useState("dashboard");
   const [acct, setAcct] = useState("all");
   const [showClosed, setShowClosed] = useState(false);
   const [tradePage, setTradePage] = useState(1);
+  const [acertPeriod, setAcertPeriod] = useState("month");
 
   const isRetired = (a) => isClosedAcct(a);
   const visibleAccounts = accountsList.filter(a => showClosed || !isRetired(a));
@@ -5649,6 +5874,7 @@ function DashboardV6({
     t.instrument !== "Ajuste de Broker" &&
     (acct === "all" ? visibleNames.has(t.account) : t.account === acct)
   );
+  const liveAccounts = visibleAccounts.filter(a => acct === "all" || a.name === acct);
 
   const cur = V6_NAV.find(n => n.id === nav) || V6_NAV[0];
 
@@ -5723,7 +5949,17 @@ function DashboardV6({
           />
         )}
 
-        {nav === "trades" ? (
+        {nav === "dashboard" ? (
+          <V6Dashboard
+            scoped={scoped}
+            acct={acct}
+            accountsList={accountsList}
+            liveAccounts={liveAccounts}
+            trades={trades}
+            period={acertPeriod}
+            setPeriod={setAcertPeriod}
+          />
+        ) : nav === "trades" ? (
           <V6Trades
             scoped={scoped}
             tradePage={tradePage}
