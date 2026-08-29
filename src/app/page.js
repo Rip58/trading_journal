@@ -5645,16 +5645,28 @@ export default function App() {
   // reconstruye sin ninguna cuenta y sale plana en cero durante un instante,
   // hasta que llegan y se repinta. De ahí la sensación de que tarda.
   const [acctsReady, setAcctsReady] = useState(false);
-  // La barra de carga arranca vacía y se rellena en un tiempo fijo; hasta que
-  // termina no se enseña V6, aunque los datos ya hayan llegado antes. Con
-  // movimiento reducido se salta directa, sin esperar a una animación que no
-  // se verá.
+  // La barra de carga arranca vacía y sube a 100% en rAF (no con una animación
+  // CSS de "width", que en el arranque compite con el JS de las peticiones y
+  // se ve saltar directa al final en vez de recorrerse). Hasta que llega a
+  // 100% no se enseña V6, aunque los datos ya hayan llegado antes. Con
+  // movimiento reducido se salta directa, sin esperar una animación que no se
+  // verá.
+  const [introPct, setIntroPct] = useState(0);
   const [introDone, setIntroDone] = useState(false);
   useEffect(() => {
     const reducido = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t = setTimeout(() => setIntroDone(true), reducido ? 0 : 2000);
-    return () => clearTimeout(t);
+    const duracion = reducido ? 0 : 900;
+    const inicio = performance.now();
+    let frame;
+    const tick = (ahora) => {
+      const t = duracion === 0 ? 1 : Math.min(1, (ahora - inicio) / duracion);
+      setIntroPct(Math.round(t * 100));
+      if (t < 1) frame = requestAnimationFrame(tick);
+      else setIntroDone(true);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
   }, []);
   const [editingTrade, setEditingTrade] = useState(null);
   const [addingTrade, setAddingTrade] = useState(false);
@@ -5970,15 +5982,20 @@ export default function App() {
 
       {loading || !acctsReady || !introDone ? (
         <div className="v5-carga-pantalla" style={{ background: V6.bg }}>
-          <div style={{ width: "100%", maxWidth: 300, fontFamily: V6_MONO, boxSizing: "border-box" }}>
-            <div style={{ fontSize: 13, marginBottom: 14 }}>
+          <div style={{ width: "100%", maxWidth: 340, fontFamily: V6_MONO, boxSizing: "border-box" }}>
+            <div style={{ fontSize: 13, marginBottom: 16 }}>
               <span style={{ color: V6.green }}>rip58</span><span style={{ color: V6.blue }}>@trading</span>
               <span style={{ color: V6.dim }}>:~</span><span style={{ color: V6.green }}>$</span>{" "}
               <span style={{ color: V6.white }}>cargando</span>
               <span className="v6-cursor" style={{ color: V6.white }}>_</span>
             </div>
-            <div style={{ position: "relative", height: 3, borderRadius: 1, overflow: "hidden", background: V6.border }}>
-              <span className="v6-carga-barra" style={{ position: "absolute", top: 0, bottom: 0, left: 0, background: V6.green, borderRadius: 1 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 22, fontWeight: 700, color: V6.green, minWidth: 54, fontVariantNumeric: "tabular-nums" }}>
+                {introPct}%
+              </span>
+              <div style={{ ...v6Track, flex: 1 }}>
+                <div style={v6Fill(introPct, V6.green)} />
+              </div>
             </div>
             <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
               {"// cargando tus cuentas y tus días"}
