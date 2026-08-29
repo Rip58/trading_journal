@@ -5656,7 +5656,7 @@ export default function App() {
   useEffect(() => {
     const reducido = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const duracion = reducido ? 0 : 900;
+    const duracion = reducido ? 0 : 3000;
     const inicio = performance.now();
     let frame;
     const tick = (ahora) => {
