@@ -5653,6 +5653,10 @@ export default function App() {
   // verá.
   const [introPct, setIntroPct] = useState(0);
   const [introDone, setIntroDone] = useState(false);
+  // La barra llega a 100% y se queda ahí, quieta, hasta que el usuario pulsa
+  // "abrir" — así se ve el final de la animación en vez de saltar solo a la
+  // app en cuanto termina.
+  const [appAbierta, setAppAbierta] = useState(false);
   useEffect(() => {
     const reducido = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -5980,7 +5984,7 @@ export default function App() {
       <SundayReminder />
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
 
-      {loading || !acctsReady || !introDone ? (
+      {!appAbierta ? (
         <div className="v5-carga-pantalla" style={{ background: V6.bg }}>
           <div style={{ width: "100%", maxWidth: 340, fontFamily: V6_MONO, boxSizing: "border-box" }}>
             <div style={{ fontSize: 13, marginBottom: 16 }}>
@@ -6000,6 +6004,18 @@ export default function App() {
             <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
               {"// cargando tus cuentas y tus días"}
             </div>
+            {!loading && acctsReady && introDone && (
+              <button
+                onClick={() => setAppAbierta(true)}
+                style={{
+                  fontFamily: V6_MONO, fontSize: 12, fontWeight: 700, marginTop: 20, width: "100%",
+                  padding: "9px 10px", background: "none", border: `1px solid ${V6.green}`, borderRadius: 2,
+                  color: V6.green, cursor: "pointer",
+                }}
+              >
+                [abrir]
+              </button>
+            )}
           </div>
         </div>
       ) : currentTab === "v2" ? (
