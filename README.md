@@ -16,6 +16,22 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Terminal de Confluencia
+
+Dashboard local para preparar una operación a partir de cuatro capturas de un
+mismo activo en distintas temporalidades. Se sirve como página estática en
+[http://localhost:3000/terminal-confluencia.html](http://localhost:3000/terminal-confluencia.html)
+y no depende del resto de la app (ni de la base de datos ni de Clerk).
+
+La fuente es `docs/terminal-confluencia.part.html`, un fragmento sin `<head>`.
+Tras editarlo hay que regenerar la página envuelta:
+
+```bash
+node scripts/build-terminal-confluencia.mjs
+```
+
+Sigue el sistema de diseño de `docs/v6-design-system.md`.
+
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
