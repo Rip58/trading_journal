@@ -5481,6 +5481,54 @@ function V6ConfirmarBorrado({ trade, onConfirm, onCancel }) {
   );
 }
 
+// Mismo aviso y misma lógica ("un dismiss por domingo", vía localStorage)
+// que SundayReminder; solo cambia el traje al estilo cuadrado/mono de V6,
+// igual que el resto de popups de esta hoja.
+function V6SundayReminder() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const today = new Date();
+    if (today.getDay() !== 0) return; // 0 = domingo
+    const key = `tj_sunday_dismissed_${today.toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(key)) return;
+    const id = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  if (!visible) return null;
+
+  const dismiss = () => {
+    const key = `tj_sunday_dismissed_${new Date().toISOString().slice(0, 10)}`;
+    localStorage.setItem(key, "1");
+    setVisible(false);
+  };
+
+  return (
+    <div style={veloPopup}>
+      <div style={{
+        background: V6.bg, border: `1px solid ${V6.amber}`, borderRadius: 2, padding: 18,
+        maxWidth: 380, width: "100%", fontFamily: V6_MONO, boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+      }}>
+        <div style={{ fontSize: 13, marginBottom: 2 }}>
+          <span style={{ color: V6.amber }}>$</span> <span style={{ color: V6.white, fontWeight: 700 }}>recordatorio de domingo</span>
+        </div>
+        <div style={{ fontSize: 12, color: V6.dim2, lineHeight: 1.6, margin: "10px 0 16px" }}>
+          Es domingo — recuerda actualizar los <strong style={{ color: V6.fg }}>importes de cada cuenta</strong> con los saldos reales del bróker antes de empezar la semana. Una vez actualizados, usa <strong style={{ color: V6.fg }}>&quot;Sincronizar Base&quot;</strong> en cada cuenta para que el seguimiento empiece desde cero el lunes.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={dismiss} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, padding: "8px 10px", background: "none", border: `1px solid ${V6.border}`, borderRadius: 2, color: V6.dim2, cursor: "pointer" }}>
+            ya lo hice
+          </button>
+          <button onClick={dismiss} style={{ flex: 1, fontFamily: V6_MONO, fontSize: 12, fontWeight: 700, padding: "8px 10px", background: "none", border: `1px solid ${V6.amber}`, borderRadius: 2, color: V6.amber, cursor: "pointer" }}>
+            entendido
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardV6({
   trades, accountsList, onExit, fetchAccounts,
   addingTrade, setAddingTrade, editingTrade, setEditingTrade,
@@ -5981,7 +6029,7 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "var(--font-sans)" }}>
-      <SundayReminder />
+      {currentTab === "v6" ? <V6SundayReminder /> : <SundayReminder />}
       <h2 className="sr-only">Trading Journal Dashboard — NQ Futures Bulenox</h2>
 
       {!appAbierta ? (
