@@ -4183,6 +4183,64 @@ function V6Sec({ accent, title, right, comment, children }) {
 const v6Track = { position: "relative", height: 8, borderRadius: 1, background: "#141414", backgroundImage: "repeating-linear-gradient(90deg, #262626 0 2px, transparent 2px 4px)" };
 const v6Fill = (pct, color) => ({ position: "absolute", inset: 0, width: `${Math.max(0, Math.min(100, pct))}%`, borderRadius: 1, backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 14px, #0A0A0A 14px 16px)` });
 
+// Tinte translúcido de un color de la paleta V6, para el fondo de una caja
+// que lleve ese mismo color de borde/texto.
+const v6Rgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
+// Días de mercado (lunes-viernes) que quedan hasta una fecha límite,
+// contando hoy si hoy mismo es laborable. Si la fecha ya pasó, devuelve el
+// número en negativo: los días de mercado transcurridos desde entonces.
+function v6DiasHastaVencimiento(deadlineStr) {
+  if (!deadlineStr) return null;
+  const fin = new Date(deadlineStr + "T00:00:00");
+  if (isNaN(fin.getTime())) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const vencido = fin < hoy;
+  const desde = vencido ? new Date(fin.getFullYear(), fin.getMonth(), fin.getDate() + 1) : hoy;
+  const hasta = vencido ? hoy : fin;
+  let dias = 0;
+  const cursor = new Date(desde);
+  while (cursor <= hasta) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) dias++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return vencido ? -dias : dias;
+}
+
+// "Muy fiscal": caja con borde y fondo tintados del color de urgencia, un
+// número grande y una etiqueta en mayúsculas — como un aviso de plazo. Solo
+// se pinta si la cuenta tiene fecha límite (deadline), que hoy solo se
+// ofrece en las cuentas Bulenox que el usuario marque.
+function V6Deadline({ deadline }) {
+  const dias = v6DiasHastaVencimiento(deadline);
+  if (dias === null) return null;
+  const vencido = dias <= 0;
+  const color = dias <= 3 ? V6.red : dias <= 7 ? V6.orange : dias <= 14 ? V6.amber : V6.green;
+  const fin = new Date(deadline + "T00:00:00");
+  const fechaFmt = `${String(fin.getDate()).padStart(2, "0")}/${String(fin.getMonth() + 1).padStart(2, "0")}`;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 6,
+      padding: "6px 9px", border: `1px solid ${color}`, borderRadius: 2, background: v6Rgba(color, 0.08),
+    }}>
+      <span style={{ fontSize: 9, color, textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 700 }}>
+        {vencido ? "plazo vencido" : "días de mercado hasta el plazo"}
+      </span>
+      <span style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>
+          {vencido ? `+${Math.abs(dias)}` : dias}
+        </span>
+        <span style={{ fontSize: 10, color: V6.dim }}>· {fechaFmt}</span>
+      </span>
+    </div>
+  );
+}
+
 // Mismo cálculo que la ficha Balance de V5 (computeCushion + objetivo/umbral
 // en la misma escala): una cuenta muestra la cifra grande con su barra, varias
 // muestran la lista. La marca roja de la barra es el umbral de liquidación.
@@ -4190,7 +4248,7 @@ function V6Balance({ liveAccounts, trades }) {
   const rows = liveAccounts.map(a => {
     const { balance, basis, threshold } = computeCushion(a, trades.filter(t => t.account === a.name), a.size);
     const base = a.startSize ?? a.size;
-    return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0, threshold };
+    return { name: a.name, balance: balance || 0, base, pnl: (balance || 0) - base, basis, status: a.status, target: Number(a.target) || 0, threshold, deadline: a.deadline || null };
   });
 
   const progreso = (r) => {
@@ -4250,6 +4308,7 @@ function V6Balance({ liveAccounts, trades }) {
         <div style={{ fontSize: 11, color: V6.dim, marginTop: 10 }}>
           {`base $${Math.round(r.base).toLocaleString()} · acumulado ${fmt(Math.round(r.pnl))}${r.basis ? ` · cierre ${r.basis}` : ""}`}
         </div>
+        {r.deadline && <V6Deadline deadline={r.deadline} />}
       </div>
     );
   }
@@ -4280,6 +4339,7 @@ function V6Balance({ liveAccounts, trades }) {
               ) : (
                 <div style={{ fontSize: 10, color: V6.dim, marginTop: 2 }}>{"// sin objetivo definido"}</div>
               )}
+              {r.deadline && <V6Deadline deadline={r.deadline} />}
             </div>
           );
         })}
@@ -4775,6 +4835,15 @@ function V6EditAccount({
         {numField("máx. contratos", "maxContracts", "int")}
         {numField("consistencia", "consistency", "text")}
 
+        {(editAcct.propfirm || "").toLowerCase().includes("bulenox") && row("plazo examen", (
+          <input
+            type="date"
+            value={editAcct.deadline || ""}
+            onChange={e => setEditAcct(cur => ({ ...cur, deadline: e.target.value || null }))}
+            style={selStyle}
+          />
+        ), "opcional")}
+
         {updateError && <div style={{ fontSize: 11, color: V6.red }}>{updateError}</div>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -4799,6 +4868,9 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
   const [propfirm, setPropfirm] = useState("Bulenox");
   const [planId, setPlanId] = useState(DEFAULT_PLAN.id);
   const [name, setName] = useState("");
+  // Fecha límite del examen: opcional, solo tiene sentido en cuentas Bulenox
+  // y solo si el usuario la rellena — no todas las cuentas Bulenox la llevan.
+  const [deadline, setDeadline] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -4819,6 +4891,7 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
         safetyReserve: plan.safetyReserve, maxContracts: plan.maxContracts,
         consistency: plan.consistency, daily_limit: plan.daily_limit ?? 0,
         balance: plan.size,
+        deadline: propfirm === "Bulenox" && deadline ? deadline : null,
       };
       const res = await fetch("/api/accounts", {
         method: "POST",
@@ -4827,6 +4900,7 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
       });
       if (res.ok) {
         setName("");
+        setDeadline("");
         await fetchAccounts();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -4972,6 +5046,18 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
               {creating ? "creando…" : "crear"}
             </button>
           </div>
+          {propfirm === "Bulenox" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: V6.dim, flex: "0 0 62px" }}>plazo</span>
+              <input
+                type="date"
+                value={deadline}
+                onChange={e => setDeadline(e.target.value)}
+                style={{ ...selStyle, flex: 1, minWidth: 0 }}
+              />
+              <span style={{ fontSize: 10, color: V6.dim, whiteSpace: "nowrap" }}>{"// opcional"}</span>
+            </div>
+          )}
           {createError && <div style={{ fontSize: 11, color: V6.red }}>{createError}</div>}
         </div>
       </V6Sec>

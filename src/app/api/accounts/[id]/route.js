@@ -62,6 +62,7 @@ export async function PUT(request, { params }) {
         safetyReserve: body.safetyReserve !== undefined ? (body.safetyReserve === null || body.safetyReserve === '' ? null : parseFloat(body.safetyReserve)) : undefined,
         bestPnlDay: body.bestPnlDay !== undefined ? (body.bestPnlDay === null || body.bestPnlDay === '' ? null : String(body.bestPnlDay)) : undefined,
         consistency: body.consistency !== undefined ? (body.consistency === null || body.consistency === '' ? null : String(body.consistency)) : undefined,
+        deadline: body.deadline !== undefined ? (body.deadline === null || body.deadline === '' ? null : String(body.deadline)) : undefined,
       },
     });
 

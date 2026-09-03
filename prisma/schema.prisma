@@ -61,6 +61,7 @@ model Account {
   safetyReserve    Float?   // Reserva de seguridad (cuentas REAL)
   bestPnlDay       String?  // Mejor día de PnL (texto, ej. "$417.46 (06/11/26)")
   consistency      String?  // Consistencia (texto, ej. "87%")
+  deadline         String?  // Fecha límite del examen (YYYY-MM-DD), opcional, solo cuentas Bulenox
   createdAt        DateTime @default(now())
 
   @@unique([clerkUserId, name])

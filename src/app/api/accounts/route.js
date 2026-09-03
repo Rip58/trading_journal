@@ -75,6 +75,8 @@ export async function POST(request) {
         safetyReserve: body.safetyReserve !== undefined && body.safetyReserve !== null && body.safetyReserve !== '' ? parseFloat(body.safetyReserve) : null,
         bestPnlDay: body.bestPnlDay !== undefined && body.bestPnlDay !== null && body.bestPnlDay !== '' ? String(body.bestPnlDay) : null,
         consistency: body.consistency !== undefined && body.consistency !== null && body.consistency !== '' ? String(body.consistency) : null,
+        // Fecha límite del examen (solo cuentas Bulenox que el usuario marque)
+        deadline: body.deadline !== undefined && body.deadline !== null && body.deadline !== '' ? String(body.deadline) : null,
       },
     });
     
