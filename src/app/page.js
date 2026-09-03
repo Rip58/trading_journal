@@ -5155,7 +5155,7 @@ function V6Ajustes({ accountsList, fetchAccounts }) {
         )}
       </V6Sec>
 
-      <V6Sec accent={V6.violet} title="sistema" comment={"// importar CSV, sincronizar con el bróker y borrar todo: por hacer"}>
+      <V6Sec accent={V6.violet} title="sistema">
         <V6ForceUpdate />
       </V6Sec>
     </div>
