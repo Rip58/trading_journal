@@ -4783,6 +4783,12 @@ function V6EditAccount({
       style={{ ...selStyle, borderColor: field === "threshold" ? V6.red : V6.border }}
     />
   ), note);
+  // El select de propfirm muestra "Bulenox" por defecto cuando la cuenta no
+  // tiene una guardada (cuentas antiguas, de antes de este campo). El plazo
+  // tiene que decidirse por lo mismo que ve el usuario en ese desplegable,
+  // no por el valor en bruto — si no, con una cuenta así el campo nunca
+  // aparece aunque el select esté enseñando "Bulenox".
+  const propfirmMostrado = editPfCustom ? "" : (editAcct.propfirm || "Bulenox");
 
   return (
     <div style={{ border: `1px solid ${V6.violet}`, padding: "10px 10px 12px", background: "rgba(167,139,250,0.05)" }}>
@@ -4804,7 +4810,7 @@ function V6EditAccount({
         ))}
         {row("propfirm", (
           <V6Select
-            value={editPfCustom ? "__custom__" : (editAcct.propfirm || "Bulenox")}
+            value={editPfCustom ? "__custom__" : propfirmMostrado}
             onChange={v => {
               if (v === "__custom__") { setEditPfCustom(true); setEditAcct(cur => ({ ...cur, propfirm: "" })); }
               else { setEditPfCustom(false); setEditAcct(cur => ({ ...cur, propfirm: v })); }
@@ -4835,7 +4841,7 @@ function V6EditAccount({
         {numField("máx. contratos", "maxContracts", "int")}
         {numField("consistencia", "consistency", "text")}
 
-        {(editAcct.propfirm || "").toLowerCase().includes("bulenox") && row("plazo examen", (
+        {propfirmMostrado.toLowerCase().includes("bulenox") && row("plazo examen", (
           <input
             type="date"
             value={editAcct.deadline || ""}
